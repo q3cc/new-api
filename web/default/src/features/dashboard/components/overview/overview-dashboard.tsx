@@ -27,6 +27,7 @@ import {
   Circle,
   Copy,
   CreditCard,
+  EyeOff,
   FileText,
   KeyRound,
   ListChecks,
@@ -69,6 +70,8 @@ import { UptimePanel } from './uptime-panel'
 
 const SETUP_GUIDE_VISIBILITY_STORAGE_KEY =
   'dashboard_overview_setup_guide_expanded'
+const SETUP_GUIDE_DISMISSED_STORAGE_KEY =
+  'dashboard_overview_setup_guide_dismissed'
 
 const SETUP_GUIDE_CODE_PATTERN = [
   'const request = await client.responses.create({',
@@ -135,6 +138,19 @@ function saveSetupGuideExpanded(expanded: boolean): void {
     SETUP_GUIDE_VISIBILITY_STORAGE_KEY,
     expanded ? 'expanded' : 'collapsed'
   )
+}
+
+function getSavedSetupGuideDismissed(): boolean {
+  if (typeof window === 'undefined') return false
+  return (
+    window.localStorage.getItem(SETUP_GUIDE_DISMISSED_STORAGE_KEY) ===
+    'dismissed'
+  )
+}
+
+function saveSetupGuideDismissed(): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(SETUP_GUIDE_DISMISSED_STORAGE_KEY, 'dismissed')
 }
 
 function getCurrentOrigin(): string {
@@ -468,6 +484,9 @@ export function OverviewDashboard() {
   const [manualSetupGuideExpanded, setManualSetupGuideExpanded] = useState<
     boolean | null
   >(() => getSavedSetupGuideExpanded())
+  const [setupGuideDismissed, setSetupGuideDismissed] = useState(() =>
+    getSavedSetupGuideDismissed()
+  )
 
   const requestCount = Number(user?.request_count ?? 0)
   const remainQuota = Number(user?.quota ?? 0)
@@ -617,10 +636,20 @@ export function OverviewDashboard() {
     saveSetupGuideExpanded(nextExpanded)
   }
 
+  const handleSetupGuideDismiss = () => {
+    setSetupGuideDismissed(true)
+    saveSetupGuideDismissed()
+  }
+
   return (
     <div className='flex flex-col gap-4'>
       {setupGuideExpanded ? (
-        <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
+        <CardStaggerContainer
+          className={cn(
+            'grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]',
+            setupGuideDismissed && 'hidden'
+          )}
+        >
           <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
             <div className='relative h-full overflow-hidden p-4 sm:p-5'>
               <SetupGuideBackdrop />
@@ -642,6 +671,14 @@ export function OverviewDashboard() {
                       </p>
                     </div>
                     <div className='flex flex-wrap items-center gap-2'>
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        onClick={handleSetupGuideDismiss}
+                      >
+                        <EyeOff data-icon='inline-start' />
+                        {t("Don't show again")}
+                      </Button>
                       <Button
                         variant='outline'
                         size='sm'
@@ -696,7 +733,9 @@ export function OverviewDashboard() {
           </CardStaggerItem>
         </CardStaggerContainer>
       ) : (
-        <CardStaggerContainer>
+        <CardStaggerContainer
+          className={setupGuideDismissed ? 'hidden' : undefined}
+        >
           <CardStaggerItem className='bg-card overflow-hidden rounded-2xl border shadow-xs'>
             <div className='relative overflow-hidden px-4 py-3 sm:px-5'>
               <SetupGuideBackdrop compact />
@@ -733,6 +772,15 @@ export function OverviewDashboard() {
                   {visibleQuickActions.map((action) => (
                     <CompactQuickAction key={action.title} action={action} />
                   ))}
+                  <Button
+                    variant='ghost'
+                    size='sm'
+                    className='h-8'
+                    onClick={handleSetupGuideDismiss}
+                  >
+                    <EyeOff data-icon='inline-start' />
+                    {t("Don't show again")}
+                  </Button>
                   <Button
                     variant='outline'
                     size='sm'
