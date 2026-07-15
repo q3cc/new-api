@@ -63,7 +63,6 @@ func GetPricing(c *gin.Context) {
 			delete(groupRatio, group)
 		}
 	}
-
 	c.JSON(200, gin.H{
 		"success":            true,
 		"data":               pricing,
@@ -72,6 +71,7 @@ func GetPricing(c *gin.Context) {
 		"usable_group":       usableGroup,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
 		"auto_groups":        service.GetUserAutoGroup(group),
+		"group_order":        service.OrderUserUsableGroupNames(usableGroup),
 		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",
 	})
 }
