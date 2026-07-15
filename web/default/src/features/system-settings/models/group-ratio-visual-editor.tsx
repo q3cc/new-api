@@ -24,11 +24,21 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react'
-import { useState, useMemo, useEffect, useCallback, memo } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
+import { Dialog } from '@/components/dialog'
 import {
   sideDrawerContentClassName,
   sideDrawerFormClassName,
@@ -49,7 +59,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { Dialog } from '@/components/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -67,6 +76,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { cn } from '@/lib/utils'
 
 import { safeJsonParse } from '../utils/json-parser'
 
@@ -77,6 +87,7 @@ type GroupRatioVisualEditorProps = {
   groupGroupRatio: string
   autoGroups: string
   groupSpecialUsableGroup: string
+  groupOrder: string
   onChange: (field: string, value: string) => void
 }
 
@@ -88,6 +99,8 @@ type GroupPricingRow = {
   selectable: boolean
   description: string
 }
+
+type DropPosition = 'before' | 'after'
 
 type RegistryEntry = {
   name: string
@@ -123,6 +136,41 @@ function parseUsableMap(value: string): Record<string, string> {
   })
 }
 
+function parseGroupOrder(value: string): string[] {
+  return safeJsonParse<string[]>(value, {
+    fallback: [],
+    silent: true,
+  }).filter((name) => typeof name === 'string' && name.trim() !== '')
+}
+
+function resolveGroupOrder(order: string[], names: string[]): string[] {
+  const available = new Set(names)
+  const seen = new Set<string>()
+  const resolved: string[] = []
+
+  for (const name of order) {
+    if (!available.has(name) || seen.has(name)) continue
+    resolved.push(name)
+    seen.add(name)
+  }
+
+  const remaining = names
+    .filter((name) => !seen.has(name))
+    .sort((left, right) => left.localeCompare(right))
+  return [...resolved, ...remaining]
+}
+
+function canonicalizeRecord<T>(record: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(record).sort(([left], [right]) => left.localeCompare(right))
+  )
+}
+
+function getDropPosition(event: DragEvent<HTMLTableRowElement>): DropPosition {
+  const bounds = event.currentTarget.getBoundingClientRect()
+  return event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after'
+}
+
 function parseNestedRatioMap(
   value: string
 ): Record<string, Record<string, number>> {
@@ -135,7 +183,8 @@ function parseNestedRatioMap(
 function buildGroupPricingRows(
   groupRatio: string,
   userUsableGroups: string,
-  topupGroupRatio: string
+  topupGroupRatio: string,
+  groupOrder: string
 ): GroupPricingRow[] {
   const ratioMap = parseRatioMap(groupRatio)
   const usableMap = parseUsableMap(userUsableGroups)
@@ -146,7 +195,11 @@ function buildGroupPricingRows(
     ...Object.keys(topupMap),
   ])
 
-  return [...names].map((name) => ({
+  const orderedNames = resolveGroupOrder(parseGroupOrder(groupOrder), [
+    ...names,
+  ])
+
+  return orderedNames.map((name) => ({
     _id: createGroupPricingId(),
     name,
     ratio: String(normalizeRatio(ratioMap[name])),
@@ -178,27 +231,44 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
     GroupRatio: JSON.stringify(groupRatio, null, 2),
     UserUsableGroups: JSON.stringify(userUsableGroups, null, 2),
     TopupGroupRatio: JSON.stringify(topupGroupRatio, null, 2),
+    GroupOrder: JSON.stringify(
+      rows.map((row) => row.name.trim()).filter(Boolean),
+      null,
+      2
+    ),
   }
 }
 
 function groupPricingSignature(rows: GroupPricingRow[]): string {
   const serialized = serializeGroupPricingRows(rows)
   return JSON.stringify({
-    groupRatio: parseRatioMap(serialized.GroupRatio),
-    userUsableGroups: parseUsableMap(serialized.UserUsableGroups),
-    topupGroupRatio: parseRatioMap(serialized.TopupGroupRatio),
+    groupRatio: canonicalizeRecord(parseRatioMap(serialized.GroupRatio)),
+    userUsableGroups: canonicalizeRecord(
+      parseUsableMap(serialized.UserUsableGroups)
+    ),
+    topupGroupRatio: canonicalizeRecord(
+      parseRatioMap(serialized.TopupGroupRatio)
+    ),
+    groupOrder: parseGroupOrder(serialized.GroupOrder),
   })
 }
 
 function sourceGroupPricingSignature(
   groupRatio: string,
   userUsableGroups: string,
-  topupGroupRatio: string
+  topupGroupRatio: string,
+  groupOrder: string
 ): string {
+  const groupNames = new Set([
+    ...Object.keys(parseRatioMap(groupRatio)),
+    ...Object.keys(parseUsableMap(userUsableGroups)),
+    ...Object.keys(parseRatioMap(topupGroupRatio)),
+  ])
   return JSON.stringify({
-    groupRatio: parseRatioMap(groupRatio),
-    userUsableGroups: parseUsableMap(userUsableGroups),
-    topupGroupRatio: parseRatioMap(topupGroupRatio),
+    groupRatio: canonicalizeRecord(parseRatioMap(groupRatio)),
+    userUsableGroups: canonicalizeRecord(parseUsableMap(userUsableGroups)),
+    topupGroupRatio: canonicalizeRecord(parseRatioMap(topupGroupRatio)),
+    groupOrder: resolveGroupOrder(parseGroupOrder(groupOrder), [...groupNames]),
   })
 }
 
@@ -258,6 +328,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   groupGroupRatio,
   autoGroups,
   groupSpecialUsableGroup,
+  groupOrder,
   onChange,
 }: GroupRatioVisualEditorProps) {
   const { t } = useTranslation()
@@ -272,11 +343,13 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       ...Object.keys(usableMap),
       ...Object.keys(topupMap),
     ])
-    return [...names].map((name) => ({
-      name,
-      ratio: normalizeRatio(ratioMap[name]),
-    }))
-  }, [groupRatio, userUsableGroups, topupGroupRatio])
+    return resolveGroupOrder(parseGroupOrder(groupOrder), [...names]).map(
+      (name) => ({
+        name,
+        ratio: normalizeRatio(ratioMap[name]),
+      })
+    )
+  }, [groupRatio, userUsableGroups, topupGroupRatio, groupOrder])
 
   const registryNames = useMemo(
     () => registry.map((entry) => entry.name),
@@ -329,6 +402,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         groupRatio={groupRatio}
         userUsableGroups={userUsableGroups}
         topupGroupRatio={topupGroupRatio}
+        groupOrder={groupOrder}
         onChange={onChange}
         onShowDetail={setDetailGroup}
       />
@@ -420,6 +494,7 @@ type GroupPricingTableProps = {
   groupRatio: string
   userUsableGroups: string
   topupGroupRatio: string
+  groupOrder: string
   onChange: (field: string, value: string) => void
   onShowDetail: (name: string) => void
 }
@@ -428,19 +503,33 @@ function GroupPricingTable({
   groupRatio,
   userUsableGroups,
   topupGroupRatio,
+  groupOrder,
   onChange,
   onShowDetail,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
-    buildGroupPricingRows(groupRatio, userUsableGroups, topupGroupRatio)
+    buildGroupPricingRows(
+      groupRatio,
+      userUsableGroups,
+      topupGroupRatio,
+      groupOrder
+    )
   )
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+  const [draggedRowId, setDraggedRowId] = useState('')
+  const draggedRowIdRef = useRef('')
+  const [dragOverRowId, setDragOverRowId] = useState('')
+  const [dragOverPosition, setDragOverPosition] =
+    useState<DropPosition>('before')
 
   useEffect(() => {
     const incomingSignature = sourceGroupPricingSignature(
       groupRatio,
       userUsableGroups,
-      topupGroupRatio
+      topupGroupRatio,
+      groupOrder
     )
     setRows((currentRows) => {
       if (groupPricingSignature(currentRows) === incomingSignature) {
@@ -449,18 +538,21 @@ function GroupPricingTable({
       return buildGroupPricingRows(
         groupRatio,
         userUsableGroups,
-        topupGroupRatio
+        topupGroupRatio,
+        groupOrder
       )
     })
-  }, [groupRatio, userUsableGroups, topupGroupRatio])
+  }, [groupRatio, userUsableGroups, topupGroupRatio, groupOrder])
 
   const emitRows = useCallback(
     (nextRows: GroupPricingRow[]) => {
+      rowsRef.current = nextRows
       setRows(nextRows)
       const serialized = serializeGroupPricingRows(nextRows)
       onChange('GroupRatio', serialized.GroupRatio)
       onChange('UserUsableGroups', serialized.UserUsableGroups)
       onChange('TopupGroupRatio', serialized.TopupGroupRatio)
+      onChange('GroupOrder', serialized.GroupOrder)
     },
     [onChange]
   )
@@ -506,6 +598,89 @@ function GroupPricingTable({
     [emitRows, rows]
   )
 
+  const resetDragState = useCallback(() => {
+    draggedRowIdRef.current = ''
+    setDraggedRowId('')
+    setDragOverRowId('')
+    setDragOverPosition('before')
+  }, [])
+
+  const moveRow = useCallback(
+    (sourceId: string, targetId: string, position: DropPosition) => {
+      const currentRows = rowsRef.current
+      const sourceIndex = currentRows.findIndex((row) => row._id === sourceId)
+      const targetIndex = currentRows.findIndex((row) => row._id === targetId)
+      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+        return
+      }
+
+      const nextRows = [...currentRows]
+      const [movedRow] = nextRows.splice(sourceIndex, 1)
+      const adjustedTargetIndex =
+        targetIndex - (sourceIndex < targetIndex ? 1 : 0)
+      const insertionIndex =
+        adjustedTargetIndex + (position === 'after' ? 1 : 0)
+      nextRows.splice(insertionIndex, 0, movedRow)
+
+      if (nextRows.some((row, index) => row._id !== currentRows[index]?._id)) {
+        emitRows(nextRows)
+      }
+    },
+    [emitRows]
+  )
+
+  const handleDragStart = useCallback(
+    (event: DragEvent<HTMLButtonElement>, rowId: string) => {
+      draggedRowIdRef.current = rowId
+      setDraggedRowId(rowId)
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', rowId)
+    },
+    []
+  )
+
+  const handleDragOver = useCallback(
+    (event: DragEvent<HTMLTableRowElement>, rowId: string) => {
+      if (!draggedRowIdRef.current || draggedRowIdRef.current === rowId) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'move'
+      setDragOverRowId(rowId)
+      setDragOverPosition(getDropPosition(event))
+    },
+    []
+  )
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLTableRowElement>, rowId: string) => {
+      event.preventDefault()
+      const sourceId =
+        draggedRowIdRef.current || event.dataTransfer.getData('text/plain')
+      if (sourceId && sourceId !== rowId) {
+        moveRow(sourceId, rowId, getDropPosition(event))
+      }
+      resetDragState()
+    },
+    [moveRow, resetDragState]
+  )
+
+  const handleOrderKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, rowId: string) => {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+      event.preventDefault()
+      const rowIndex = rows.findIndex((row) => row._id === rowId)
+      const targetIndex = rowIndex + (event.key === 'ArrowUp' ? -1 : 1)
+      if (rowIndex < 0 || targetIndex < 0 || targetIndex >= rows.length) return
+
+      const nextRows = [...rows]
+      ;[nextRows[rowIndex], nextRows[targetIndex]] = [
+        nextRows[targetIndex],
+        nextRows[rowIndex],
+      ]
+      emitRows(nextRows)
+    },
+    [emitRows, rows]
+  )
+
   const duplicateNames = useMemo(() => {
     const counts = new Map<string, number>()
     for (const row of rows) {
@@ -527,6 +702,9 @@ function GroupPricingTable({
             <CardDescription>
               {t(
                 'All group names live here. Ratio applies when calls are billed as this group; top-up ratio applies to users whose account is in this group.'
+              )}{' '}
+              {t(
+                'Drag the handle to change the display order. Save to apply it across the site.'
               )}
             </CardDescription>
           </div>
@@ -541,9 +719,50 @@ function GroupPricingTable({
           <StaticDataTable
             data={rows}
             getRowKey={(row) => row._id}
+            getRowProps={(row) => ({
+              onDragOver: (event) => handleDragOver(event, row._id),
+              onDrop: (event) => handleDrop(event, row._id),
+              className: cn(
+                'transition-[opacity,box-shadow]',
+                draggedRowId === row._id && 'opacity-40',
+                dragOverRowId === row._id &&
+                  draggedRowId !== row._id &&
+                  dragOverPosition === 'before' &&
+                  'shadow-[inset_0_2px_0_0_var(--primary)]',
+                dragOverRowId === row._id &&
+                  draggedRowId !== row._id &&
+                  dragOverPosition === 'after' &&
+                  'shadow-[inset_0_-2px_0_0_var(--primary)]'
+              ),
+            })}
             emptyClassName='text-muted-foreground h-20 text-sm'
             emptyContent={t('No groups yet. Add a group to get started.')}
             columns={[
+              {
+                id: 'order',
+                header: <span className='sr-only'>{t('Display order')}</span>,
+                className: 'w-10',
+                cellClassName: 'w-10 overflow-visible',
+                cell: (row) => (
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='icon-sm'
+                    draggable={rows.length > 1}
+                    disabled={rows.length <= 1}
+                    onDragStart={(event) => handleDragStart(event, row._id)}
+                    onDragEnd={resetDragState}
+                    onKeyDown={(event) => handleOrderKeyDown(event, row._id)}
+                    className='cursor-grab active:cursor-grabbing'
+                    aria-label={t(
+                      'Drag {{group}} to reorder. Use the arrow keys to move it.',
+                      { group: row.name || t('Unnamed group') }
+                    )}
+                  >
+                    <GripVertical aria-hidden='true' className='size-4' />
+                  </Button>
+                ),
+              },
               {
                 id: 'group',
                 header: t('Group name'),
@@ -1100,10 +1319,13 @@ function GroupOverrideDialog({
           <p className='text-muted-foreground text-xs'>
             {baseRatio !== undefined
               ? t('(instead of {{ratio}})', { ratio: baseRatio })
-              : t('Multiplier applied when {{userGroup}} uses {{targetGroup}}', {
-                  userGroup: userGroup || t('this user group'),
-                  targetGroup: targetGroup || t('this token group'),
-                })}
+              : t(
+                  'Multiplier applied when {{userGroup}} uses {{targetGroup}}',
+                  {
+                    userGroup: userGroup || t('this user group'),
+                    targetGroup: targetGroup || t('this token group'),
+                  }
+                )}
           </p>
         </div>
       </div>

@@ -1,3 +1,5 @@
+import { orderGroupNames } from '@/lib/group-order'
+
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -28,13 +30,14 @@ import type { PricingModel } from '../types'
  */
 export function getAvailableGroups(
   model: PricingModel,
-  usableGroup: Record<string, { desc: string; ratio: number }>
+  usableGroup: Record<string, { desc: string; ratio: number }>,
+  groupOrder: string[] = []
 ): string[] {
   const modelEnableGroups = Array.isArray(model.enable_groups)
     ? model.enable_groups
     : []
 
-  return Object.keys(usableGroup)
+  return orderGroupNames(Object.keys(usableGroup), groupOrder)
     .filter((g) => !EXCLUDED_GROUPS.includes(g))
     .filter((g) => modelEnableGroups.includes(g))
 }

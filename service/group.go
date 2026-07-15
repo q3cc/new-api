@@ -36,6 +36,22 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 	return groupsCopy
 }
 
+func OrderUserUsableGroupNames(groups map[string]string) []string {
+	names := make([]string, 0, len(groups))
+	_, hasAuto := groups["auto"]
+	for name := range groups {
+		if name != "auto" {
+			names = append(names, name)
+		}
+	}
+
+	ordered := ratio_setting.OrderGroupNames(names)
+	if hasAuto {
+		ordered = append(ordered, "auto")
+	}
+	return ordered
+}
+
 func GroupInUserUsableGroups(userGroup, groupName string) bool {
 	_, ok := GetUserUsableGroups(userGroup)[groupName]
 	return ok
