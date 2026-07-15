@@ -514,6 +514,10 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	if resp == nil {
 		return nil, errors.New("resp is nil")
 	}
+	if err := applyResponseTextReplacements(resp, info); err != nil {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("apply response text replacements: %w", err)
+	}
 
 	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
 		c.Set(common2.UpstreamRequestIdKey, upID)

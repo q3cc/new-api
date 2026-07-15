@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
+import { orderGroupNames } from '@/lib/group-order'
 
 import {
   LoadingSkeleton,
@@ -49,6 +50,7 @@ export function Pricing() {
     usableGroup,
     endpointMap,
     autoGroups,
+    groupOrder,
     isLoading,
     priceRate,
     usdExchangeRate,
@@ -99,10 +101,10 @@ export function Pricing() {
 
   const availableGroups = useMemo(
     () =>
-      Object.keys(usableGroup || {}).filter(
-        (g) => !EXCLUDED_GROUPS.includes(g)
+      orderGroupNames(Object.keys(usableGroup || {}), groupOrder).filter(
+        (group) => !EXCLUDED_GROUPS.includes(group)
       ),
-    [usableGroup]
+    [usableGroup, groupOrder]
   )
 
   const handleClearAll = useCallback(() => {
@@ -276,6 +278,7 @@ export function Pricing() {
                 >) || {}
               }
               autoGroups={autoGroups || []}
+              groupOrder={groupOrder}
               priceRate={priceRate ?? 1}
               usdExchangeRate={usdExchangeRate ?? 1}
               tokenUnit={tokenUnit}

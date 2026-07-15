@@ -86,6 +86,15 @@ export interface ChannelSettings {
   pass_through_body_enabled?: boolean
   system_prompt?: string
   system_prompt_override?: boolean
+  response_text_replacements?: ResponseTextReplacementRule[]
+}
+
+export type ResponseTextReplacementScope = 'error' | 'response' | 'all'
+
+export interface ResponseTextReplacementRule {
+  pattern: string
+  replacement: string
+  scope: ResponseTextReplacementScope
 }
 
 export interface ChannelOtherSettings {

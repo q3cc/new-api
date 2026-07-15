@@ -11,12 +11,62 @@ import (
 )
 
 type ChannelSettings struct {
-	ForceFormat            bool   `json:"force_format,omitempty"`
-	ThinkingToContent      bool   `json:"thinking_to_content,omitempty"`
-	Proxy                  string `json:"proxy"`
-	PassThroughBodyEnabled bool   `json:"pass_through_body_enabled,omitempty"`
-	SystemPrompt           string `json:"system_prompt,omitempty"`
-	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
+	ForceFormat              bool                          `json:"force_format,omitempty"`
+	ThinkingToContent        bool                          `json:"thinking_to_content,omitempty"`
+	Proxy                    string                        `json:"proxy"`
+	PassThroughBodyEnabled   bool                          `json:"pass_through_body_enabled,omitempty"`
+	SystemPrompt             string                        `json:"system_prompt,omitempty"`
+	SystemPromptOverride     bool                          `json:"system_prompt_override,omitempty"`
+	ResponseTextReplacements []ResponseTextReplacementRule `json:"response_text_replacements,omitempty"`
+}
+
+type ResponseTextReplacementScope string
+
+const (
+	ResponseTextReplacementScopeError    ResponseTextReplacementScope = "error"
+	ResponseTextReplacementScopeResponse ResponseTextReplacementScope = "response"
+	ResponseTextReplacementScopeAll      ResponseTextReplacementScope = "all"
+
+	maxResponseTextReplacementRules       = 50
+	maxResponseTextReplacementPatternSize = 4096
+	maxResponseTextReplacementValueSize   = 16384
+)
+
+type ResponseTextReplacementRule struct {
+	Pattern     string                       `json:"pattern"`
+	Replacement string                       `json:"replacement"`
+	Scope       ResponseTextReplacementScope `json:"scope"`
+}
+
+func (s *ChannelSettings) Validate() error {
+	if s == nil {
+		return nil
+	}
+	if len(s.ResponseTextReplacements) > maxResponseTextReplacementRules {
+		return fmt.Errorf("response_text_replacements must contain at most %d rules", maxResponseTextReplacementRules)
+	}
+	for i, rule := range s.ResponseTextReplacements {
+		if rule.Pattern == "" {
+			return fmt.Errorf("response_text_replacements[%d].pattern is required", i)
+		}
+		if len(rule.Pattern) > maxResponseTextReplacementPatternSize {
+			return fmt.Errorf("response_text_replacements[%d].pattern is too long", i)
+		}
+		if len(rule.Replacement) > maxResponseTextReplacementValueSize {
+			return fmt.Errorf("response_text_replacements[%d].replacement is too long", i)
+		}
+		switch rule.Scope {
+		case ResponseTextReplacementScopeError,
+			ResponseTextReplacementScopeResponse,
+			ResponseTextReplacementScopeAll:
+		default:
+			return fmt.Errorf("response_text_replacements[%d].scope is invalid", i)
+		}
+		if _, err := regexp.Compile(rule.Pattern); err != nil {
+			return fmt.Errorf("response_text_replacements[%d].pattern is invalid: %w", i, err)
+		}
+	}
+	return nil
 }
 
 type VertexKeyType string
