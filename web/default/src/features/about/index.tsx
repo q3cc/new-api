@@ -17,15 +17,76 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Construction } from 'lucide-react'
+import { Construction, GitFork } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { RichContent } from '@/components/rich-content'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardTitle,
+} from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { isHttpUrl, isLikelyHtml } from '@/lib/content-format'
 
 import { getAboutContent } from './api'
+
+function ModifiedEditionNotice() {
+  const { t } = useTranslation()
+
+  return (
+    <Card
+      size='sm'
+      role='note'
+      aria-labelledby='modified-edition-title'
+      className='bg-muted/30'
+    >
+      <CardContent className='flex items-start gap-3'>
+        <GitFork
+          aria-hidden='true'
+          className='text-primary mt-0.5 size-5 shrink-0'
+        />
+        <div className='min-w-0 space-y-2'>
+          <CardTitle id='modified-edition-title'>
+            {t('Modified edition notice')}
+          </CardTitle>
+          <CardDescription className='space-y-1'>
+            <p>
+              {t(
+                'This site runs a modified edition maintained by q3cc and based on New API. It is not an official upstream release.'
+              )}
+            </p>
+            <p>
+              {t(
+                'The original copyright notices and AGPL-3.0 license remain unchanged.'
+              )}
+            </p>
+          </CardDescription>
+          <div className='flex flex-wrap gap-x-4 gap-y-1 text-sm'>
+            <a
+              href='https://github.com/q3cc/new-api'
+              target='_blank'
+              rel='noopener noreferrer'
+              className='text-primary hover:underline'
+            >
+              {t('Modified source')}
+            </a>
+            <a
+              href='https://github.com/QuantumNous/new-api'
+              target='_blank'
+              rel='noopener noreferrer'
+              className='text-primary hover:underline'
+            >
+              {t('Upstream project')}
+            </a>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 function EmptyAboutState() {
   const { t } = useTranslation()
@@ -128,6 +189,7 @@ export function About() {
     return (
       <PublicLayout>
         <div className='mx-auto flex max-w-4xl flex-col gap-4 py-12'>
+          <ModifiedEditionNotice />
           <Skeleton className='h-8 w-[45%]' />
           <Skeleton className='h-4 w-full' />
           <Skeleton className='h-4 w-[90%]' />
@@ -140,7 +202,10 @@ export function About() {
   if (!hasContent) {
     return (
       <PublicLayout>
-        <EmptyAboutState />
+        <div className='mx-auto max-w-4xl px-4 py-8'>
+          <ModifiedEditionNotice />
+          <EmptyAboutState />
+        </div>
       </PublicLayout>
     )
   }
@@ -148,12 +213,17 @@ export function About() {
   if (isUrl) {
     return (
       <PublicLayout showMainContainer={false}>
-        <iframe
-          src={rawContent}
-          className='h-[calc(100vh-3.5rem)] w-full border-0'
-          title={t('About')}
-          sandbox='allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts'
-        />
+        <div className='flex min-h-[calc(100vh-3.5rem)] flex-col'>
+          <div className='mx-auto w-full max-w-6xl px-4 py-4'>
+            <ModifiedEditionNotice />
+          </div>
+          <iframe
+            src={rawContent}
+            className='min-h-[60vh] w-full flex-1 border-0'
+            title={t('About')}
+            sandbox='allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts'
+          />
+        </div>
       </PublicLayout>
     )
   }
@@ -161,6 +231,9 @@ export function About() {
   if (contentIsHtml) {
     return (
       <PublicLayout showMainContainer={false}>
+        <div className='mx-auto w-full max-w-6xl px-4 py-4'>
+          <ModifiedEditionNotice />
+        </div>
         <RichContent
           mode='html'
           htmlVariant='isolated'
@@ -173,7 +246,8 @@ export function About() {
 
   return (
     <PublicLayout>
-      <div className='mx-auto max-w-6xl px-4 py-8'>
+      <div className='mx-auto max-w-6xl space-y-6 px-4 py-8'>
+        <ModifiedEditionNotice />
         <RichContent
           mode='markdown'
           content={rawContent}
