@@ -179,6 +179,7 @@ import {
   type MissingModelsAction,
 } from '../dialogs/missing-models-confirmation-dialog'
 import { ParamOverrideEditorDialog } from '../dialogs/param-override-editor-dialog'
+import { ResponseTextReplacementEditorDialog } from '../dialogs/response-text-replacement-editor-dialog'
 import { StatusCodeRiskDialog } from '../dialogs/status-code-risk-dialog'
 import { ModelMappingEditor } from '../model-mapping-editor'
 import {
@@ -286,6 +287,7 @@ const SENSITIVE_FORM_FIELDS = [
   'pass_through_body_enabled',
   'system_prompt',
   'system_prompt_override',
+  'response_text_replacements',
   'allow_service_tier',
   'disable_store',
   'allow_safety_identifier',
@@ -334,6 +336,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.weight ||
     values.proxy?.trim() ||
     values.system_prompt?.trim() ||
+    (values.response_text_replacements?.length ?? 0) > 0 ||
     values.force_format ||
     values.thinking_to_content ||
     values.pass_through_body_enabled ||
@@ -364,6 +367,17 @@ function formatUnixTime(timestamp: unknown): string {
   const seconds = Number(timestamp)
   if (!Number.isFinite(seconds) || seconds <= 0) return '-'
   return new Date(seconds * 1000).toLocaleString()
+}
+
+function getResponseReplacementScopeLabel(scope: string): string {
+  switch (scope) {
+    case 'error':
+      return 'Errors only'
+    case 'response':
+      return 'Successful responses only'
+    default:
+      return 'All responses'
+  }
 }
 
 function CardHeading(props: {
@@ -642,6 +656,10 @@ export function ChannelMutateDrawer({
   >()
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false)
   const [paramOverrideEditorOpen, setParamOverrideEditorOpen] = useState(false)
+  const [
+    responseTextReplacementEditorOpen,
+    setResponseTextReplacementEditorOpen,
+  ] = useState(false)
   const [advancedCustomEditorOpen, setAdvancedCustomEditorOpen] =
     useState(false)
   const [clipboardConnectionInfo, setClipboardConnectionInfo] =
@@ -737,6 +755,9 @@ export function ChannelMutateDrawer({
   const currentStatusCodeMapping = form.watch('status_code_mapping')
   const currentParamOverride = form.watch('param_override')
   const currentHeaderOverride = form.watch('header_override')
+  const currentResponseTextReplacements = form.watch(
+    'response_text_replacements'
+  )
   const currentForceFormat = form.watch('force_format')
   const currentThinkingToContent = form.watch('thinking_to_content')
   const currentPassThroughBodyEnabled = form.watch('pass_through_body_enabled')
@@ -1001,7 +1022,8 @@ export function ChannelMutateDrawer({
   const overrideRulesConfigured = Boolean(
     hasConfiguredOverrideValue(currentStatusCodeMapping) ||
     hasConfiguredOverrideValue(currentParamOverride) ||
-    hasConfiguredOverrideValue(currentHeaderOverride)
+    hasConfiguredOverrideValue(currentHeaderOverride) ||
+    (currentResponseTextReplacements?.length ?? 0) > 0
   )
   const extraSettingsConfigured = Boolean(
     currentForceFormat ||
@@ -3914,6 +3936,105 @@ export function ChannelMutateDrawer({
 
                               <FormField
                                 control={form.control}
+                                name='response_text_replacements'
+                                render={({ field }) => {
+                                  const rules = field.value || []
+                                  return (
+                                    <FormItem className='space-y-3 border-t pt-4'>
+                                      <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
+                                        <div className='space-y-1'>
+                                          <div className='flex flex-wrap items-center gap-2'>
+                                            <FormLabel>
+                                              {t('Response text replacement')}
+                                            </FormLabel>
+                                            {rules.length > 0 && (
+                                              <Badge variant='secondary'>
+                                                {t('{{count}} rules', {
+                                                  count: rules.length,
+                                                })}
+                                              </Badge>
+                                            )}
+                                          </div>
+                                          <FormDescription>
+                                            {t(
+                                              'Replace matching text in errors, successful responses, or all text responses.'
+                                            )}
+                                          </FormDescription>
+                                        </div>
+                                        <div className='flex flex-wrap gap-2'>
+                                          <Button
+                                            type='button'
+                                            variant='outline'
+                                            size='sm'
+                                            onClick={() =>
+                                              setResponseTextReplacementEditorOpen(
+                                                true
+                                              )
+                                            }
+                                          >
+                                            <Wand2 className='mr-2 h-4 w-4' />
+                                            {t('Configure rules')}
+                                          </Button>
+                                          {rules.length > 0 && (
+                                            <Button
+                                              type='button'
+                                              variant='ghost'
+                                              size='sm'
+                                              onClick={() => field.onChange([])}
+                                            >
+                                              {t('Clear')}
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {rules.length > 0 && (
+                                        <div className='border-border divide-border divide-y border'>
+                                          {rules
+                                            .slice(0, 3)
+                                            .map((rule, index) => (
+                                              <div
+                                                // Rules intentionally have no persisted IDs, and identical
+                                                // ordered rules can produce a different replacement result.
+                                                // eslint-disable-next-line react/no-array-index-key
+                                                key={`${rule.scope}\u0000${rule.pattern}\u0000${rule.replacement}\u0000${index}`}
+                                                className='flex min-w-0 items-center gap-3 px-3 py-2 text-xs'
+                                              >
+                                                <span className='text-muted-foreground shrink-0 tabular-nums'>
+                                                  {index + 1}
+                                                </span>
+                                                <code className='min-w-0 flex-1 truncate'>
+                                                  {rule.pattern}
+                                                </code>
+                                                <Badge
+                                                  variant='outline'
+                                                  className='shrink-0'
+                                                >
+                                                  {t(
+                                                    getResponseReplacementScopeLabel(
+                                                      rule.scope
+                                                    )
+                                                  )}
+                                                </Badge>
+                                              </div>
+                                            ))}
+                                          {rules.length > 3 && (
+                                            <div className='text-muted-foreground px-3 py-2 text-xs'>
+                                              {t('And {{count}} more rules', {
+                                                count: rules.length - 3,
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                      <FormMessage />
+                                    </FormItem>
+                                  )
+                                }}
+                              />
+
+                              <FormField
+                                control={form.control}
                                 name='header_override'
                                 render={({ field }) => (
                                   <FormItem className='space-y-3 border-t pt-4'>
@@ -4652,6 +4773,20 @@ export function ChannelMutateDrawer({
           onOpenChange={setParamOverrideEditorOpen}
           onSave={(nextValue) => {
             form.setValue('param_override', nextValue, {
+              shouldDirty: true,
+              shouldValidate: true,
+            })
+          }}
+        />
+      )}
+
+      {responseTextReplacementEditorOpen && !sensitiveLocked && (
+        <ResponseTextReplacementEditorDialog
+          open={responseTextReplacementEditorOpen}
+          rules={form.watch('response_text_replacements') || []}
+          onOpenChange={setResponseTextReplacementEditorOpen}
+          onSave={(rules) => {
+            form.setValue('response_text_replacements', rules, {
               shouldDirty: true,
               shouldValidate: true,
             })
