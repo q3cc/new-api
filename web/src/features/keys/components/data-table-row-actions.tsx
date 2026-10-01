@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { Row } from '@tanstack/react-table'
 import {
+  Check,
   Trash2,
   Edit,
   Power,
@@ -50,12 +51,14 @@ import {
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
 import { resolveChatUrl, type ChatPreset } from '@/features/chat/lib/chat-links'
 import { sendToFluent } from '@/features/chat/lib/send-to-fluent'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { encodeChannelConnectionInfo } from '@/lib/channel-connection-info'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { updateApiKeyStatus } from '../api'
 import { API_KEY_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
+import { encodeKelivoConfig } from '../lib/kelivo-config'
 import { apiKeySchema } from '../types'
 import { useApiKeys } from './api-keys-provider'
 
@@ -92,6 +95,12 @@ export function DataTableRowActions<TData>({
   const isEnabled = apiKey.status === API_KEY_STATUS.ENABLED
   const { chatPresets, serverAddress } = useChatPresets()
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
+  const [isCopyingKelivo, setIsCopyingKelivo] = useState(false)
+  const { copiedText: copiedKelivo, copyToClipboard: copyKelivo } =
+    useCopyToClipboard({
+      successMessage: t('Copied'),
+      errorMessage: t('Copy failed'),
+    })
   const isRealKeyLoading = Boolean(loadingKeys[apiKey.id])
 
   const hasChatPresets = chatPresets.length > 0
@@ -165,6 +174,27 @@ export function DataTableRowActions<TData>({
     }
   }
 
+  const handleCopyKelivo = async (
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.stopPropagation()
+    if (isCopyingKelivo || isRealKeyLoading) return
+    setIsCopyingKelivo(true)
+    try {
+      const realKey = await resolveRealKey(apiKey.id)
+      if (!realKey) return
+      await copyKelivo(encodeKelivoConfig(apiKey.name, realKey, serverAddress))
+    } catch (error) {
+      handleServerError(error, t('Copy failed'))
+    } finally {
+      setIsCopyingKelivo(false)
+    }
+  }
+
+  let kelivoIcon = <Copy className='size-4' />
+  if (isCopyingKelivo) kelivoIcon = <Loader2 className='size-4 animate-spin' />
+  else if (copiedKelivo) kelivoIcon = <Check className='text-success size-4' />
+
   let statusIcon = <Power className='size-4' />
   if (isTogglingStatus) {
     statusIcon = <Loader2 className='size-4 animate-spin' />
@@ -174,6 +204,23 @@ export function DataTableRowActions<TData>({
 
   return (
     <div className='-ml-1.5 flex items-center gap-1'>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              onClick={handleCopyKelivo}
+              disabled={isCopyingKelivo || isRealKeyLoading}
+              aria-label={t('Copy Kelivo config')}
+              aria-busy={isCopyingKelivo}
+            />
+          }
+        >
+          {kelivoIcon}
+        </TooltipTrigger>
+        <TooltipContent>{t('Copy Kelivo config')}</TooltipContent>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger
           render={
