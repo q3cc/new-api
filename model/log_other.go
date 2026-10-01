@@ -212,7 +212,7 @@ func normalizeLegacyRejectReason(values map[string]json.RawMessage) bool {
 // formatLogOtherJSON applies the role projection while keeping untouched JSON
 // values as RawMessage. This preserves integers larger than JavaScript's safe
 // range instead of round-tripping them through float64.
-func formatLogOtherJSON(value string, visibility logOtherVisibility) string {
+func formatLogOtherJSON(value string, visibility logOtherVisibility, modelName string) string {
 	if value == "" {
 		return ""
 	}
@@ -227,6 +227,7 @@ func formatLogOtherJSON(value string, visibility logOtherVisibility) string {
 
 	changed := false
 	if visibility == logOtherVisibilityUser {
+		changed = projectUserMappedModelNames(values, modelName)
 		for _, key := range []string{logOtherAdminInfoKey, logOtherRootInfoKey, logOtherAuditInfoKey} {
 			if _, exists := values[key]; exists {
 				delete(values, key)
@@ -260,4 +261,60 @@ func formatLogOtherJSON(value string, visibility logOtherVisibility) string {
 		return "{}"
 	}
 	return string(formatted)
+}
+
+// projectUserMappedModelNames exposes only the requested alias for mapped
+// requests. Apply on read so historical logs are protected without modifying
+// the stored diagnostics returned to administrators.
+func projectUserMappedModelNames(values map[string]json.RawMessage, modelName string) bool {
+	var mapped bool
+	_ = common.Unmarshal(values["is_model_mapped"], &mapped)
+	var upstream string
+	_ = common.Unmarshal(values["upstream_model_name"], &upstream)
+	var response map[string]json.RawMessage
+	_ = common.Unmarshal(values["response_model"], &response)
+	var requested, responseUpstream string
+	if response != nil {
+		_ = common.Unmarshal(response["requested_model"], &requested)
+		_ = common.Unmarshal(response["upstream_model"], &responseUpstream)
+	}
+	if requested != "" {
+		modelName = requested
+	}
+	mapped = mapped || (modelName != "" && ((upstream != "" && upstream != modelName) ||
+		(responseUpstream != "" && responseUpstream != modelName)))
+	if !mapped {
+		return false
+	}
+	if modelName == "" {
+		delete(values, "upstream_model_name")
+		delete(values, "response_model")
+		return true
+	}
+	publicName, err := common.Marshal(modelName)
+	if err != nil {
+		delete(values, "upstream_model_name")
+		delete(values, "response_model")
+		return true
+	}
+	if _, exists := values["upstream_model_name"]; exists {
+		values["upstream_model_name"] = publicName
+	}
+	if response == nil {
+		delete(values, "response_model")
+		return true
+	}
+	for _, field := range []string{"requested_model", "upstream_model", "returned_model"} {
+		var name string
+		if common.Unmarshal(response[field], &name) == nil && name != "" {
+			response[field] = publicName
+		}
+	}
+	encoded, err := common.Marshal(response)
+	if err != nil {
+		delete(values, "response_model")
+	} else {
+		values["response_model"] = encoded
+	}
+	return true
 }
