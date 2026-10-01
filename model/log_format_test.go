@@ -242,3 +242,45 @@ func TestLogFormattingPreservesLargeIntegerLexemes(t *testing.T) {
 		assert.Equal(t, unprivileged, adminLogs[0].Other)
 	})
 }
+
+func TestMappedModelLogNamesFollowViewerVisibility(t *testing.T) {
+	const other = `{"is_model_mapped":true,"upstream_model_name":"zai.glm-5","response_model":{"requested_model":"glm-5","upstream_model":"zai.glm-5","returned_model":"zai.glm-5-20261001"},"public_id":9007199254740993}`
+	for _, audience := range []string{"user", "admin", "root"} {
+		t.Run(audience, func(t *testing.T) {
+			logs := []*Log{{ModelName: "glm-5", Other: other}}
+			switch audience {
+			case "user":
+				formatUserLogs(logs, 0)
+			case "admin":
+				FormatAdminLogs(logs)
+			case "root":
+				FormatRootLogs(logs)
+			}
+			if audience == "user" {
+				assert.JSONEq(t, `{"is_model_mapped":true,"upstream_model_name":"glm-5","response_model":{"requested_model":"glm-5","upstream_model":"glm-5","returned_model":"glm-5"},"public_id":9007199254740993}`, logs[0].Other)
+				assert.NotContains(t, logs[0].Other, "zai.")
+			} else {
+				assert.Equal(t, other, logs[0].Other)
+			}
+			assert.Contains(t, logs[0].Other, `"public_id":9007199254740993`)
+			assert.Equal(t, "glm-5", logs[0].ModelName)
+		})
+	}
+}
+
+func TestUserMappedModelLogLegacyAndMissingMetadata(t *testing.T) {
+	cases := []struct{ name, model, other, want string }{
+		{"legacy mapping", "glm-5", `{"is_model_mapped":true,"upstream_model_name":"zai.glm-5"}`, `{"is_model_mapped":true,"upstream_model_name":"glm-5"}`},
+		{"observation without mapping flag", "glm-5", `{"response_model":{"requested_model":"glm-5","upstream_model":"zai.glm-5","returned_model":"zai.glm-5"}}`, `{"response_model":{"requested_model":"glm-5","upstream_model":"glm-5","returned_model":"glm-5"}}`},
+		{"missing public model falls back to request", "", `{"is_model_mapped":true,"response_model":{"requested_model":"glm-5","upstream_model":"zai.glm-5","returned_model":"zai.glm-5"}}`, `{"is_model_mapped":true,"response_model":{"requested_model":"glm-5","upstream_model":"glm-5","returned_model":"glm-5"}}`},
+		{"no public name removes private names", "", `{"is_model_mapped":true,"upstream_model_name":"zai.glm-5","response_model":"invalid"}`, `{"is_model_mapped":true}`},
+		{"unmapped response remains diagnostic", "glm-5", `{"response_model":{"requested_model":"glm-5","upstream_model":"glm-5","returned_model":"unexpected"}}`, `{"response_model":{"requested_model":"glm-5","upstream_model":"glm-5","returned_model":"unexpected"}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := []*Log{{ModelName: tc.model, Other: tc.other}}
+			formatUserLogs(logs, 0)
+			assert.JSONEq(t, tc.want, logs[0].Other)
+		})
+	}
+}

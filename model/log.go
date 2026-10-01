@@ -116,7 +116,7 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
 		logs[i].ChannelName = ""
-		logs[i].Other = formatLogOtherJSON(logs[i].Other, logOtherVisibilityUser)
+		logs[i].Other = formatLogOtherJSON(logs[i].Other, logOtherVisibilityUser, logs[i].ModelName)
 	}
 	assignDisplayLogIds(logs, startIdx)
 }
@@ -125,7 +125,7 @@ func formatUserLogs(logs []*Log, startIdx int) {
 // admin_info. Root callers must not pass their results through this formatter.
 func FormatAdminLogs(logs []*Log) {
 	for i := range logs {
-		logs[i].Other = formatLogOtherJSON(logs[i].Other, logOtherVisibilityAdmin)
+		logs[i].Other = formatLogOtherJSON(logs[i].Other, logOtherVisibilityAdmin, logs[i].ModelName)
 	}
 }
 
@@ -133,7 +133,7 @@ func FormatAdminLogs(logs []*Log) {
 // without removing root-only diagnostics.
 func FormatRootLogs(logs []*Log) {
 	for i := range logs {
-		logs[i].Other = formatLogOtherJSON(logs[i].Other, logOtherVisibilityRoot)
+		logs[i].Other = formatLogOtherJSON(logs[i].Other, logOtherVisibilityRoot, logs[i].ModelName)
 	}
 }
 
