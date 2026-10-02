@@ -48,6 +48,8 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 		}
 	}
 	other := model.NewLogOther()
+	other.SetPublic("billing_source", task.PrivateData.BillingSource)
+	AppendTrialBillingInfo(other, task.PrivateData.TrialRequestId)
 	other.SetPublic("is_task", true)
 	other.SetPublic("request_path", c.Request.URL.Path)
 	if taskDeliveredInline(c, task) {
@@ -114,6 +116,10 @@ func taskIsSubscription(task *model.Task) bool {
 
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
 func taskAdjustFunding(task *model.Task, delta int) error {
+	if task.PrivateData.BillingSource == BillingSourceTrial {
+		_, err := model.FinalizeTrialCredit(task.PrivateData.TrialRequestId, task.Quota+delta, task.Quota+delta == 0)
+		return err
+	}
 	if taskIsSubscription(task) {
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}
@@ -147,6 +153,8 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
 func taskBillingOther(task *model.Task) *model.LogOther {
 	other := model.NewLogOther()
+	other.SetPublic("billing_source", task.PrivateData.BillingSource)
+	AppendTrialBillingInfo(other, task.PrivateData.TrialRequestId)
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		other.SetPublic("model_price", bc.ModelPrice)
 		if bc.ModelRatio > 0 {
@@ -260,12 +268,21 @@ func taskModelName(task *model.Task) string {
 // 返回资金来源是否已成功退还；失败时保留 quota，供显式重试或人工对账。
 func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool {
 	quota := task.Quota
-	if quota == 0 {
+	if quota == 0 && task.PrivateData.BillingSource != BillingSourceTrial {
 		return true
 	}
 
 	// 1. 退还资金来源（钱包或订阅）
-	if err := taskAdjustFunding(task, -quota); err != nil {
+	if task.PrivateData.BillingSource == BillingSourceTrial {
+		r, err := model.FinalizeTrialCredit(task.PrivateData.TrialRequestId, 0, true)
+		if err != nil {
+			logger.LogError(ctx, err.Error())
+			return false
+		}
+		if !r.Applied {
+			return true
+		}
+	} else if err := taskAdjustFunding(task, -quota); err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
 		return false
 	}
@@ -314,6 +331,11 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	quotaDelta := actualQuota - preConsumedQuota
 
 	if quotaDelta == 0 {
+		if task.PrivateData.BillingSource == BillingSourceTrial {
+			if _, err := model.FinalizeTrialCredit(task.PrivateData.TrialRequestId, actualQuota, false); err != nil {
+				logger.LogError(ctx, err.Error())
+			}
+		}
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 预扣费准确（%s，%s）",
 			task.TaskID, logger.LogQuota(actualQuota), reason))
 		return
@@ -328,7 +350,16 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	))
 
 	// 调整资金来源
-	if err := taskAdjustFunding(task, quotaDelta); err != nil {
+	if task.PrivateData.BillingSource == BillingSourceTrial {
+		r, err := model.FinalizeTrialCredit(task.PrivateData.TrialRequestId, actualQuota, false)
+		if err != nil {
+			logger.LogError(ctx, err.Error())
+			return
+		}
+		if !r.Applied {
+			return
+		}
+	} else if err := taskAdjustFunding(task, quotaDelta); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
 		return
 	}

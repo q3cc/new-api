@@ -6897,5 +6897,13 @@
     "This site runs a modified edition maintained by q3cc and based on New API. It is not an official upstream release.": "This site runs a modified edition maintained by q3cc and based on New API. It is not an official upstream release.",
     "Unnamed group": "Unnamed group",
     "Upstream project": "Upstream project"
-  }
+  },
+  "Trial credit": "Trial credit",
+  "Trial group": "Trial group",
+  "AFF rewards as trial credit": "AFF rewards as trial credit",
+  "Validity (days, 0 = never expires)": "Validity (days, 0 = never expires)",
+  "Grant trial credit": "Grant trial credit",
+  "Invalid expiration time": "Invalid expiration time",
+  "Never expires": "Never expires",
+  "Waived": "Waived"
 }

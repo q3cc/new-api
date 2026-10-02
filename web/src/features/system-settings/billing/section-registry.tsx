@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { TrialCreditSettings } from '@/features/trial-credit/settings'
 import { parseCurrencyDisplayType } from '@/lib/currency'
 
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
@@ -55,6 +56,15 @@ const getGroupDefaults = (settings: BillingSettings) => ({
 })
 
 const BILLING_SECTIONS = [
+  {
+    id: 'trial-credit',
+    titleKey: 'Trial credit',
+    build: (settings: BillingSettings) => (
+      <TrialCreditSettings
+        groups={Object.keys(JSON.parse(settings.GroupRatio || '{}'))}
+      />
+    ),
+  },
   {
     id: 'quota',
     titleKey: 'Quota Settings',

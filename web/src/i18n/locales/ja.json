@@ -6897,5 +6897,13 @@
     "This site runs a modified edition maintained by q3cc and based on New API. It is not an official upstream release.": "このサイトは、New API を基に q3cc が二次開発・保守しているバージョンを使用しており、上流プロジェクトの公式リリースではありません。",
     "Unnamed group": "名前のないグループ",
     "Upstream project": "上流プロジェクト"
-  }
+  },
+  "Trial credit": "お試しクレジット",
+  "Trial group": "お試しグループ",
+  "AFF rewards as trial credit": "AFF報酬をお試しクレジットで付与",
+  "Validity (days, 0 = never expires)": "有効日数（0は無期限）",
+  "Grant trial credit": "お試しクレジットを付与",
+  "Invalid expiration time": "有効期限が無効です",
+  "Never expires": "無期限",
+  "Waived": "免除額"
 }

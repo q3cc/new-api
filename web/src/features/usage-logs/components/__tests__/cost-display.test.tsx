@@ -40,6 +40,17 @@ function renderCost(
 }
 
 describe('log cost display', () => {
+  test('trial funding is visible without subscription context', () => {
+    renderCost({
+      quota: 500,
+      other: { billing_source: 'trial' },
+      showBillingSource: false,
+    })
+    expect(
+      screen.getByRole('img', { name: 'Trial credit' })
+    ).toBeInTheDocument()
+  })
+
   beforeAll(() => {
     i18next.addResourceBundle('en', 'translation', {
       Subscription: 'Subscription',
@@ -115,7 +126,9 @@ describe('log cost display', () => {
 
     expect(screen.getByText('$0.025')).toBeVisible()
     expect(screen.getByRole('img', { name: 'Subscription' })).toBeVisible()
-    expect(screen.queryByRole('img', { name: 'Wallet' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('img', { name: 'Wallet' })
+    ).not.toBeInTheDocument()
   })
 
   test('keeps legacy cost visible without inventing a funding source', () => {

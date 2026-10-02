@@ -6897,5 +6897,13 @@
     "This site runs a modified edition maintained by q3cc and based on New API. It is not an official upstream release.": "Ce site utilise une version modifiée, basée sur New API et maintenue par q3cc. Il ne s’agit pas d’une version officielle du projet d’origine.",
     "Unnamed group": "Groupe sans nom",
     "Upstream project": "Projet d’origine"
-  }
+  },
+  "Trial credit": "Crédit d’essai",
+  "Trial group": "Groupe d’essai",
+  "AFF rewards as trial credit": "Récompenses AFF en crédit d’essai",
+  "Validity (days, 0 = never expires)": "Validité en jours (0 = illimitée)",
+  "Grant trial credit": "Accorder un crédit d’essai",
+  "Invalid expiration time": "Date d’expiration invalide",
+  "Never expires": "Sans expiration",
+  "Waived": "Exonéré"
 }

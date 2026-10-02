@@ -6897,5 +6897,13 @@
     "This site runs a modified edition maintained by q3cc and based on New API. It is not an official upstream release.": "Trang này sử dụng phiên bản tùy chỉnh dựa trên New API và do q3cc duy trì. Đây không phải là bản phát hành chính thức của dự án gốc.",
     "Unnamed group": "Nhóm chưa đặt tên",
     "Upstream project": "Dự án gốc"
-  }
+  },
+  "Trial credit": "Tín dụng dùng thử",
+  "Trial group": "Nhóm dùng thử",
+  "AFF rewards as trial credit": "Thưởng AFF bằng tín dụng dùng thử",
+  "Validity (days, 0 = never expires)": "Số ngày hiệu lực (0 = không hết hạn)",
+  "Grant trial credit": "Cấp tín dụng dùng thử",
+  "Invalid expiration time": "Thời gian hết hạn không hợp lệ",
+  "Never expires": "Không hết hạn",
+  "Waived": "Đã miễn"
 }

@@ -1256,3 +1256,36 @@ CREATE TABLE IF NOT EXISTS logs (
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(toDateTime(created_at))
 ORDER BY (created_at, request_id)`
+
+func TestTrialCreditAuthorizationAndOwnerIsolation(t *testing.T) {
+	admin, _ := setupAccessTokenAudit(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.TrialCreditGrant{}, &model.TrialCreditReservation{}, &model.TrialCreditAllocation{}))
+	oldMap := common.OptionMap
+	common.OptionMap = map[string]string{}
+	t.Cleanup(func() { common.OptionMap = oldMap })
+	require.NoError(t, model.UpdateTrialCreditConfig(model.TrialCreditConfig{Enabled: true, Group: "vip"}))
+	user := model.User{Username: "trial-user", AffCode: "trial-user", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, AuthVersion: 1}
+	require.NoError(t, model.DB.Create(&user).Error)
+	_, adminJWT := createAccessTokenTestSession(t, admin.Id, "trial-admin")
+	_, userJWT := createAccessTokenTestSession(t, user.Id, "trial-user")
+	r := gin.New()
+	r.POST("/api/user/:id/trial-credit", middleware.AdminAuth(), AdminGrantTrialCredit)
+	r.GET("/api/user/self/trial-credit", middleware.UserAuth(), GetTrialCreditSelf)
+	r.PUT("/api/trial-credit/config", middleware.RootAuth(), UpdateTrialCreditConfig)
+	body := `{"quota":1000,"expires_at":0,"request_id":"trial-admin-grant-001"}`
+	path := fmt.Sprintf("/api/user/%d/trial-credit", user.Id)
+	assert.Equal(t, 403, accessTokenRequest(r, http.MethodPost, path, userJWT, "", body).Code)
+	assert.Equal(t, 403, accessTokenRequest(r, http.MethodPut, "/api/trial-credit/config", adminJWT, "", `{}`).Code)
+	first := accessTokenRequest(r, http.MethodPost, path, adminJWT, "", body)
+	require.Equal(t, 200, first.Code)
+	require.Contains(t, first.Body.String(), `"success":true`)
+	duplicate := accessTokenRequest(r, http.MethodPost, path, adminJWT, "", body)
+	require.Contains(t, duplicate.Body.String(), `"success":true`)
+	balance, err := model.GetTrialCreditBalance(user.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 1000, balance)
+	// A supplied user ID cannot turn the self endpoint into another user's ledger.
+	response := accessTokenRequest(r, http.MethodGet, fmt.Sprintf("/api/user/self/trial-credit?user_id=%d", user.Id), adminJWT, "", "")
+	assert.Contains(t, response.Body.String(), `"balance":0`)
+	assert.Equal(t, 403, accessTokenRequest(r, http.MethodPost, fmt.Sprintf("/api/user/%d/trial-credit", admin.Id), adminJWT, "", body).Code)
+}

@@ -52,6 +52,9 @@ func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.
 	}
 
 	task.Quota = quota
+	if relayInfo.BillingSource == BillingSourceTrial && !relayInfo.IsPlayground {
+		task.TokenId = relayInfo.TokenId
+	}
 	task.BillingChannelId = task.ChannelId
 	if relayInfo.ChannelMeta != nil && relayInfo.ChannelId > 0 {
 		task.BillingChannelId = relayInfo.ChannelId
@@ -71,6 +74,19 @@ func SettleMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.M
 		return false, errors.New("Midjourney task must be persisted before billing")
 	}
 
+	if relayInfo.BillingSource == BillingSourceTrial {
+		if err := model.LinkTrialMidjourney(relayInfo.RequestId, task.Id); err != nil {
+			return false, err
+		}
+		DeferTrialTaskBilling(relayInfo)
+		if err := relayInfo.Billing.Settle(task.Quota); err != nil {
+			return false, err
+		}
+		if task.Status == "SUCCESS" {
+			FinalizeMidjourneyTrial(context.Background(), task)
+		}
+		return true, nil
+	}
 	result, billingErr := postConsumeQuotaWithResult(relayInfo, task.Quota, 0, true)
 	if !result.FundingApplied {
 		task.Quota = 0
@@ -99,7 +115,21 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 		return true
 	}
 
-	if err := model.IncreaseUserQuota(task.UserId, quota, false); err != nil {
+	trial, trialErr := model.GetMidjourneyTrialReservation(task.Id)
+	if trialErr != nil {
+		logger.LogError(ctx, trialErr.Error())
+		return false
+	}
+	if trial != nil {
+		r, err := model.FinalizeTrialCredit(trial.RequestId, 0, true)
+		if err != nil {
+			logger.LogError(ctx, err.Error())
+			return false
+		}
+		if !r.Applied {
+			return true
+		}
+	} else if err := model.IncreaseUserQuota(task.UserId, quota, false); err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("退还 Midjourney 用户额度失败 task %s: %s", task.MjId, err.Error()))
 		return false
 	}

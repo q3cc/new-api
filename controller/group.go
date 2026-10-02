@@ -24,7 +24,7 @@ func GetUserGroups(c *gin.Context) {
 	userGroup := ""
 	userId := c.GetInt("id")
 	userGroup, _ = model.GetUserGroup(userId, false)
-	userUsableGroups := service.GetUserUsableGroups(userGroup)
+	userUsableGroups := service.GetUserUsableGroups(userGroup, userId)
 	groupOrder := service.OrderUserUsableGroupNames(userUsableGroups)
 	for _, groupName := range groupOrder {
 		if groupName == "auto" {
