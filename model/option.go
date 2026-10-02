@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"maps"
 	"strconv"
 	"strings"
@@ -247,6 +248,17 @@ func validateOptionValue(key string, value string) error {
 }
 
 func UpdateOption(key string, value string) error {
+	if key == TrialConfigKey {
+		var cfg TrialCreditConfig
+		if err := common.UnmarshalJsonStr(value, &cfg); err != nil {
+			return err
+		}
+		return UpdateTrialCreditConfig(cfg)
+	}
+	if key == "GroupRatio" || key == "group_ratio_setting.group_ratio" {
+		return UpdateOptionsBulk(map[string]string{key: value})
+	}
+
 	if IsRequestPolicyOption(key) {
 		return UpdateRequestPolicyOptions(map[string]string{key: value})
 	}
@@ -291,6 +303,12 @@ func UpdateOptionsBulk(values map[string]string) error {
 		}
 	}
 	for key, value := range values {
+		if key == TrialConfigKey {
+			return errors.New("use trial configuration endpoint")
+		}
+		if err := ValidateTrialGroupOption(key, value); err != nil {
+			return err
+		}
 		if err := validateOptionValue(key, value); err != nil {
 			return err
 		}
@@ -316,6 +334,28 @@ func UpdateOptionsBulk(values map[string]string) error {
 	}
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		for key, value := range values {
+			if key != "GroupRatio" && key != "group_ratio_setting.group_ratio" {
+				continue
+			}
+			option, err := trialPolicyLock(tx)
+			if err != nil {
+				return err
+			}
+			var cfg TrialCreditConfig
+			if err = common.UnmarshalJsonStr(option.Value, &cfg); err != nil {
+				return err
+			}
+			var groups map[string]float64
+			if err = common.UnmarshalJsonStr(value, &groups); err != nil {
+				return err
+			}
+			if cfg.Group != "" {
+				if _, ok := groups[cfg.Group]; !ok {
+					return errors.New("不能删除体验分组")
+				}
+			}
+		}
 		for k, v := range values {
 			option := Option{Key: k}
 			if err := tx.FirstOrCreate(&option, Option{Key: k}).Error; err != nil {

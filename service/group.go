@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func GetUserUsableGroups(userGroup string) map[string]string {
+func GetUserUsableGroups(userGroup string, userIds ...int) map[string]string {
 	groupsCopy := setting.GetUserUsableGroupsCopy()
 	if userGroup != "" {
 		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
@@ -37,6 +37,18 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 			groupsCopy[userGroup] = "用户分组"
 		}
 	}
+	cfg, err := model.ReadTrialCreditConfig()
+	if err != nil {
+		return map[string]string{}
+	}
+	if cfg.Group != "" {
+		delete(groupsCopy, cfg.Group)
+	}
+	if cfg.Enabled && len(userIds) > 0 {
+		if balance, err := model.GetTrialCreditBalance(userIds[0]); err == nil && balance > 0 {
+			groupsCopy[cfg.Group] = cfg.Group
+		}
+	}
 	return groupsCopy
 }
 
@@ -56,8 +68,8 @@ func OrderUserUsableGroupNames(groups map[string]string) []string {
 	return ordered
 }
 
-func GroupInUserUsableGroups(userGroup, groupName string) bool {
-	_, ok := GetUserUsableGroups(userGroup)[groupName]
+func GroupInUserUsableGroups(userGroup, groupName string, userIds ...int) bool {
+	_, ok := GetUserUsableGroups(userGroup, userIds...)[groupName]
 	return ok
 }
 

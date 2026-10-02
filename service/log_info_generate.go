@@ -187,6 +187,9 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other *model.LogOther) 
 	if relayInfo == nil || other == nil {
 		return
 	}
+	if relayInfo.BillingSource == BillingSourceTrial {
+		AppendTrialBillingInfo(other, relayInfo.RequestId)
+	}
 	// billing_source: "wallet" or "subscription"
 	if relayInfo.BillingSource != "" {
 		other.SetPublic("billing_source", relayInfo.BillingSource)

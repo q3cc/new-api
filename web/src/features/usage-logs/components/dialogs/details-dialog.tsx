@@ -1251,6 +1251,25 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
+        {other?.billing_source === 'trial' && (
+          <DetailSection label={t('Trial credit')}>
+            <DetailRow
+              label={t('Trial credit')}
+              value={formatLogQuota(other.trial_quota_deducted ?? 0)}
+              mono
+            />
+            <DetailRow
+              label={t('Wallet')}
+              value={formatLogQuota(other.wallet_quota_deducted ?? 0)}
+              mono
+            />
+            <DetailRow
+              label={t('Waived')}
+              value={formatLogQuota(other.trial_quota_waived ?? 0)}
+              mono
+            />
+          </DetailSection>
+        )}
         {/* Subscription billing details */}
         {isSubscription && other && (
           <DetailSection label={t('Subscription Billing')}>

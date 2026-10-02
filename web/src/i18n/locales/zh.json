@@ -6897,5 +6897,13 @@
     "This site runs a modified edition maintained by q3cc and based on New API. It is not an official upstream release.": "本站运行的是由 q3cc 基于 New API 二次开发并维护的版本，并非上游项目的官方发行版。",
     "Unnamed group": "未命名分组",
     "Upstream project": "上游项目"
-  }
+  },
+  "Trial credit": "体验金",
+  "Trial group": "体验分组",
+  "AFF rewards as trial credit": "AFF 奖励发放体验金",
+  "Validity (days, 0 = never expires)": "有效天数（0 为永久）",
+  "Grant trial credit": "发放体验金",
+  "Invalid expiration time": "到期时间无效",
+  "Never expires": "永久有效",
+  "Waived": "已免除"
 }

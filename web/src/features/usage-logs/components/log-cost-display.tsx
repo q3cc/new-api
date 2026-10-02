@@ -91,7 +91,9 @@ export function LogCostDisplay(props: LogCostDisplayProps) {
   // subscription may have expired since, and the viewer may hold no active
   // plan today. Only the wallet marker is contextual and follows
   // showBillingSource.
-  if (isSubscription) {
+  if (props.other?.billing_source === 'trial') {
+    source = t('Trial credit')
+  } else if (isSubscription) {
     source = t('Subscription')
   } else if (
     props.showBillingSource &&

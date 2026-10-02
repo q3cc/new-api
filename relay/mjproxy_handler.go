@@ -210,7 +210,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 		}
 	}
 
-	userQuota, err := model.GetUserQuota(info.UserId, false)
+	userQuota, err := service.RequestAvailableQuota(info)
 	if err != nil {
 		return &dto.MidjourneyResponse{
 			Code:        4,
@@ -227,6 +227,15 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 	requestURL := getMjRequestPath(c.Request.URL.String())
 	baseURL := c.GetString("base_url")
 	fullRequestURL := fmt.Sprintf("%s%s", baseURL, requestURL)
+	if err := service.PreConsumeTrialIfNeeded(c, info, priceData.Quota); err != nil {
+		return &dto.MidjourneyResponse{Code: 4, Description: err.Error()}
+	}
+	trialDurable := false
+	defer func() {
+		if !trialDurable && info.BillingSource == service.BillingSourceTrial && info.Billing != nil {
+			info.Billing.Refund(c)
+		}
+	}()
 	service.RequestPolicy(c).BeginAttempt(&model.Channel{Id: c.GetInt("channel_id")}, info.UsingGroup)
 	mjResp, _, err := service.DoMidjourneyHttpRequest(c, time.Second*60, fullRequestURL)
 	accepted := service.RecordMidjourneyPolicyResponse(c, mjResp, err)
@@ -265,6 +274,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 	if err != nil {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "insert_midjourney_task_failed")
 	}
+	trialDurable = billingPrepared
 	billingApplied, billingErr := service.SettleMidjourneyTaskBilling(info, midjourneyTask, billingPrepared)
 	if billingErr != nil {
 		common.SysLog("error settling Midjourney quota: " + billingErr.Error())
@@ -529,7 +539,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 		}
 	}
 
-	userQuota, err := model.GetUserQuota(relayInfo.UserId, false)
+	userQuota, err := service.RequestAvailableQuota(relayInfo)
 	if err != nil {
 		return &dto.MidjourneyResponse{
 			Code:        4,
@@ -544,6 +554,15 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 		}
 	}
 
+	if err := service.PreConsumeTrialIfNeeded(c, relayInfo, priceData.Quota); err != nil {
+		return &dto.MidjourneyResponse{Code: 4, Description: err.Error()}
+	}
+	trialDurable := false
+	defer func() {
+		if !trialDurable && relayInfo.BillingSource == service.BillingSourceTrial && relayInfo.Billing != nil {
+			relayInfo.Billing.Refund(c)
+		}
+	}()
 	service.RequestPolicy(c).BeginAttempt(&model.Channel{Id: c.GetInt("channel_id")}, relayInfo.UsingGroup)
 	midjResponseWithStatus, responseBody, err := service.DoMidjourneyHttpRequest(c, time.Second*60, fullRequestURL)
 	accepted := service.RecordMidjourneyPolicyResponse(c, midjResponseWithStatus, err)
@@ -639,6 +658,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 			Description: "insert_midjourney_task_failed",
 		}
 	}
+	trialDurable = billingPrepared
 	billingApplied, billingErr := service.SettleMidjourneyTaskBilling(relayInfo, midjourneyTask, billingPrepared)
 	if billingErr != nil {
 		common.SysLog("error settling Midjourney quota: " + billingErr.Error())

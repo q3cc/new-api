@@ -48,6 +48,7 @@ import {
 } from '@/components/ui/tooltip'
 import type { AdminUserManageAction } from '@/features/auth/secure-verification'
 import { UserSubscriptionsDialog } from '@/features/subscriptions/components/dialogs/user-subscriptions-dialog'
+import { TrialGrantDialog } from '@/features/trial-credit/grant-dialog'
 import { handleServerError } from '@/lib/handle-server-error'
 import { AuthOperationError } from '@/lib/secure-verification'
 
@@ -84,6 +85,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     requestVerification,
     verificationActive,
   } = useUsers()
+  const [trialOpen, setTrialOpen] = useState(false)
   const [resetPasskeyOpen, setResetPasskeyOpen] = useState(false)
   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
@@ -275,6 +277,9 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           </DropdownMenuShortcut>
         </DropdownMenuItem>
 
+        <DropdownMenuItem onSelect={() => setTrialOpen(true)}>
+          {t('Grant trial credit')}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
 
         <DropdownMenuItem
@@ -348,6 +353,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         onUnbindSuccess={triggerRefresh}
       />
 
+      <TrialGrantDialog
+        userId={user.id}
+        open={trialOpen}
+        onOpenChange={setTrialOpen}
+      />
       <UserSubscriptionsDialog
         open={subscriptionsDialogOpen}
         onOpenChange={setSubscriptionsDialogOpen}

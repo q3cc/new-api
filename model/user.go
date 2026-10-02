@@ -725,7 +725,11 @@ func (user *User) finishInsert(inviterId int) {
 		if common.QuotaForInviter > 0 {
 			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
 			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
+			if handled, err := AwardTrialAffiliate(inviterId, user.Id); err != nil {
+				common.SysError(err.Error())
+			} else if !handled {
+				_ = inviteUser(inviterId)
+			}
 		}
 	}
 }
@@ -781,7 +785,11 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 		}
 		if common.QuotaForInviter > 0 {
 			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
+			if handled, err := AwardTrialAffiliate(inviterId, user.Id); err != nil {
+				common.SysError(err.Error())
+			} else if !handled {
+				_ = inviteUser(inviterId)
+			}
 		}
 	}
 }

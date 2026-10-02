@@ -622,7 +622,7 @@ func GetUserModels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	groups := service.GetUserUsableGroups(user.Group)
+	groups := service.GetUserUsableGroups(user.Group, user.Id)
 	group := c.Query("group")
 	var groupsToQuery []string
 	switch {

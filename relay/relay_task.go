@@ -21,6 +21,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	relaytypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -330,6 +331,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		noteTaskQuotaClamp(info, clamp)
 	}
 
+	if info.Billing == nil && info.PriceData.FreeModel {
+		if err := service.PreConsumeTrialIfNeeded(c, info, 0); err != nil {
+			return nil, service.TaskErrorWrapperLocal(err, string(relaytypes.ErrorCodeInsufficientUserQuota), http.StatusForbidden)
+		}
+	}
 	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
 	if info.Billing == nil && !info.PriceData.FreeModel {
 		info.ForcePreConsume = true

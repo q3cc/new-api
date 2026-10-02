@@ -239,6 +239,9 @@ export interface LogOtherData {
   is_system_prompt_overwritten?: boolean
   po?: string[]
   billing_source?: string
+  trial_quota_deducted?: number
+  wallet_quota_deducted?: number
+  trial_quota_waived?: number
   group?: string
   stream_status?: {
     status?: string

@@ -1801,3 +1801,103 @@ func TestSettle_TokenRecalcFallsBackToCompletionTokens(t *testing.T) {
 		})
 	}
 }
+
+func TestTrialBillingSessionIsolationAndTaskSettlement(t *testing.T) {
+	truncate(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Option{}, &model.TrialCreditGrant{}, &model.TrialCreditAllocation{}, &model.TrialCreditReservation{}))
+	oldMap := common.OptionMap
+	common.OptionMap = map[string]string{}
+	raw := `{"enabled":true,"group":"vip","affiliate":true,"affiliate_days":7}`
+	require.NoError(t, model.UpdateOption(model.TrialConfigKey, raw))
+	t.Cleanup(func() { common.OptionMap = oldMap })
+	user := model.User{Username: "trial-session", Quota: 0, AffCode: "trial-session", Group: "default"}
+	require.NoError(t, model.DB.Create(&user).Error)
+	require.NoError(t, model.GrantTrialCredit(user.Id, 1000, 0, "trial-session-grant", "admin", 1))
+	assert.Contains(t, GetUserUsableGroups("default", user.Id), "vip")
+	assert.NotContains(t, GetUserAutoGroup("default"), "vip")
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := &relaycommon.RelayInfo{UserId: user.Id, UsingGroup: "vip", RequestId: "trial-session-request", IsPlayground: true, TokenUnlimited: true}
+	session, apiErr := NewBillingSession(ctx, info, 100)
+	require.Nil(t, apiErr)
+	require.NotNil(t, session)
+	assert.Equal(t, BillingSourceTrial, info.BillingSource)
+	assert.Equal(t, 100, session.GetPreConsumedQuota())
+	assert.False(t, session.trusted)
+	require.NoError(t, session.Reserve(200))
+	require.NoError(t, session.Settle(150))
+	require.NoError(t, session.Settle(150))
+	balance, err := model.GetTrialCreditBalance(user.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 850, balance)
+	wallet, err := model.GetUserQuota(user.Id, true)
+	require.NoError(t, err)
+	assert.Zero(t, wallet)
+	_, apiErr = NewBillingSession(ctx, &relaycommon.RelayInfo{UserId: user.Id, UsingGroup: "default", RequestId: "ordinary", IsPlayground: true}, 100)
+	require.NotNil(t, apiErr)
+	taskInfo := &relaycommon.RelayInfo{UserId: user.Id, UsingGroup: "vip", RequestId: "trial-task-request", IsPlayground: true, TokenUnlimited: true}
+	taskSession, apiErr := NewBillingSession(ctx, taskInfo, 100)
+	require.Nil(t, apiErr)
+	taskInfo.Billing = taskSession
+	require.NoError(t, PreConsumeTrialIfNeeded(ctx, taskInfo, 0))
+	assert.Same(t, taskSession, taskInfo.Billing)
+	DeferTrialTaskBilling(taskInfo)
+	require.NoError(t, taskSession.Settle(100))
+	task := &model.Task{UserId: user.Id, Quota: 100, TaskID: "trial-async", Status: model.TaskStatusSuccess, PrivateData: model.TaskPrivateData{BillingSource: BillingSourceTrial, TrialRequestId: taskInfo.RequestId}}
+	require.NoError(t, model.DB.Create(task).Error)
+	RecalculateTaskQuota(ctx, task, 50, "trial completed")
+	RecalculateTaskQuota(ctx, task, 50, "duplicate completed")
+	balance, err = model.GetTrialCreditBalance(user.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 800, balance)
+	t.Run("legacy task refund preserves wallet", func(t *testing.T) {
+		legacyInfo := &relaycommon.RelayInfo{UserId: user.Id, UsingGroup: "vip", RequestId: "trial-legacy", IsPlayground: true}
+		require.NoError(t, PreConsumeTrialIfNeeded(ctx, legacyInfo, 100))
+		mj := &model.Midjourney{UserId: user.Id, MjId: "trial-legacy", ChannelId: 1}
+		prepared, err := PrepareMidjourneyTaskBilling(legacyInfo, mj, 100, true)
+		require.NoError(t, err)
+		require.True(t, prepared)
+		require.NoError(t, model.DB.Create(mj).Error)
+		applied, err := SettleMidjourneyTaskBilling(legacyInfo, mj, prepared)
+		require.NoError(t, err)
+		require.True(t, applied)
+		require.True(t, RefundMidjourneyQuota(ctx, mj, "failed"))
+		require.True(t, RefundMidjourneyQuota(ctx, mj, "duplicate"))
+		balance, err := model.GetTrialCreditBalance(user.Id)
+		require.NoError(t, err)
+		assert.Equal(t, 800, balance)
+		quota, err := model.GetUserQuota(user.Id, true)
+		require.NoError(t, err)
+		assert.Zero(t, quota)
+	})
+	t.Run("persisted async task settles after expiry", func(t *testing.T) {
+		u := model.User{Username: "trial-expired-task", AffCode: "trial-expired-task"}
+		require.NoError(t, model.DB.Create(&u).Error)
+		require.NoError(t, model.GrantTrialCredit(u.Id, 100, time.Now().Unix()+100, "async-expiring", "admin", 1))
+		require.NoError(t, model.ReserveTrialCredit("async-expiring-request", u.Id, "vip", 100))
+		pending := &model.Task{UserId: u.Id, Quota: 100, TaskID: "async-expiring-task", Status: model.TaskStatusSuccess, PrivateData: model.TaskPrivateData{BillingSource: BillingSourceTrial, TrialRequestId: "async-expiring-request"}}
+		require.NoError(t, model.DB.Create(pending).Error)
+		require.NoError(t, model.DB.Model(&model.TrialCreditGrant{}).Where("user_id = ?", u.Id).Update("expires_at", time.Now().Unix()-1).Error)
+		var restored model.Task
+		require.NoError(t, model.DB.First(&restored, pending.ID).Error)
+		RecalculateTaskQuota(ctx, &restored, 80, "completed after expiry")
+		RecalculateTaskQuota(ctx, &restored, 80, "duplicate completion")
+		var record model.TrialCreditReservation
+		require.NoError(t, model.DB.Where("request_id = ?", "async-expiring-request").First(&record).Error)
+		assert.Equal(t, "settled", record.Status)
+		assert.Equal(t, 80, record.TrialCharged)
+		assert.Zero(t, record.WalletCharged)
+		balance, err := model.GetTrialCreditBalance(u.Id)
+		require.NoError(t, err)
+		assert.Zero(t, balance)
+		require.ErrorIs(t, model.ReserveTrialCredit("expired-new", u.Id, "vip", 0), model.ErrTrialInsufficient)
+	})
+	t.Run("zero-cost reservation closes", func(t *testing.T) {
+		zeroInfo := &relaycommon.RelayInfo{UserId: user.Id, UsingGroup: "vip", RequestId: "trial-zero", IsPlayground: true}
+		zero, apiErr := NewBillingSession(ctx, zeroInfo, 0)
+		require.Nil(t, apiErr)
+		require.True(t, zero.NeedsRefund())
+		require.NoError(t, zero.Settle(0))
+		assert.False(t, zero.NeedsRefund())
+	})
+
+}

@@ -48,8 +48,11 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	if s.settled {
 		return nil
 	}
+	if f, ok := s.funding.(*TrialFunding); ok && f.group != s.relayInfo.UsingGroup {
+		return errors.New("体验分组不能跨组请求")
+	}
 	delta := actualQuota - s.preConsumedQuota
-	if delta == 0 {
+	if delta == 0 && s.funding.Source() != BillingSourceTrial {
 		s.settled = true
 		return nil
 	}
@@ -137,6 +140,9 @@ func (s *BillingSession) needsRefundLocked() bool {
 	if s.settled || s.refunded || s.fundingSettled {
 		// fundingSettled 时资金来源已提交结算，不能再退预扣费
 		return false
+	}
+	if s.funding.Source() == BillingSourceTrial {
+		return true
 	}
 	if s.tokenConsumed > 0 {
 		return true
@@ -226,6 +232,9 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 			s.tokenConsumed = 0
 		}
 		// TODO: model 层应定义哨兵错误（如 ErrNoActiveSubscription），用 errors.Is 替代字符串匹配
+		if errors.Is(err, model.ErrTrialInsufficient) {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		}
 		if errors.Is(err, ErrInsufficientWalletQuota) {
 			userQuota, quotaErr := model.GetUserQuota(s.relayInfo.UserId, false)
 			if quotaErr != nil {
@@ -253,6 +262,12 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 
 func (s *BillingSession) reserveFunding(delta int, requireAvailableQuota bool) error {
 	switch funding := s.funding.(type) {
+	case *TrialFunding:
+		if err := funding.PreConsume(funding.consumed + delta); err != nil {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		}
+		return nil
+
 	case *WalletFunding:
 		if requireAvailableQuota {
 			// Image quantity is known before submission, including retries and
@@ -292,6 +307,13 @@ func (s *BillingSession) reserveFunding(delta int, requireAvailableQuota bool) e
 
 func (s *BillingSession) rollbackFundingReserve(delta int) {
 	switch funding := s.funding.(type) {
+	case *TrialFunding:
+		if err := model.ReleaseTrialCreditReserve(funding.requestId, funding.consumed-delta); err != nil {
+			common.SysError(err.Error())
+		} else {
+			funding.consumed -= delta
+		}
+
 	case *WalletFunding:
 		if err := model.IncreaseUserQuota(funding.userId, delta, false); err != nil {
 			common.SysLog("error rolling back wallet funding reserve: " + err.Error())
@@ -381,6 +403,20 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		return nil, types.NewError(fmt.Errorf("relayInfo is nil"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 
+	cfg, cfgErr := model.ReadTrialCreditConfig()
+	if cfgErr != nil {
+		return nil, types.NewError(cfgErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+	}
+	if cfg.Group != "" && relayInfo.UsingGroup == cfg.Group {
+		if !cfg.Enabled {
+			return nil, types.NewErrorWithStatusCode(model.ErrTrialInsufficient, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		}
+		session := &BillingSession{relayInfo: relayInfo, funding: &TrialFunding{requestId: relayInfo.RequestId, userId: relayInfo.UserId, group: relayInfo.UsingGroup}}
+		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
+			return nil, apiErr
+		}
+		return session, nil
+	}
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)
 
 	// 钱包路径需要先检查用户额度

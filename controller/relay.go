@@ -597,7 +597,7 @@ func executeTaskSubmissionWith(
 	// Reserve any submit-time upward billing adjustment before persistence.
 	// This keeps insertion failures fully refundable while ensuring settlement
 	// after the barrier normally has a zero positive delta.
-	if relayInfo.Billing != nil {
+	if relayInfo.Billing != nil && !(relayInfo.BillingSource == service.BillingSourceTrial && result.Immediate != nil) {
 		stage = "reserve"
 		diagnostics.reserve("reserve_start", result.Quota)
 		if reserveErr := relayInfo.Billing.Reserve(result.Quota); reserveErr != nil {
@@ -618,6 +618,9 @@ func executeTaskSubmissionWith(
 	task.PrivateData.Execution = service.TaskExecutionSnapshotFromContext(c)
 	task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 	task.PrivateData.BillingSource = relayInfo.BillingSource
+	if relayInfo.BillingSource == service.BillingSourceTrial {
+		task.PrivateData.TrialRequestId = relayInfo.RequestId
+	}
 	task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 	task.PrivateData.TokenId = relayInfo.TokenId
 	task.PrivateData.NodeName = common.NodeName
@@ -690,6 +693,9 @@ func executeTaskSubmissionWith(
 	diagnostics.durable(task)
 	diagnostics.settleStart(task, result.Quota)
 
+	if relayInfo.BillingSource == service.BillingSourceTrial && !immediateTerminal {
+		service.DeferTrialTaskBilling(relayInfo)
+	}
 	if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
 		common.SysError("settle task billing error: " + settleErr.Error())
 		taskErr = service.TaskErrorWrapperLocal(errors.New("failed to settle task billing"), "task_billing_settlement_failed", http.StatusInternalServerError)

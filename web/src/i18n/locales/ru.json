@@ -6897,5 +6897,13 @@
     "This site runs a modified edition maintained by q3cc and based on New API. It is not an official upstream release.": "На этом сайте используется модифицированная версия на базе New API, которую поддерживает q3cc. Это не официальный выпуск исходного проекта.",
     "Unnamed group": "Группа без названия",
     "Upstream project": "Исходный проект"
-  }
+  },
+  "Trial credit": "Пробный баланс",
+  "Trial group": "Пробная группа",
+  "AFF rewards as trial credit": "Награды AFF пробным балансом",
+  "Validity (days, 0 = never expires)": "Срок в днях (0 = бессрочно)",
+  "Grant trial credit": "Выдать пробный баланс",
+  "Invalid expiration time": "Неверный срок действия",
+  "Never expires": "Бессрочно",
+  "Waived": "Списано"
 }

@@ -212,6 +212,8 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 			won, err := task.UpdateWithStatus(preStatus)
 			if err != nil {
 				logger.LogError(ctx, "UpdateMidjourneyTask task error: "+err.Error())
+			} else if won && task.Status == "SUCCESS" {
+				service.FinalizeMidjourneyTrial(ctx, task)
 			} else if won && shouldReturnQuota {
 				service.RefundMidjourneyQuota(ctx, task, "构图失败")
 			}
