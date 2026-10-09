@@ -36,6 +36,15 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+import type { EpayEndpoint } from './epay-api'
 
 const createPaymentMethodDialogSchema = (t: (key: string) => string) =>
   z.object({
@@ -43,6 +52,7 @@ const createPaymentMethodDialogSchema = (t: (key: string) => string) =>
     type: z.string().min(1, t('Payment type key is required')),
     icon: z.string().optional(),
     min_topup: z.string().optional(),
+    epay_endpoint_id: z.string().optional(),
   })
 
 type PaymentMethodDialogFormValues = z.infer<
@@ -57,6 +67,7 @@ export type PaymentMethodData = {
   icon?: string
   min_topup?: string
   color?: string
+  epay_endpoint_id?: string
 }
 
 type PaymentMethodDialogProps = {
@@ -64,6 +75,7 @@ type PaymentMethodDialogProps = {
   onOpenChange: (open: boolean) => void
   onSave: (data: PaymentMethodData) => void
   editData?: PaymentMethodData | null
+  endpoints?: EpayEndpoint[]
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
@@ -80,6 +92,7 @@ export function PaymentMethodDialog({
   onOpenChange,
   onSave,
   editData,
+  endpoints = [],
 }: PaymentMethodDialogProps) {
   const { t } = useTranslation()
   const isEditMode = !!editData
@@ -124,6 +137,7 @@ export function PaymentMethodDialog({
   })
 
   const iconValue = form.watch('icon')
+  const methodType = form.watch('type')
 
   useEffect(() => {
     if (editData) {
@@ -132,6 +146,7 @@ export function PaymentMethodDialog({
         type: editData.type,
         icon: editData.icon ?? getDefaultIconName(editData.type),
         min_topup: editData.min_topup ?? '',
+        epay_endpoint_id: editData.epay_endpoint_id ?? '',
       })
     } else {
       form.reset({
@@ -139,12 +154,30 @@ export function PaymentMethodDialog({
         type: '',
         icon: '',
         min_topup: '',
+        epay_endpoint_id: '',
       })
     }
   }, [editData, form, open])
 
   const handleSubmit = (values: PaymentMethodDialogFormValues) => {
+    const isEpay = ![
+      'stripe',
+      'creem',
+      'waffo',
+      'waffo_pancake',
+      'balance',
+    ].includes(values.type)
+    if (
+      isEpay &&
+      !endpoints.some((endpoint) => endpoint.id === values.epay_endpoint_id)
+    ) {
+      form.setError('epay_endpoint_id', {
+        message: t('Choose a payment service'),
+      })
+      return
+    }
     const data: PaymentMethodData = {
+      ...editData,
       name: values.name,
       type: values.type,
     }
@@ -154,6 +187,8 @@ export function PaymentMethodDialog({
     if (values.min_topup && values.min_topup.trim() !== '') {
       data.min_topup = values.min_topup
     }
+    if (isEpay) data.epay_endpoint_id = values.epay_endpoint_id
+    else delete data.epay_endpoint_id
     onSave(data)
     form.reset()
     onOpenChange(false)
@@ -186,7 +221,10 @@ export function PaymentMethodDialog({
       <Form {...form}>
         <form
           id={PAYMENT_METHOD_FORM_ID}
-          onSubmit={form.handleSubmit(handleSubmit)}
+          onSubmit={(event) => {
+            event.stopPropagation()
+            void form.handleSubmit(handleSubmit)(event)
+          }}
           className='space-y-4'
         >
           <FormField
@@ -257,6 +295,43 @@ export function PaymentMethodDialog({
             )}
           />
 
+          {!['stripe', 'creem', 'waffo', 'waffo_pancake', 'balance'].includes(
+            methodType
+          ) && (
+            <FormField
+              control={form.control}
+              name='epay_endpoint_id'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Payment service')}</FormLabel>
+                  <Select
+                    items={endpoints.map((endpoint) => ({
+                      value: endpoint.id,
+                      label: endpoint.name,
+                    }))}
+                    value={field.value || null}
+                    onValueChange={(value) => field.onChange(value ?? '')}
+                  >
+                    <FormControl>
+                      <SelectTrigger className='w-full'>
+                        <SelectValue
+                          placeholder={t('Choose a payment service')}
+                        />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {endpoints.map((endpoint) => (
+                        <SelectItem key={endpoint.id} value={endpoint.id}>
+                          {endpoint.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
           <FormField
             control={form.control}
             name='icon'

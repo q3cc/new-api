@@ -56,6 +56,12 @@ var accessTokenExemptRoutes = []string{
 	"POST /api/user/auth/logout",
 
 	// Payment callbacks.
+	"GET /api/user/epay/:endpoint_id/notify",
+	"POST /api/user/epay/:endpoint_id/notify",
+	"GET /api/subscription/epay/:endpoint_id/notify",
+	"POST /api/subscription/epay/:endpoint_id/notify",
+	"GET /api/subscription/epay/:endpoint_id/return",
+	"POST /api/subscription/epay/:endpoint_id/return",
 	"POST /api/stripe/webhook",
 	"POST /api/creem/webhook",
 	"POST /api/waffo/webhook",

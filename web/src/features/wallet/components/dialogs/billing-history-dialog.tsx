@@ -16,22 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Search, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { CopyButton } from '@/components/copy-button'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -44,7 +36,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatCurrencyFromUSD } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
 
@@ -54,6 +45,7 @@ import {
   getPaymentMethodName,
   formatTimestamp,
 } from '../../lib/billing'
+import type { TopupRecord } from '../../types'
 
 interface BillingHistoryDialogProps {
   open: boolean
@@ -80,16 +72,15 @@ export function BillingHistoryDialog({
     handleCompleteOrder,
   } = useBillingHistory()
 
-  const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
-  const { copyToClipboard, copiedText } = useCopyToClipboard({ notify: false })
+  const [confirmOrder, setConfirmOrder] = useState<TopupRecord | null>(null)
 
   const totalPages = Math.ceil(total / pageSize)
 
   const handleConfirmComplete = async () => {
-    if (confirmTradeNo) {
-      const success = await handleCompleteOrder(confirmTradeNo)
+    if (confirmOrder) {
+      const success = await handleCompleteOrder(confirmOrder.trade_no)
       if (success) {
-        setConfirmTradeNo(null)
+        setConfirmOrder(null)
       }
     }
   }
@@ -113,7 +104,11 @@ export function BillingHistoryDialog({
             <div className='relative flex-1'>
               <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
               <Input
-                placeholder={t('Search by order number...')}
+                placeholder={
+                  isAdmin
+                    ? t('Search by order number, user ID, nickname or email...')
+                    : t('Search by order number...')
+                }
                 value={keyword}
                 onChange={(e) => handleSearch(e.target.value)}
                 className='h-9 pl-10'
@@ -190,7 +185,7 @@ export function BillingHistoryDialog({
                   const statusConfig = getStatusConfig(record.status)
                   return (
                     <div
-                      key={record.id}
+                      key={`${record.order_type ?? 'topup'}:${record.trade_no}`}
                       className='rounded-lg border p-3 sm:p-4'
                     >
                       {/* Header Row */}
@@ -200,18 +195,12 @@ export function BillingHistoryDialog({
                             <code className='text-foreground truncate font-mono text-sm'>
                               {record.trade_no}
                             </code>
-                            <Button
-                              variant='ghost'
+                            <CopyButton
+                              value={record.trade_no}
                               size='sm'
                               className='h-5 w-5 p-0'
-                              onClick={() => copyToClipboard(record.trade_no)}
-                            >
-                              {copiedText === record.trade_no ? (
-                                <Check className='h-3 w-3' />
-                              ) : (
-                                <Copy className='h-3 w-3' />
-                              )}
-                            </Button>
+                              iconClassName='h-3 w-3'
+                            />
                             {isAdmin && record.user_id != null && (
                               <StatusBadge
                                 label={`${t('User ID')}: ${record.user_id}`}
@@ -245,14 +234,18 @@ export function BillingHistoryDialog({
                         </div>
                         <div className='space-y-1'>
                           <Label className='text-muted-foreground text-xs'>
-                            {t('Amount')}
+                            {record.order_type === 'subscription'
+                              ? t('Subscription plan')
+                              : t('Amount')}
                           </Label>
                           <div className='text-sm font-semibold'>
-                            {formatCurrencyFromUSD(record.amount, {
-                              digitsLarge: 2,
-                              digitsSmall: 2,
-                              abbreviate: false,
-                            })}
+                            {record.order_type === 'subscription'
+                              ? record.plan_title || t('Subscription')
+                              : formatCurrencyFromUSD(record.amount, {
+                                  digitsLarge: 2,
+                                  digitsSmall: 2,
+                                  abbreviate: false,
+                                })}
                           </div>
                         </div>
                         <div className='space-y-1'>
@@ -271,7 +264,7 @@ export function BillingHistoryDialog({
                           <Button
                             size='sm'
                             variant='outline'
-                            onClick={() => setConfirmTradeNo(record.trade_no)}
+                            onClick={() => setConfirmOrder(record)}
                             disabled={completing}
                           >
                             {t('Complete Order')}
@@ -322,33 +315,25 @@ export function BillingHistoryDialog({
         </div>
       </Dialog>
 
-      {/* Confirm Complete Order Dialog */}
-      <AlertDialog
-        open={!!confirmTradeNo}
-        onOpenChange={(open) => !open && setConfirmTradeNo(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('Complete Order')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(
-                'Are you sure you want to manually complete this order? The user will be credited with the corresponding quota.'
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={completing}>
-              {t('Cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmComplete}
-              disabled={completing}
-            >
-              {completing ? t('Processing...') : t('Confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!confirmOrder}
+        onOpenChange={(open) => {
+          if (!open) setConfirmOrder(null)
+        }}
+        title={t('Complete Order')}
+        desc={
+          confirmOrder?.order_type === 'subscription'
+            ? t(
+                'Complete this order and activate the subscription plan for the user?'
+              )
+            : t(
+                'Complete this order and credit the corresponding balance to the user?'
+              )
+        }
+        confirmText={t('Confirm')}
+        isLoading={completing}
+        handleConfirm={handleConfirmComplete}
+      />
     </>
   )
 }

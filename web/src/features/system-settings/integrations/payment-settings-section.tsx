@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Code2, Eye, ShieldAlert } from 'lucide-react'
 import * as React from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
@@ -62,6 +62,8 @@ import { safeNumberFieldProps } from '../utils/numeric-field'
 import { AmountDiscountVisualEditor } from './amount-discount-visual-editor'
 import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
+import { getEpayConfig, saveEpayConfig, type EpayEndpoint } from './epay-api'
+import { EpayEndpointsEditor } from './epay-endpoints-editor'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
   formatJsonForEditor,
@@ -96,11 +98,7 @@ function isHttpOriginUrl(value: string) {
 }
 
 const paymentSchema = z.object({
-  PayAddress: z.string().refine((value) => {
-    const trimmed = value.trim()
-    if (!trimmed) return true
-    return /^https?:\/\//.test(trimmed)
-  }, 'Provide a valid callback URL starting with http:// or https://'),
+  PayAddress: z.string(),
   EpayId: z.string(),
   EpayKey: z.string(),
   Price: z.coerce.number().min(0),
@@ -417,6 +415,13 @@ export function PaymentSettingsSection({
     })
   }, [defaultsSignature, form])
 
+  const epayQuery = useQuery({
+    queryKey: ['epay-config'],
+    queryFn: getEpayConfig,
+  })
+  const [epayDraft, setEpayDraft] = React.useState<EpayEndpoint[] | null>(null)
+  const epayEndpoints = epayDraft ?? epayQuery.data?.endpoints ?? []
+
   const onSubmit = async (values: PaymentFormValues) => {
     const sanitized = {
       PayAddress: removeTrailingSlash(values.PayAddress),
@@ -509,18 +514,6 @@ export function PaymentSettingsSection({
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
 
-    if (sanitized.PayAddress !== initial.PayAddress) {
-      updates.push({ key: 'PayAddress', value: sanitized.PayAddress })
-    }
-
-    if (sanitized.EpayId !== initial.EpayId) {
-      updates.push({ key: 'EpayId', value: sanitized.EpayId })
-    }
-
-    if (sanitized.EpayKey && sanitized.EpayKey !== initial.EpayKey) {
-      updates.push({ key: 'EpayKey', value: sanitized.EpayKey })
-    }
-
     if (sanitized.Price !== initial.Price) {
       updates.push({ key: 'Price', value: sanitized.Price })
     }
@@ -536,12 +529,10 @@ export function PaymentSettingsSection({
       })
     }
 
-    if (
+    const hasEpayChanges =
+      epayDraft !== null ||
       normalizeJsonForComparison(sanitized.PayMethods) !==
-      normalizeJsonForComparison(initial.PayMethods)
-    ) {
-      updates.push({ key: 'PayMethods', value: sanitized.PayMethods })
-    }
+        normalizeJsonForComparison(initial.PayMethods)
 
     if (
       normalizeJsonForComparison(sanitized.AmountOptions) !==
@@ -709,11 +700,35 @@ export function PaymentSettingsSection({
       waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
       waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID
 
-    if (updates.length === 0 && !hasWaffoPancakeChanges) {
+    if (updates.length === 0 && !hasWaffoPancakeChanges && !hasEpayChanges) {
       toast.info(t('No changes to save'))
       return
     }
 
+    if (hasEpayChanges) {
+      if (!epayQuery.data) {
+        toast.error(t('Payment services are still loading'))
+        return
+      }
+      let saved
+      try {
+        saved = await saveEpayConfig({
+          endpoints: epayEndpoints,
+          pay_methods: JSON.parse(sanitized.PayMethods) as Record<
+            string,
+            string
+          >[],
+        })
+      } catch (error) {
+        handleServerError(error, t('Failed to save payment services'))
+        return
+      }
+      queryClient.setQueryData(['epay-config'], saved)
+      setEpayDraft(null)
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      queryClient.invalidateQueries({ queryKey: ['topup-info'] })
+      toast.success(t('Payment services saved'))
+    }
     for (const update of updates) {
       await updateOption.mutateAsync(update)
     }
@@ -982,6 +997,7 @@ export function PaymentSettingsSection({
                       <FormControl>
                         {payMethodsVisualMode ? (
                           <PaymentMethodsVisualEditor
+                            endpoints={epayEndpoints}
                             value={field.value}
                             onChange={field.onChange}
                           />
@@ -1158,29 +1174,6 @@ export function PaymentSettingsSection({
                 <div className='grid gap-6 md:grid-cols-2'>
                   <FormField
                     control={form.control}
-                    name='PayAddress'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Epay endpoint')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder={t('https://pay.example.com')}
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Base address provided by your Epay service')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
                     name='CustomCallbackAddress'
                     render={({ field }) => (
                       <FormItem>
@@ -1205,53 +1198,13 @@ export function PaymentSettingsSection({
                   />
                 </div>
 
-                <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField
-                    control={form.control}
-                    name='EpayId'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Epay merchant ID')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder='10001'
-                            autoComplete='off'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='EpayKey'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Epay secret key')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter new key to update')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Leave blank unless rotating the secret')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                <EpayEndpointsEditor
+                  endpoints={epayEndpoints}
+                  onChange={setEpayDraft}
+                  disabled={
+                    epayQuery.isPending || epayQuery.isError || isSubmitting
+                  }
+                />
               </div>
             </TabsContent>
 

@@ -86,6 +86,8 @@ func SetApiRouter(router *gin.Engine) {
 			userRoute.POST("/passkey/login/begin", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.PasskeyLoginBegin)
 			userRoute.POST("/passkey/login/finish", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.PasskeyLoginFinish)
 			//userRoute.POST("/tokenlog", middleware.CriticalRateLimit(), controller.TokenLog)
+			userRoute.POST("/epay/:endpoint_id/notify", anonymousRequestBodyLimit, controller.EpayNotify)
+			userRoute.GET("/epay/:endpoint_id/notify", controller.EpayNotify)
 			userRoute.POST("/epay/notify", anonymousRequestBodyLimit, controller.EpayNotify)
 			userRoute.GET("/epay/notify", controller.EpayNotify)
 			userRoute.GET("/groups", controller.GetUserGroups)
@@ -209,6 +211,10 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 		// Subscription payment callbacks (no auth)
+		apiRouter.POST("/subscription/epay/:endpoint_id/notify", anonymousRequestBodyLimit, controller.SubscriptionEpayNotify)
+		apiRouter.GET("/subscription/epay/:endpoint_id/notify", controller.SubscriptionEpayNotify)
+		apiRouter.GET("/subscription/epay/:endpoint_id/return", controller.SubscriptionEpayReturn)
+		apiRouter.POST("/subscription/epay/:endpoint_id/return", anonymousRequestBodyLimit, controller.SubscriptionEpayReturn)
 		apiRouter.POST("/subscription/epay/notify", anonymousRequestBodyLimit, controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/return", controller.SubscriptionEpayReturn)
@@ -217,6 +223,8 @@ func SetApiRouter(router *gin.Engine) {
 		optionRoute.Use(middleware.RootAuth())
 		{
 			optionRoute.GET("/", controller.GetOptions)
+			optionRoute.GET("/epay", controller.GetEpayConfig)
+			optionRoute.PUT("/epay", middleware.CriticalRateLimit(), controller.UpdateEpayConfig)
 			optionRoute.GET("/request_policy", controller.GetRequestPolicy)
 			optionRoute.PATCH("/request_policy", controller.UpdateRequestPolicy)
 			optionRoute.PUT("/", controller.UpdateOption)

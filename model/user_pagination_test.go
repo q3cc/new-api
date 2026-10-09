@@ -64,3 +64,29 @@ func TestSearchUsersSortsBeforePagination(t *testing.T) {
 	assert.Equal(t, int64(42), total)
 	assert.Equal(t, []int{21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40}, collectUserIDs(users))
 }
+
+func TestSearchUsersRanksExactMatchesBeforePagination(t *testing.T) {
+	truncateTables(t)
+	insertUsersForPaginationTest(t, 6)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 2).Update("display_name", "1").Error)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 3).Update("email", "1").Error)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 4).Update("display_name", "prefix1suffix").Error)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 5).Update("email", "prefix1suffix").Error)
+	users, total, err := SearchUsers(" 1 ", "", nil, nil, 0, 2, NewUserSortOptions("id", "desc"))
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), total)
+	assert.Equal(t, []int{1, 2}, collectUserIDs(users))
+	users, _, err = SearchUsers("1", "", nil, nil, 2, 3, NewUserSortOptions("id", "desc"))
+	require.NoError(t, err)
+	assert.Equal(t, []int{3, 4, 5}, collectUserIDs(users))
+}
+
+func TestSearchUsersTreatsLikeCharactersLiterally(t *testing.T) {
+	truncateTables(t)
+	insertUsersForPaginationTest(t, 2)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 1).Update("display_name", "literal%_!\\").Error)
+	users, total, err := SearchUsers("%_!\\", "", nil, nil, 0, 20)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Equal(t, []int{1}, collectUserIDs(users))
+}

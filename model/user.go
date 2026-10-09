@@ -455,8 +455,10 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 	query := tx.Unscoped().Model(&User{})
 
 	// 构建搜索条件
-	likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ?"
-	likeArgs := []any{"%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%"}
+	keyword = strings.TrimSpace(keyword)
+	pattern := containsSearchPattern(keyword)
+	likeCondition := "username LIKE ? ESCAPE '!' OR email LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!'"
+	likeArgs := []any{pattern, pattern, pattern}
 
 	// 尝试将关键字转换为整数ID
 	keywordInt, err := strconv.Atoi(keyword)
@@ -464,6 +466,8 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 		// 如果是数字，同时搜索ID和其他字段
 		likeCondition = "id = ? OR " + likeCondition
 		likeArgs = append([]any{keywordInt}, likeArgs...)
+	} else {
+		keywordInt = -1
 	}
 
 	query = query.Where("("+likeCondition+")", likeArgs...)
@@ -490,6 +494,20 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 
 	// 获取分页数据
 	order := resolveUserSortOptions(sortOptions)
+	if keyword != "" {
+		statement := &gorm.Statement{DB: tx}
+		if err := statement.Parse(&User{}); err != nil {
+			tx.Rollback()
+			return nil, 0, err
+		}
+		fields := make([]string, 0, len(statement.Schema.Fields))
+		for _, field := range statement.Schema.Fields {
+			if field.DBName != "" && field.DBName != "password" && field.DBName != "access_token" {
+				fields = append(fields, statement.Quote(field.DBName))
+			}
+		}
+		query = query.Select(strings.Join(fields, ", ")+", CASE WHEN id = ? THEN 0 WHEN username = ? OR display_name = ? THEN 1 WHEN email = ? THEN 2 WHEN username LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!' THEN 3 ELSE 4 END AS search_rank", keywordInt, keyword, keyword, keyword, pattern, pattern).Order("search_rank ASC")
+	}
 	err = order.Apply(query.Omit("password", "access_token")).Limit(num).Offset(startIdx).Find(&users).Error
 	if err != nil {
 		tx.Rollback()

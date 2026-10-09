@@ -229,6 +229,19 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if err := rejectEpayOptionAlias(key); err != nil {
+		return err
+	}
+	if key == "PayAddress" || key == "EpayId" || key == "EpayKey" || key == epayConfigLockKey {
+		return errors.New("请在易支付服务设置中修改配置")
+	}
+	if key == "PayMethods" {
+		var methods []map[string]string
+		if err := common.UnmarshalJsonStr(value, &methods); err != nil {
+			return err
+		}
+		return validateEpayMethods(DB, methods)
+	}
 	if key == legacyAccessTokenRetireAtKey {
 		return errLegacyRetireAtReadOnly
 	}
@@ -248,6 +261,9 @@ func validateOptionValue(key string, value string) error {
 }
 
 func UpdateOption(key string, value string) error {
+	if key == "PayMethods" {
+		return UpdateEpayPaymentMethods(value)
+	}
 	if key == TrialConfigKey {
 		var cfg TrialCreditConfig
 		if err := common.UnmarshalJsonStr(value, &cfg); err != nil {
@@ -293,6 +309,12 @@ func UpdateOption(key string, value string) error {
 // is touched — safe for callers that must commit a set of related options
 // atomically (e.g. payment gateway binding).
 func UpdateOptionsBulk(values map[string]string) error {
+	if value, ok := values["PayMethods"]; ok {
+		if len(values) != 1 {
+			return errors.New("请单独保存支付方式")
+		}
+		return UpdateEpayPaymentMethods(value)
+	}
 	if len(values) == 0 {
 		return nil
 	}
