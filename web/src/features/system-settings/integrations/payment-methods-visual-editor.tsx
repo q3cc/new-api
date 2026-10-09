@@ -33,12 +33,14 @@ import {
 
 import { safeJsonParseWithValidation } from '../utils/json-parser'
 import { isArray } from '../utils/json-validators'
+import type { EpayEndpoint } from './epay-api'
 import {
   PaymentMethodDialog,
   type PaymentMethodData,
 } from './payment-method-dialog'
 
 type PaymentMethodsVisualEditorProps = {
+  endpoints?: EpayEndpoint[]
   value: string
   onChange: (value: string) => void
 }
@@ -61,6 +63,7 @@ function getEffectiveIconName(method: PaymentMethodData) {
 export function PaymentMethodsVisualEditor({
   value,
   onChange,
+  endpoints = [],
 }: PaymentMethodsVisualEditorProps) {
   const { t } = useTranslation()
   const paymentTemplates = [
@@ -107,6 +110,13 @@ export function PaymentMethodsVisualEditor({
       },
     },
   ]
+  const paymentServiceName = (method: PaymentMethodData): string => {
+    if (!method.epay_endpoint_id) return '—'
+    return (
+      endpoints.find((endpoint) => endpoint.id === method.epay_endpoint_id)
+        ?.name ?? t('Choose a payment service')
+    )
+  }
   const [searchText, setSearchText] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editData, setEditData] = useState<PaymentMethodData | null>(null)
@@ -308,7 +318,7 @@ export function PaymentMethodsVisualEditor({
           <StaticDataTable
             className='hidden rounded-none border-0 md:block'
             data={filteredMethods}
-            getRowKey={(method, index) => `${method.type}-${index}`}
+            getRowKey={(method) => method.type}
             columns={[
               {
                 id: 'name',
@@ -324,6 +334,11 @@ export function PaymentMethodsVisualEditor({
                     {method.type}
                   </code>
                 ),
+              },
+              {
+                id: 'service',
+                header: t('Payment service'),
+                cell: paymentServiceName,
               },
               {
                 id: 'icon',
@@ -430,6 +445,12 @@ export function PaymentMethodsVisualEditor({
                   <div className='space-y-2 text-sm'>
                     <div className='flex items-center gap-2'>
                       <span className='text-muted-foreground min-w-20'>
+                        {t('Payment service')}
+                      </span>
+                      <span>{paymentServiceName(method)}</span>
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <span className='text-muted-foreground min-w-20'>
                         {t('Icon')}
                       </span>
                       {iconName ? (
@@ -464,6 +485,7 @@ export function PaymentMethodsVisualEditor({
       )}
 
       <PaymentMethodDialog
+        endpoints={endpoints}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onSave={handleSave}

@@ -356,6 +356,8 @@ func migrateDB() error {
 		&Log{},
 		&Midjourney{},
 		&TopUp{},
+		&EpayEndpoint{},
+		&EpayEndpointVersion{},
 		&QuotaData{},
 		&Task{},
 		&TaskPlugin{},
@@ -380,6 +382,9 @@ func migrateDB() error {
 		&UserAccessToken{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := MigrateEpayEndpoints(); err != nil {
 		return err
 	}
 	if err := MigrateTrialCredit(); err != nil {

@@ -247,12 +247,15 @@ export interface UserWalletData {
 /**
  * Topup record status
  */
-export type TopupStatus = 'success' | 'pending' | 'expired'
+export type TopupStatus = 'success' | 'pending' | 'expired' | 'failed'
 
 /**
  * Topup billing record
  */
 export interface TopupRecord {
+  order_type?: 'topup' | 'subscription'
+  plan_id?: number
+  plan_title?: string
   /** Record ID */
   id: number
   /** User ID */

@@ -510,3 +510,26 @@ func TestApplyWebSocketSubprotocolAuthorizationReadsRepeatedHeaders(t *testing.T
 	assert.True(t, applyWebSocketSubprotocolAuthorization(header))
 	assert.Equal(t, "Bearer sk-later-field", header.Get("Authorization"))
 }
+
+func TestRootAuthProtectsEpayConfiguration(t *testing.T) {
+	setupDashboardAuthMiddlewareTest(t)
+	user := createMiddlewarePATUser(t, "epay-config-user", "epay-config-pat")
+	router := gin.New()
+	protected := router.Group("/api/option", RootAuth())
+	protected.GET("/epay", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	protected.PUT("/epay", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	for _, method := range []string{http.MethodGet, http.MethodPut} {
+		for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser} {
+			require.NoError(t, model.DB.Model(user).Update("role", role).Error)
+			request := httptest.NewRequest(method, "/api/option/epay", strings.NewReader(`{}`))
+			request.Header.Set("Authorization", "Bearer epay-config-pat")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if role == common.RoleRootUser {
+				assert.Equal(t, http.StatusNoContent, response.Code)
+			} else {
+				assert.Equal(t, http.StatusForbidden, response.Code)
+			}
+		}
+	}
+}

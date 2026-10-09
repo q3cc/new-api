@@ -13,16 +13,19 @@ import (
 )
 
 type TopUp struct {
-	Id              int     `json:"id"`
-	UserId          int     `json:"user_id" gorm:"index"`
-	Amount          int64   `json:"amount"`
-	Money           float64 `json:"money"`
-	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	CreateTime      int64   `json:"create_time"`
-	CompleteTime    int64   `json:"complete_time"`
-	Status          string  `json:"status"`
+	Id                 int     `json:"id"`
+	UserId             int     `json:"user_id" gorm:"index"`
+	Amount             int64   `json:"amount"`
+	Money              float64 `json:"money"`
+	TradeNo            string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	PaymentMethod      string  `json:"payment_method" gorm:"type:varchar(50)"`
+	EpayVersionId      int     `json:"-" gorm:"index"`
+	LegacyEpayCallback bool    `json:"-"`
+	EpayMoney          string  `json:"-" gorm:"size:32"`
+	PaymentProvider    string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	CreateTime         int64   `json:"create_time"`
+	CompleteTime       int64   `json:"complete_time"`
+	Status             string  `json:"status"`
 }
 
 const (
@@ -173,7 +176,7 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 // 在同一个事务内完成，因此同一订单的并发/重复回调（包括多实例部署下）最多充值一次。
 // alreadyDone=true 表示订单此前已完成，本次为幂等重复回调。
 // 进程内的 LockOrder 只是优化，正确性由本函数的数据库行锁保证。
-func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string) (alreadyDone bool, err error) {
+func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string, verification ...EpayVerification) (alreadyDone bool, err error) {
 	if tradeNo == "" {
 		return false, errors.New("未提供支付单号")
 	}
@@ -192,15 +195,18 @@ func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string) (
 		if topUp.PaymentProvider != PaymentProviderEpay {
 			return ErrPaymentMethodMismatch
 		}
+		if actualPaymentMethod != topUp.PaymentMethod {
+			return ErrPaymentMethodMismatch
+		}
+		if err := validateEpaySettlement(topUp.EpayVersionId, topUp.PaymentMethod, topUp.Money, topUp.EpayMoney, verification); err != nil {
+			return err
+		}
 		if topUp.Status == common.TopUpStatusSuccess {
 			alreadyDone = true
 			return nil
 		}
 		if topUp.Status != common.TopUpStatusPending {
 			return ErrTopUpStatusInvalid
-		}
-		if actualPaymentMethod != "" && topUp.PaymentMethod != actualPaymentMethod {
-			topUp.PaymentMethod = actualPaymentMethod
 		}
 		var quotaErr error
 		quotaToAdd, quotaErr = common.WalletQuotaFromDecimalStrict(
@@ -296,157 +302,27 @@ func topUpQueryCutoff() int64 {
 	return common.GetTimestamp() - topUpQueryWindowSeconds
 }
 
-func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
-	// Start transaction
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	cutoff := topUpQueryCutoff()
-
-	// Get total count within transaction
-	err = tx.Model(&TopUp{}).Where("user_id = ? AND create_time >= ?", userId, cutoff).Count(&total).Error
-	if err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
-
-	// Get paginated topups within same transaction
-	err = tx.Where("user_id = ? AND create_time >= ?", userId, cutoff).Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error
-	if err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
-
-	// Commit transaction
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
-	}
-
-	return topups, total, nil
+func GetUserTopUps(userId int, pageInfo *common.PageInfo) ([]*BillingRecord, int64, error) {
+	return queryBillingHistory(userId, false, "", pageInfo)
 }
 
-// GetAllTopUps 获取全平台的充值记录（管理员使用，不限制时间窗口）
-func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	if err = tx.Model(&TopUp{}).Count(&total).Error; err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
-
-	if err = tx.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
-
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
-	}
-
-	return topups, total, nil
+func GetAllTopUps(pageInfo *common.PageInfo) ([]*BillingRecord, int64, error) {
+	return queryBillingHistory(0, true, "", pageInfo)
 }
 
-// searchTopUpCountHardLimit 搜索充值记录时 COUNT 的安全上限，
-// 防止对超大表执行无界 COUNT 触发 DoS。
-const searchTopUpCountHardLimit = 10000
-
-// SearchUserTopUps 按订单号搜索某用户的充值记录
-func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	query := tx.Model(&TopUp{}).Where("user_id = ? AND create_time >= ?", userId, topUpQueryCutoff())
-	if keyword != "" {
-		pattern, perr := sanitizeLikePattern(keyword)
-		if perr != nil {
-			tx.Rollback()
-			return nil, 0, perr
-		}
-		query = query.Where("trade_no LIKE ? ESCAPE '!'", pattern)
-	}
-
-	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {
-		tx.Rollback()
-		common.SysError("failed to count search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
-	}
-
-	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
-		tx.Rollback()
-		common.SysError("failed to search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
-	}
-
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
-	}
-	return topups, total, nil
+func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) ([]*BillingRecord, int64, error) {
+	return queryBillingHistory(userId, false, keyword, pageInfo)
 }
 
-// SearchAllTopUps 按订单号搜索全平台充值记录（管理员使用，不限制时间窗口）
-func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	query := tx.Model(&TopUp{})
-	if keyword != "" {
-		pattern, perr := sanitizeLikePattern(keyword)
-		if perr != nil {
-			tx.Rollback()
-			return nil, 0, perr
-		}
-		query = query.Where("trade_no LIKE ? ESCAPE '!'", pattern)
-	}
-
-	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {
-		tx.Rollback()
-		common.SysError("failed to count search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
-	}
-
-	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
-		tx.Rollback()
-		common.SysError("failed to search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
-	}
-
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
-	}
-	return topups, total, nil
+func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) ([]*BillingRecord, int64, error) {
+	return queryBillingHistory(0, true, keyword, pageInfo)
 }
 
 // ManualCompleteTopUp 管理员手动完成订单并给用户充值
 func ManualCompleteTopUp(tradeNo string, callerIp string) error {
+	if order := GetSubscriptionOrderByTradeNo(tradeNo); order != nil {
+		return completeSubscriptionOrder(tradeNo, "", "", "", true, nil)
+	}
 	if tradeNo == "" {
 		return errors.New("未提供订单号")
 	}
@@ -516,6 +392,9 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		return err
 	}
 
+	if userId == 0 {
+		return nil
+	}
 	// 事务外记录日志，避免阻塞
 	syncCreditUserQuotaCache(userId, quotaToAdd, "manual topup")
 	RecordTopupLog(userId, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney), callerIp, paymentMethod, "admin")
