@@ -77,8 +77,12 @@ func verifyEpayCallback(c *gin.Context, subscription bool) (*epay.VerifyRes, mod
 		return nil, verification, model.ErrPaymentMethodMismatch
 	}
 	providedSign := params["sign"]
-	expected := epay.GenerateParams(params, version.SecretKey)["sign"]
-	params["sign"] = providedSign // GenerateParams mutates its input.
+	signed, err := epay.GenerateParamsWithError(params, version.SecretKey)
+	if err != nil {
+		return nil, verification, errors.New("支付参数无效")
+	}
+	expected := signed["sign"]
+	params["sign"] = providedSign // GenerateParamsWithError mutates its input.
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(providedSign)) != 1 {
 		return nil, verification, errors.New("支付签名无效")
 	}

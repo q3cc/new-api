@@ -68,7 +68,10 @@ import { getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { orderGroupNames } from '@/lib/group-order'
 import { handleServerError } from '@/lib/handle-server-error'
-import { requireServerSuccess } from '@/lib/server-error-message'
+import {
+  requireServerSuccess,
+  translateServerText,
+} from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import {
@@ -160,19 +163,20 @@ export function ApiKeysMutateDrawer({
   })
 
   const models = modelsData?.data || []
-  const groupsRaw = groupsData?.data || {}
-  const groups: ApiKeyGroupOption[] = orderGroupNames(
-    Object.keys(groupsRaw),
-    groupsData?.group_order
-  ).map((key) => {
-    const info = groupsRaw[key]
-    return {
-      value: key,
-      label: key,
-      desc: info.desc || key,
-      ratio: info.ratio,
-    }
-  })
+  const groups = useMemo<ApiKeyGroupOption[]>(() => {
+    const groupsRaw = groupsData?.data || {}
+    return orderGroupNames(Object.keys(groupsRaw), groupsData?.group_order).map(
+      (key) => {
+        const info = groupsRaw[key]
+        return {
+          value: key,
+          label: key,
+          desc: info.desc ? translateServerText(t, info.desc) : key,
+          ratio: info.ratio,
+        }
+      }
+    )
+  }, [groupsData, t])
   const backendHasAuto = groups.some((g) => g.value === 'auto')
   const availableAutoGroupNames = useMemo(
     () => groups.filter((group) => group.value !== 'auto').map((g) => g.value),
