@@ -64,6 +64,7 @@ import { cn } from '@/lib/utils'
 import type { PaymentMethod, TopupInfo } from '../types'
 
 interface SubscriptionPlansCardProps {
+  refreshKey?: number
   topupInfo: TopupInfo | null
   onAvailabilityChange?: (available: boolean) => void
   userQuota?: number
@@ -96,6 +97,7 @@ function getBillingPreferenceLabel(
 
 export function SubscriptionPlansCard({
   topupInfo,
+  refreshKey,
   onAvailabilityChange,
   userQuota,
   onPurchaseSuccess,
@@ -161,6 +163,10 @@ export function SubscriptionPlansCard({
     }
     init()
   }, [fetchPlans, fetchSelfSubscription])
+
+  useEffect(() => {
+    if (refreshKey) void fetchSelfSubscription()
+  }, [refreshKey, fetchSelfSubscription])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -449,7 +455,7 @@ export function SubscriptionPlansCard({
                   return (
                     <div
                       key={subscription?.id}
-                      className='bg-background rounded-md border p-3 text-xs'
+                      className='rounded-md border bg-background p-3 text-xs'
                     >
                       <div className='flex items-center justify-between'>
                         <div className='flex items-center gap-2'>

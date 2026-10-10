@@ -80,6 +80,22 @@ func TestTrialCreditAccounting(t *testing.T) {
 			require.NoError(t, db.Create(&user).Error)
 			require.NoError(t, MigrateTrialCredit())
 			require.NoError(t, MigrateTrialCredit())
+			require.NoError(t, db.Migrator().DropTable(&TrialCreditAllocation{}, &TrialCreditReservation{}, &TrialCreditGrant{}))
+			require.NoError(t, db.Where(map[string]any{"key": TrialConfigKey}).Delete(&Option{}).Error)
+			// Upgrade an actual pre-kind grant table and verify a second migration preserves ownership.
+			require.NoError(t, db.AutoMigrate(&legacyTrialCreditGrant{}))
+			legacyUser := User{Username: "trial-legacy", AffCode: "trial-legacy"}
+			require.NoError(t, db.Create(&legacyUser).Error)
+			require.NoError(t, db.Create(&Option{Key: TrialConfigKey, Value: `{"enabled":false,"group":"default"}`}).Error)
+			require.NoError(t, db.Create(&legacyTrialCreditGrant{UserId: legacyUser.Id, GrantKey: "legacy-grant", Quota: 321, Remaining: 123, Source: "admin"}).Error)
+			require.NoError(t, MigrateTrialCredit())
+			require.NoError(t, MigrateTrialCredit())
+			var migrated TrialCreditGrant
+			require.NoError(t, db.Where("grant_key = ?", "legacy-grant").First(&migrated).Error)
+			assert.Equal(t, 1, migrated.TypeId)
+			assert.Equal(t, "default", migrated.GroupName)
+			assert.Equal(t, 321, migrated.Quota)
+			assert.Equal(t, 123, migrated.Remaining)
 			var preserved User
 			require.NoError(t, db.First(&preserved, user.Id).Error)
 			assert.Equal(t, 10000, preserved.Quota)
@@ -211,7 +227,143 @@ func TestTrialCreditAccounting(t *testing.T) {
 				require.NoError(t, db.Where("grant_key = ?", "affiliate:1234").First(&grant).Error)
 				assert.InDelta(t, time.Now().Unix()+7*86400, grant.ExpiresAt, 2)
 			})
+			t.Run("multiple kinds can be configured independently", func(t *testing.T) {
+				var cfg TrialCreditConfig
+				require.NoError(t, common.UnmarshalJsonStr(`{"enabled":true,"affiliate":true,"affiliate_type_id":1,"types":[{"id":1,"name":"Ds credit","group":"default","enabled":true},{"id":0,"name":"Gpt credit","group":"vip","enabled":true}]}`, &cfg))
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				cfg, err := ReadTrialCreditConfig()
+				require.NoError(t, err)
+				require.Len(t, cfg.Types, 2)
+				assert.Equal(t, 2, cfg.Types[1].Id)
+				u := User{Username: "multi-credit", AffCode: "multi-credit", Quota: 1000}
+				require.NoError(t, db.Create(&u).Error)
+				require.Error(t, GrantTrialCredit(u.Id, 100, 0, "ambiguous", "admin", 1))
+				require.Error(t, GrantTrialCredit(u.Id, 100, 0, "unknown", "admin", 1, 99))
+				require.NoError(t, GrantTrialCredit(u.Id, 100, 0, "kind-ds", "admin", 1, 1))
+				require.NoError(t, GrantTrialCredit(u.Id, 300, 0, "kind-gpt", "admin", 1, 2))
+				require.Error(t, GrantTrialCredit(u.Id, 100, 0, "kind-ds", "admin", 1, 2))
+				balances, err := GetTrialCreditTypeBalances(u.Id)
+				require.NoError(t, err)
+				require.Len(t, balances, 2)
+				require.Error(t, GrantTrialCredit(u.Id, common.MaxWalletQuota, 0, "multi-overflow", "admin", 1, 2))
+				assert.Equal(t, 100, balances[0].Balance)
+				assert.Equal(t, 300, balances[1].Balance)
+				require.ErrorIs(t, ReserveTrialCredit("no-cross-kind", u.Id, "default", 101), ErrTrialInsufficient)
+				require.NoError(t, ReserveTrialCredit("consume-ds", u.Id, "default", 80))
+				_, err = FinalizeTrialCredit("consume-ds", 150, false)
+				require.NoError(t, err)
+				balance, err := GetTrialCreditGroupBalance(u.Id, "vip")
+				require.NoError(t, err)
+				assert.Equal(t, 300, balance)
+				require.NoError(t, ReserveTrialCredit("refund-gpt", u.Id, "vip", 100))
+				_, err = FinalizeTrialCredit("refund-gpt", 0, true)
+				require.NoError(t, err)
+				balance, err = GetTrialCreditGroupBalance(u.Id, "vip")
+				require.NoError(t, err)
+				assert.Equal(t, 300, balance)
+				require.NoError(t, db.First(&u, u.Id).Error)
+				assert.Equal(t, 1000, u.Quota)
+				// Concurrent requests use only the selected pool; finalization remains idempotent.
+				results := make(chan error, 2)
+				var wg sync.WaitGroup
+				for i := range 2 {
+					wg.Go(func() { results <- ReserveTrialCredit(fmt.Sprintf("multi-parallel-%d", i), u.Id, "vip", 200) })
+				}
+				wg.Wait()
+				close(results)
+				success := 0
+				for err := range results {
+					if err == nil {
+						success++
+					} else {
+						assert.ErrorIs(t, err, ErrTrialInsufficient)
+					}
+				}
+				assert.Equal(t, 1, success)
+				balance, err = GetTrialCreditGroupBalance(u.Id, "default")
+				require.NoError(t, err)
+				assert.Zero(t, balance)
+				// A chosen invitation kind remains independent from the first kind.
+				cfg.AffiliateTypeId = 2
+				cfg.AffiliateDays = 7
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				oldReward := common.QuotaForInviter
+				common.QuotaForInviter = 42
+				t.Cleanup(func() { common.QuotaForInviter = oldReward })
+				for range 2 {
+					handled, err := AwardTrialAffiliate(u.Id, 8888)
+					require.NoError(t, err)
+					require.True(t, handled)
+				}
+				var reward TrialCreditGrant
+				require.NoError(t, db.Where("grant_key = ?", "affiliate:8888").First(&reward).Error)
+				assert.Equal(t, 2, reward.TypeId)
+				assert.Equal(t, "vip", reward.GroupName)
+				assert.Equal(t, 42, reward.Quota)
+				require.InDelta(t, time.Now().Unix()+7*86400, reward.ExpiresAt, 2)
+				// Kind IDs cannot disappear or be redirected after issuance, including generic option updates.
+				bad := cfg
+				bad.Types = append([]TrialCreditType{}, cfg.Types...)
+				bad.Types[1].Group = "another"
+				raw, _ := common.Marshal(bad)
+				require.Error(t, UpdateOption(TrialConfigKey, string(raw)))
+				bad = cfg
+				bad.Types = bad.Types[:1]
+				require.Error(t, UpdateTrialCreditConfig(bad))
+				require.Error(t, UpdateOption("GroupRatio", `{"default":1}`))
+				cfg.Affiliate = false
+				cfg.Types[1].Enabled = false
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				require.Error(t, GrantTrialCredit(u.Id, 10, 0, "disabled-kind", "admin", 1, 2))
+				require.NoError(t, ReserveTrialCredit("disabled-issued", u.Id, "vip", 10))
+				_, err = FinalizeTrialCredit("disabled-issued", 0, true)
+				require.NoError(t, err)
+				require.NoError(t, MigrateTrialCredit())
+				require.NoError(t, MigrateTrialCredit())
+				reward = TrialCreditGrant{}
+				require.NoError(t, db.Where("grant_key = ?", "kind-gpt").First(&reward).Error)
+				assert.Equal(t, 2, reward.TypeId)
+				assert.Equal(t, "vip", reward.GroupName)
+				// Kinds may share a group while retaining separate balances and IDs.
+				cfg.Types = append(cfg.Types, TrialCreditType{Name: "Other Ds credit", Group: "default", Enabled: true})
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				cfg = GetTrialCreditConfig()
+				require.Len(t, cfg.Types, 3)
+				assert.Equal(t, 3, cfg.Types[2].Id)
+				require.NoError(t, GrantTrialCredit(u.Id, 5, 0, "same-group-kind", "admin", 1, 3))
+				balance, err = GetTrialCreditGroupBalance(u.Id, "default")
+				require.NoError(t, err)
+				assert.Equal(t, 5, balance)
+				// Renaming does not duplicate the balance row.
+				cfg.Types[2].Name = "Renamed Ds credit"
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				require.NoError(t, GrantTrialCredit(u.Id, 7, 0, "renamed-kind", "admin", 1, 3))
+				balances, err = GetTrialCreditTypeBalances(u.Id)
+				require.NoError(t, err)
+				found := 0
+				for _, item := range balances {
+					if item.TypeId == 3 {
+						found++
+						assert.Equal(t, 12, item.Balance)
+					}
+				}
+				assert.Equal(t, 1, found)
+			})
 			require.NoError(t, MigrateTrialCredit())
 		})
 	}
 }
+
+type legacyTrialCreditGrant struct {
+	Id        int `gorm:"primaryKey"`
+	UserId    int
+	GrantKey  string `gorm:"size:128;uniqueIndex"`
+	Quota     int    `gorm:"type:bigint"`
+	Remaining int    `gorm:"type:bigint"`
+	ExpiresAt int64
+	CreatedAt int64
+	Source    string `gorm:"size:24"`
+	ActorId   int
+}
+
+func (legacyTrialCreditGrant) TableName() string { return "trial_credit_grants" }

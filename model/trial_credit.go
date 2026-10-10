@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
+
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -22,13 +21,18 @@ const TrialConfigKey = "TrialCreditConfig"
 var ErrTrialInsufficient = errors.New("体验金不足或已过期")
 
 type TrialCreditConfig struct {
-	Enabled       bool   `json:"enabled"`
-	Group         string `json:"group"`
-	Affiliate     bool   `json:"affiliate"`
-	AffiliateDays int    `json:"affiliate_days"`
+	Enabled         bool              `json:"enabled"`
+	Group           string            `json:"group"`
+	Affiliate       bool              `json:"affiliate"`
+	AffiliateDays   int               `json:"affiliate_days"`
+	AffiliateTypeId int               `json:"affiliate_type_id"`
+	Types           []TrialCreditType `json:"types"`
 }
 
 type TrialCreditGrant struct {
+	TypeId    int    `json:"type_id" gorm:"index;default:0"`
+	GroupName string `json:"group" gorm:"size:64;default:''"`
+	TypeName  string `json:"type_name" gorm:"size:128;default:''"`
 	Id        int    `json:"id" gorm:"primaryKey"`
 	UserId    int    `json:"user_id" gorm:"index"`
 	GrantKey  string `json:"-" gorm:"size:128;uniqueIndex"`
@@ -74,6 +78,9 @@ func MigrateTrialCredit() error {
 	if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&Option{Key: TrialConfigKey, Value: "{}"}).Error; err != nil {
 		return err
 	}
+	if err := migrateTrialCreditKinds(); err != nil {
+		return err
+	}
 	trialCreditDatabase.Store(DB)
 	return nil
 }
@@ -88,7 +95,7 @@ func ReadTrialCreditConfig() (TrialCreditConfig, error) {
 		if err != nil {
 			return cfg, err
 		}
-		err = common.UnmarshalJsonStr(option.Value, &cfg)
+		err = parseTrialConfig(option.Value, &cfg)
 		return cfg, err
 	}
 	common.OptionMapRWMutex.RLock()
@@ -97,7 +104,7 @@ func ReadTrialCreditConfig() (TrialCreditConfig, error) {
 	if raw == "" {
 		return cfg, nil
 	}
-	err := common.UnmarshalJsonStr(raw, &cfg)
+	err := parseTrialConfig(raw, &cfg)
 	return cfg, err
 }
 func GetTrialCreditConfig() TrialCreditConfig {
@@ -109,7 +116,7 @@ func GetTrialCreditConfig() TrialCreditConfig {
 	raw := common.OptionMap[TrialConfigKey]
 	common.OptionMapRWMutex.RUnlock()
 	var cfg TrialCreditConfig
-	_ = common.UnmarshalJsonStr(raw, &cfg)
+	_ = parseTrialConfig(raw, &cfg)
 	return cfg
 }
 
@@ -126,64 +133,7 @@ func trialPolicyLock(tx *gorm.DB) (*Option, error) {
 	return &option, err
 }
 
-func validateTrialConfig(cfg TrialCreditConfig) error {
-	if cfg.AffiliateDays < 0 || cfg.AffiliateDays > 36500 {
-		return errors.New("有效天数无效")
-	}
-	if len(cfg.Group) > 64 {
-		return errors.New("体验分组名称过长")
-	}
-	if cfg.Enabled && (cfg.Group == "" || cfg.Group == "auto" || !ratio_setting.ContainsGroupRatio(cfg.Group)) {
-		return errors.New("请选择体验分组")
-	}
-	if cfg.Affiliate && !cfg.Enabled {
-		return errors.New("请先启用体验金")
-	}
-	return nil
-}
-
-func UpdateTrialCreditConfig(cfg TrialCreditConfig) error {
-	cfg.Group = strings.TrimSpace(cfg.Group)
-	if err := validateTrialConfig(cfg); err != nil {
-		return err
-	}
-	raw, err := common.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-	err = DB.Transaction(func(tx *gorm.DB) error {
-		option, err := trialPolicyLock(tx)
-		if err != nil {
-			return err
-		}
-		var old TrialCreditConfig
-		if err = common.UnmarshalJsonStr(option.Value, &old); err != nil {
-			return err
-		}
-		if old.Group != cfg.Group || old.Enabled && !cfg.Enabled {
-			var count int64
-			if err = tx.Model(&TrialCreditGrant{}).Where("remaining > 0 AND (expires_at = 0 OR expires_at > ?)", time.Now().Unix()).Count(&count).Error; err != nil {
-				return err
-			}
-			if count > 0 {
-				return errors.New("仍有可用体验金")
-			}
-			if err = tx.Model(&TrialCreditReservation{}).Where("status = ?", "reserved").Count(&count).Error; err != nil {
-				return err
-			}
-			if count > 0 {
-				return errors.New("仍有未完成请求")
-			}
-		}
-		return tx.Model(option).Update("value", string(raw)).Error
-	})
-	if err != nil {
-		return err
-	}
-	return updateOptionMap(TrialConfigKey, string(raw))
-}
-
-func GrantTrialCredit(userId, quota int, expiresAt int64, key, source string, actorId int) error {
+func GrantTrialCredit(userId, quota int, expiresAt int64, key, source string, actorId int, typeIds ...int) error {
 	if userId <= 0 || quota <= 0 || quota > common.MaxWalletQuota || len(key) == 0 || len(key) > 128 || expiresAt < 0 || expiresAt > 0 && expiresAt <= time.Now().Unix() {
 		return errors.New("体验金参数无效")
 	}
@@ -193,25 +143,29 @@ func GrantTrialCredit(userId, quota int, expiresAt int64, key, source string, ac
 			return err
 		}
 		var cfg TrialCreditConfig
-		if err = common.UnmarshalJsonStr(option.Value, &cfg); err != nil {
+		if err = parseTrialConfig(option.Value, &cfg); err != nil {
 			return err
 		}
-		if !cfg.Enabled {
-			return errors.New("体验金未启用")
+		kind, err := cfg.grantKind(typeIds...)
+		if err != nil {
+			return err
 		}
 		var user User
 		if err = lockForUpdate(tx).First(&user, userId).Error; err != nil {
 			return err
 		}
-		return grantTrialCreditTx(tx, userId, quota, expiresAt, key, source, actorId)
+		return grantTrialCreditTx(tx, userId, quota, expiresAt, key, source, actorId, kind)
 	})
 }
 
-func grantTrialCreditTx(tx *gorm.DB, userId, quota int, expiresAt int64, key, source string, actorId int) error {
+func grantTrialCreditTx(tx *gorm.DB, userId, quota int, expiresAt int64, key, source string, actorId int, kind TrialCreditType) error {
+	if quota <= 0 || quota > common.MaxWalletQuota {
+		return errors.New("体验金参数无效")
+	}
 	var existing TrialCreditGrant
 	err := tx.Where("grant_key = ?", key).First(&existing).Error
 	if err == nil {
-		if existing.UserId != userId || existing.Quota != quota || existing.ExpiresAt != expiresAt || existing.Source != source || existing.ActorId != actorId {
+		if existing.UserId != userId || existing.Quota != quota || existing.ExpiresAt != expiresAt || existing.Source != source || existing.ActorId != actorId || existing.TypeId != kind.Id || existing.GroupName != kind.Group {
 			return errors.New("发放编号已使用")
 		}
 		return nil
@@ -230,7 +184,7 @@ func grantTrialCreditTx(tx *gorm.DB, userId, quota int, expiresAt int64, key, so
 	if reserved > common.MaxWalletQuota-balance || quota > common.MaxWalletQuota-balance-reserved {
 		return errors.New("体验金超过上限")
 	}
-	return tx.Create(&TrialCreditGrant{UserId: userId, Quota: quota, Remaining: quota, ExpiresAt: expiresAt, GrantKey: key, Source: source, ActorId: actorId, CreatedAt: time.Now().Unix()}).Error
+	return tx.Create(&TrialCreditGrant{TypeId: kind.Id, GroupName: kind.Group, TypeName: kind.Name, UserId: userId, Quota: quota, Remaining: quota, ExpiresAt: expiresAt, GrantKey: key, Source: source, ActorId: actorId, CreatedAt: time.Now().Unix()}).Error
 }
 
 func trialBalance(tx *gorm.DB, userId int) (int, error) {
@@ -250,10 +204,10 @@ func ReserveTrialCredit(requestId string, userId int, group string, target int) 
 			return err
 		}
 		var cfg TrialCreditConfig
-		if err = common.UnmarshalJsonStr(option.Value, &cfg); err != nil {
+		if err = parseTrialConfig(option.Value, &cfg); err != nil {
 			return err
 		}
-		if !cfg.Enabled || cfg.Group != group {
+		if !cfg.Enabled || !cfg.HasTrialGroup(group) {
 			return ErrTrialInsufficient
 		}
 		var user User
@@ -263,7 +217,7 @@ func ReserveTrialCredit(requestId string, userId int, group string, target int) 
 		var r TrialCreditReservation
 		err = tx.Where("request_id = ?", requestId).First(&r).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			balance, err := trialBalance(tx, userId)
+			balance, err := trialGroupBalance(tx, userId, group)
 			if err != nil {
 				return err
 			}
@@ -302,7 +256,7 @@ func ReserveTrialCredit(requestId string, userId int, group string, target int) 
 
 func allocateTrialCredit(tx *gorm.DB, r *TrialCreditReservation, amount int) (int, error) {
 	var grants []TrialCreditGrant
-	if err := tx.Where("user_id = ? AND remaining > 0 AND (expires_at = 0 OR expires_at > ?)", r.UserId, time.Now().Unix()).Find(&grants).Error; err != nil {
+	if err := trialGroupGrants(tx, r.UserId, r.GroupName).Find(&grants).Error; err != nil {
 		return 0, err
 	}
 	sort.Slice(grants, func(i, j int) bool {
@@ -499,7 +453,7 @@ func AwardTrialAffiliate(inviterId, inviteeId int) (bool, error) {
 		if err != nil {
 			return err
 		}
-		if err = common.UnmarshalJsonStr(option.Value, &cfg); err != nil {
+		if err = parseTrialConfig(option.Value, &cfg); err != nil {
 			return err
 		}
 		if !cfg.Enabled || !cfg.Affiliate {
@@ -521,7 +475,11 @@ func AwardTrialAffiliate(inviterId, inviteeId int) (bool, error) {
 		if cfg.AffiliateDays > 0 {
 			expires = time.Now().Unix() + int64(cfg.AffiliateDays)*86400
 		}
-		if err = grantTrialCreditTx(tx, inviterId, common.QuotaForInviter, expires, key, "affiliate", 0); err != nil {
+		kind, err := cfg.grantKind(cfg.AffiliateTypeId)
+		if err != nil {
+			return err
+		}
+		if err = grantTrialCreditTx(tx, inviterId, common.QuotaForInviter, expires, key, "affiliate", 0, kind); err != nil {
 			return err
 		}
 		return tx.Model(&user).Updates(map[string]any{"aff_count": gorm.Expr("aff_count + 1"), "aff_history": gorm.Expr("aff_history + ?", common.QuotaForInviter)}).Error
@@ -534,15 +492,17 @@ func ValidateTrialGroupOption(key, value string) error {
 		return nil
 	}
 	cfg := GetTrialCreditConfig()
-	if cfg.Group == "" {
+	if len(cfg.Types) == 0 {
 		return nil
 	}
 	var groups map[string]float64
 	if err := common.UnmarshalJsonStr(value, &groups); err != nil {
 		return err
 	}
-	if _, ok := groups[cfg.Group]; !ok {
-		return errors.New("不能删除体验分组")
+	for _, kind := range cfg.Types {
+		if _, ok := groups[kind.Group]; !ok {
+			return errors.New("不能删除体验分组")
+		}
 	}
 	return nil
 }
@@ -551,7 +511,7 @@ func LinkTrialMidjourney(requestId string, taskId int) error {
 	return DB.Model(&TrialCreditReservation{}).Where("request_id = ? AND status = ?", requestId, "reserved").Update("legacy_task_id", taskId).Error
 }
 func GetMidjourneyTrialReservation(taskId int) (*TrialCreditReservation, error) {
-	if GetTrialCreditConfig().Group == "" {
+	if len(GetTrialCreditConfig().Types) == 0 {
 		return nil, nil
 	}
 	var r TrialCreditReservation

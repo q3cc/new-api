@@ -71,7 +71,7 @@ export function PaymentMethodsVisualEditor({
       name: t('Epay Alipay'),
       template: {
         icon: getDefaultIconName('alipay'),
-        name: '支付宝',
+        name: t('Alipay'),
         type: 'alipay',
       },
     },
@@ -79,7 +79,7 @@ export function PaymentMethodsVisualEditor({
       name: t('Epay WeChat Pay'),
       template: {
         icon: getDefaultIconName('wxpay'),
-        name: '微信',
+        name: t('WeChat Pay'),
         type: 'wxpay',
       },
     },
@@ -105,7 +105,7 @@ export function PaymentMethodsVisualEditor({
       template: {
         icon: 'LuCreditCard',
         min_topup: '50',
-        name: '自定义1',
+        name: t('Custom Epay method'),
         type: 'custom1',
       },
     },
@@ -117,6 +117,8 @@ export function PaymentMethodsVisualEditor({
         ?.name ?? t('Choose a payment service')
     )
   }
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [initialData, setInitialData] = useState<PaymentMethodData | null>(null)
   const [searchText, setSearchText] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editData, setEditData] = useState<PaymentMethodData | null>(null)
@@ -208,44 +210,32 @@ export function PaymentMethodsVisualEditor({
   }
 
   const handleEdit = (method: PaymentMethodData) => {
+    setInitialData(null)
     setEditData(method)
     setDialogOpen(true)
   }
 
   const handleAdd = () => {
+    setInitialData(null)
     setEditData(null)
     setDialogOpen(true)
   }
 
   const handleInsertTemplate = (template: PaymentMethodData) => {
-    const parsed = safeJsonParseWithValidation<unknown[]>(value, {
-      fallback: [],
-      validator: isArray,
-      silent: true,
-    })
-
-    // Check if template already exists
-    const exists = parsed.some(
-      (item) =>
-        typeof item === 'object' &&
-        item !== null &&
-        'type' in item &&
-        'name' in item &&
-        item.type === template.type &&
-        item.name === template.name
+    const existing = paymentMethods.find(
+      (method) => method.type === template.type
     )
-
-    if (!exists) {
-      parsed.push(template)
-      onChange(JSON.stringify(parsed, null, 2))
-    }
+    setTemplatesOpen(false)
+    setEditData(existing ?? null)
+    setInitialData(existing ? null : template)
+    setDialogOpen(true)
   }
 
   return (
     <div className='space-y-4'>
       <div className='flex flex-col gap-3 sm:flex-row sm:items-center'>
         <div className='relative flex-1'>
-          <Search className='text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4' />
+          <Search className='text-muted-foreground absolute left-2.5 top-2.5 h-4 w-4' />
           <Input
             placeholder={t('Search payment methods...')}
             value={searchText}
@@ -254,7 +244,7 @@ export function PaymentMethodsVisualEditor({
           />
         </div>
         <div className='flex gap-2'>
-          <Popover>
+          <Popover open={templatesOpen} onOpenChange={setTemplatesOpen}>
             <PopoverTrigger
               render={
                 <Button variant='outline' className='flex-1 sm:flex-none' />
@@ -490,6 +480,7 @@ export function PaymentMethodsVisualEditor({
         onOpenChange={setDialogOpen}
         onSave={handleSave}
         editData={editData}
+        initialData={initialData}
       />
     </div>
   )

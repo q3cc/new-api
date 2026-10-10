@@ -1272,6 +1272,9 @@ func TestTrialCreditAuthorizationAndOwnerIsolation(t *testing.T) {
 	r.POST("/api/user/:id/trial-credit", middleware.AdminAuth(), AdminGrantTrialCredit)
 	r.GET("/api/user/self/trial-credit", middleware.UserAuth(), GetTrialCreditSelf)
 	r.PUT("/api/trial-credit/config", middleware.RootAuth(), UpdateTrialCreditConfig)
+	r.GET("/api/trial-credit/types", middleware.AdminAuth(), GetTrialCreditTypes)
+	assert.Equal(t, 403, accessTokenRequest(r, http.MethodGet, "/api/trial-credit/types", userJWT, "", "").Code)
+	assert.Contains(t, accessTokenRequest(r, http.MethodGet, "/api/trial-credit/types", adminJWT, "", "").Body.String(), `"id":1`)
 	body := `{"quota":1000,"expires_at":0,"request_id":"trial-admin-grant-001"}`
 	path := fmt.Sprintf("/api/user/%d/trial-credit", user.Id)
 	assert.Equal(t, 403, accessTokenRequest(r, http.MethodPost, path, userJWT, "", body).Code)
@@ -1288,4 +1291,17 @@ func TestTrialCreditAuthorizationAndOwnerIsolation(t *testing.T) {
 	response := accessTokenRequest(r, http.MethodGet, fmt.Sprintf("/api/user/self/trial-credit?user_id=%d", user.Id), adminJWT, "", "")
 	assert.Contains(t, response.Body.String(), `"balance":0`)
 	assert.Equal(t, 403, accessTokenRequest(r, http.MethodPost, fmt.Sprintf("/api/user/%d/trial-credit", admin.Id), adminJWT, "", body).Code)
+	cfg := model.GetTrialCreditConfig()
+	cfg.Types = append(cfg.Types, model.TrialCreditType{Name: "Ds credit", Group: "default", Enabled: true})
+	require.NoError(t, model.UpdateTrialCreditConfig(cfg))
+	chosen := accessTokenRequest(r, http.MethodPost, path, adminJWT, "", `{"type_id":2,"group":"vip","quota":2000,"expires_at":0,"request_id":"trial-admin-grant-002"}`)
+	require.Contains(t, chosen.Body.String(), `"success":true`)
+	response = accessTokenRequest(r, http.MethodGet, "/api/user/self/trial-credit?user_id=999", userJWT, "", "")
+	require.Contains(t, response.Body.String(), `"type_id":1`)
+	require.Contains(t, response.Body.String(), `"type_id":2`)
+	require.Contains(t, response.Body.String(), `"group":"default"`)
+	assert.NotContains(t, response.Body.String(), "grant_key")
+	invalid := accessTokenRequest(r, http.MethodPost, path, adminJWT, "", `{"type_id":999,"quota":2000,"request_id":"trial-admin-invalid-01"}`)
+	assert.Contains(t, invalid.Body.String(), `"success":false`)
+
 }

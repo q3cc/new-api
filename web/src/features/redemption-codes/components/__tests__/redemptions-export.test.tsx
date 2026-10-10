@@ -309,3 +309,143 @@ test('unchecking save as a file hides export settings and completes without down
   expect(downloads).toEqual([])
   expect(onClose).toHaveBeenCalledOnce()
 })
+
+test('subscription codes bind a selected plan and export its benefits without balance quota', async () => {
+  const user = userEvent.setup()
+  const downloads = captureDownloads()
+  const plans = [
+    {
+      plan: {
+        id: 7,
+        title: 'Monthly API',
+        enabled: true,
+        duration_unit: 'month',
+        duration_value: 1,
+        total_amount: 5000000,
+        quota_reset_period: 'monthly',
+      },
+    },
+    {
+      plan: {
+        id: 8,
+        title: 'Yearly API',
+        enabled: true,
+        duration_unit: 'year',
+        duration_value: 1,
+        total_amount: 5000000,
+        quota_reset_period: 'monthly',
+      },
+    },
+    { plan: { id: 9, title: 'Retired API', enabled: false } },
+  ]
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: plans },
+  })
+  const create = vi
+    .spyOn(api, 'post')
+    .mockResolvedValue({ data: { success: true, data: ['subscription-code'] } })
+  render(<CreateDrawer />)
+  await user.click(screen.getByRole('radio', { name: 'Subscription plan' }))
+  const selection = await screen.findByRole('combobox', {
+    name: 'Subscription plan',
+  })
+  await waitFor(() => expect(selection).toBeEnabled())
+  expect(screen.queryByLabelText(/Quota \(/)).not.toBeInTheDocument()
+  await user.click(selection)
+  expect(
+    await screen.findByRole('option', { name: 'Yearly API' })
+  ).toBeVisible()
+  expect(
+    screen.queryByRole('option', { name: 'Retired API' })
+  ).not.toBeInTheDocument()
+  await user.type(selection, 'Monthly')
+  await user.click(await screen.findByRole('option', { name: 'Monthly API' }))
+  expect(screen.getByText(/Validity: 1 months/)).toBeVisible()
+  fireEvent.change(screen.getByLabelText('Name'), {
+    target: { value: 'Monthly launch' },
+  })
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  const exported = await screen.findByRole('dialog', {
+    name: 'Redemption codes created',
+  })
+  expect(create.mock.calls[0][1]).toMatchObject({
+    redemption_type: 'subscription',
+    plan_id: 7,
+    quota: 0,
+  })
+  await user.click(
+    within(exported).getByRole('checkbox', { name: 'Save as a file' })
+  )
+  await user.click(within(exported).getByRole('button', { name: 'Done' }))
+  const content = await readDownload(downloads[0])
+  expect(content).toContain('subscription-code')
+  expect(content).toContain('Monthly API')
+  expect(content).toContain('1 months')
+  expect(content).not.toContain('$0')
+})
+
+test('subscription code creation requires an enabled plan', async () => {
+  const user = userEvent.setup()
+  vi.spyOn(api, 'get').mockResolvedValue({ data: { success: true, data: [] } })
+  const create = vi.spyOn(api, 'post')
+  render(<CreateDrawer />)
+  fireEvent.change(screen.getByLabelText('Name'), {
+    target: { value: 'Missing plan' },
+  })
+  await user.click(screen.getByRole('radio', { name: 'Subscription plan' }))
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(
+    (await screen.findAllByText('Please select an enabled subscription plan'))
+      .length
+  ).toBeGreaterThan(0)
+  expect(create).not.toHaveBeenCalled()
+})
+
+test('switching back to balance does not export the previously selected subscription', async () => {
+  const user = userEvent.setup()
+  const downloads = captureDownloads()
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: [
+        {
+          plan: {
+            id: 7,
+            title: 'Monthly API',
+            enabled: true,
+            duration_unit: 'month',
+            duration_value: 1,
+            total_amount: 500000,
+            quota_reset_period: 'never',
+          },
+        },
+      ],
+    },
+  })
+  vi.spyOn(api, 'post').mockResolvedValue({
+    data: { success: true, data: ['balance-code'] },
+  })
+  render(<CreateDrawer />)
+  await user.click(screen.getByRole('radio', { name: 'Subscription plan' }))
+  const selection = await screen.findByRole('combobox', {
+    name: 'Subscription plan',
+  })
+  await waitFor(() => expect(selection).toBeEnabled())
+  await user.click(selection)
+  await user.click(await screen.findByRole('option', { name: 'Monthly API' }))
+  await user.click(screen.getByRole('radio', { name: 'Balance' }))
+  fireEvent.change(screen.getByLabelText('Name'), {
+    target: { value: 'Balance gift' },
+  })
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  const exported = await screen.findByRole('dialog', {
+    name: 'Redemption codes created',
+  })
+  await user.click(
+    within(exported).getByRole('checkbox', { name: 'Save as a file' })
+  )
+  await user.click(within(exported).getByRole('button', { name: 'Done' }))
+  expect(await readDownload(downloads[0])).toBe(
+    'Balance gift\tbalance-code\t$10\n'
+  )
+})

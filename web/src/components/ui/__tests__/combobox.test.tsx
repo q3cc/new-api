@@ -277,3 +277,40 @@ describe('selected option icons', () => {
     expect(screen.queryByAltText('')).not.toBeInTheDocument()
   })
 })
+
+describe('custom text entry inside dialogs', () => {
+  it('keeps suggestions outside the transformed dialog and supports selection followed by a custom value', async () => {
+    function CustomField() {
+      const [value, setValue] = useState('')
+      return (
+        <Combobox
+          options={options}
+          value={value}
+          onValueChange={(next) => setValue(next ?? '')}
+          allowCustomValue
+          aria-label='Payment key'
+        />
+      )
+    }
+    render(
+      <Dialog open title='Payment method'>
+        <CustomField />
+      </Dialog>
+    )
+    const user = userEvent.setup()
+    const input = screen.getByRole('combobox', { name: 'Payment key' })
+    await user.click(input)
+    const list = await screen.findByRole('listbox')
+    expect(
+      screen.getByRole('dialog', { name: 'Payment method' })
+    ).not.toContainElement(list)
+    await user.click(screen.getByRole('option', { name: 'Google' }))
+    expect(input).toHaveValue('gemini')
+    await user.clear(input)
+    await user.type(input, 'custom_usdt')
+    await user.keyboard('{Enter}')
+    expect(input).toHaveValue('custom_usdt')
+    expect(input).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('dialog', { name: 'Payment method' })).toBeVisible()
+  })
+})

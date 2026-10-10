@@ -850,5 +850,8 @@
   "zhipu_image_get_b64_failed: %s": "智谱图片转 b64 失败: %s",
   "zhipu_image_missing_url": "智谱图片接口没有返回 URL",
   "¥%.6f quota": "¥%.6f 额度",
-  "＄%.6f quota": "＄%.6f 额度"
+  "＄%.6f quota": "＄%.6f 额度",
+  "redemption failed for user %d": "用户 %d 兑换失败",
+  "subscription redemption": "订阅兑换",
+  "failed to insert redemption": "创建兑换码失败"
 }

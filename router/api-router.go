@@ -177,6 +177,7 @@ func SetApiRouter(router *gin.Engine) {
 			}
 		}
 
+		apiRouter.GET("/trial-credit/types", middleware.AdminAuth(), controller.GetTrialCreditTypes)
 		apiRouter.GET("/trial-credit/config", middleware.RootAuth(), controller.GetTrialCreditConfig)
 		apiRouter.PUT("/trial-credit/config", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.UpdateTrialCreditConfig)
 		// Subscription billing (plans, purchase, admin management)

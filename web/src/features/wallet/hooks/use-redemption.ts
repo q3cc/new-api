@@ -16,10 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import i18next from 'i18next'
 import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { formatTimestamp } from '@/features/subscriptions/lib/format'
 import { getSelf } from '@/lib/api'
 import { formatQuota } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -31,38 +32,51 @@ import { redeemTopupCode } from '../api'
 // ============================================================================
 
 export function useRedemption() {
+  const { t } = useTranslation()
   const [redeeming, setRedeeming] = useState(false)
 
-  const redeemCode = useCallback(async (code: string): Promise<boolean> => {
-    if (!code || code.trim() === '') {
-      toast.error(i18next.t('Please enter a redemption code'))
-      return false
-    }
-
-    try {
-      setRedeeming(true)
-      const response = await redeemTopupCode({ key: code })
-
-      if (response.success && response.data) {
-        const quotaAdded = response.data
-        toast.success(
-          i18next.t('Redemption successful! Added: {{quota}}', {
-            quota: formatQuota(quotaAdded),
-          })
-        )
-        await getSelf()
-        return true
+  const redeemCode = useCallback(
+    async (code: string): Promise<boolean> => {
+      if (!code || code.trim() === '') {
+        toast.error(t('Please enter a redemption code'))
+        return false
       }
 
-      handleServerError(response, i18next.t('Redemption failed'))
-      return false
-    } catch (_error) {
-      handleServerError(_error, i18next.t('Redemption failed'))
-      return false
-    } finally {
-      setRedeeming(false)
-    }
-  }, [])
+      try {
+        setRedeeming(true)
+        const response = await redeemTopupCode({ key: code.trim() })
+
+        if (response.success) {
+          if (response.redemption?.type === 'subscription') {
+            toast.success(
+              t('Subscription activated: {{plan}}. Expires: {{expires}}', {
+                plan: response.redemption.plan_title,
+                expires: formatTimestamp(response.redemption.end_time || 0),
+              })
+            )
+          } else {
+            const quotaAdded = response.data || 0
+            toast.success(
+              t('Redemption successful! Added: {{quota}}', {
+                quota: formatQuota(quotaAdded),
+              })
+            )
+          }
+          await getSelf()
+          return true
+        }
+
+        handleServerError(response, t('Redemption failed'))
+        return false
+      } catch (_error) {
+        handleServerError(_error, t('Redemption failed'))
+        return false
+      } finally {
+        setRedeeming(false)
+      }
+    },
+    [t]
+  )
 
   return {
     redeeming,

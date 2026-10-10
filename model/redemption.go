@@ -3,26 +3,46 @@ package model
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
+const (
+	RedemptionTypeBalance      = "balance"
+	RedemptionTypeSubscription = "subscription"
+)
+
+type RedemptionResult struct {
+	Type           string `json:"type"`
+	Quota          int    `json:"-"`
+	PlanId         int    `json:"plan_id,omitempty"`
+	PlanTitle      string `json:"plan_title,omitempty"`
+	SubscriptionId int    `json:"subscription_id,omitempty"`
+	StartTime      int64  `json:"start_time,omitempty"`
+	EndTime        int64  `json:"end_time,omitempty"`
+}
+
 type Redemption struct {
-	Id           int            `json:"id"`
-	UserId       int            `json:"user_id"`
-	Key          string         `json:"key" gorm:"type:char(32);uniqueIndex"`
-	Status       int            `json:"status" gorm:"default:1"`
-	Name         string         `json:"name" gorm:"index"`
-	Quota        int            `json:"quota" gorm:"default:100"`
-	CreatedTime  int64          `json:"created_time" gorm:"bigint"`
-	RedeemedTime int64          `json:"redeemed_time" gorm:"bigint"`
-	Count        int            `json:"count" gorm:"-:all"` // only for api request
-	UsedUserId   int            `json:"used_user_id"`
-	DeletedAt    gorm.DeletedAt `gorm:"index"`
-	ExpiredTime  int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
+	RedemptionType string         `json:"redemption_type" gorm:"type:varchar(32);not null;default:'balance'"`
+	PlanId         int            `json:"plan_id" gorm:"index;default:0"`
+	PlanTitle      string         `json:"plan_title" gorm:"-"`
+	Id             int            `json:"id"`
+	UserId         int            `json:"user_id"`
+	Key            string         `json:"key" gorm:"type:char(32);uniqueIndex"`
+	Status         int            `json:"status" gorm:"default:1"`
+	Name           string         `json:"name" gorm:"index"`
+	Quota          int            `json:"quota" gorm:"default:0"`
+	CreatedTime    int64          `json:"created_time" gorm:"bigint"`
+	RedeemedTime   int64          `json:"redeemed_time" gorm:"bigint"`
+	Count          int            `json:"count" gorm:"-:all"` // only for api request
+	UsedUserId     int            `json:"used_user_id"`
+	DeletedAt      gorm.DeletedAt `gorm:"index"`
+	ExpiredTime    int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
 }
 
 func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total int64, err error) {
@@ -56,6 +76,9 @@ func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total 
 		return nil, 0, err
 	}
 
+	if err := populateRedemptionPlans(redemptions); err != nil {
+		return nil, 0, err
+	}
 	return redemptions, total, nil
 }
 
@@ -120,6 +143,9 @@ func SearchRedemptions(keyword string, status string, startIdx int, num int) (re
 		return nil, 0, err
 	}
 
+	if err := populateRedemptionPlans(redemptions); err != nil {
+		return nil, 0, err
+	}
 	return redemptions, total, nil
 }
 
@@ -130,89 +156,204 @@ func GetRedemptionById(id int) (*Redemption, error) {
 	redemption := Redemption{Id: id}
 	var err error = nil
 	err = DB.First(&redemption, "id = ?", id).Error
-	return &redemption, err
+	if err != nil {
+		return nil, err
+	}
+	if err := populateRedemptionPlans([]*Redemption{&redemption}); err != nil {
+		return nil, err
+	}
+	return &redemption, nil
 }
 
-func Redeem(key string, userId int) (quota int, err error) {
-	if key == "" {
-		return 0, errors.New("redemption code not provided")
+func populateRedemptionPlans(redemptions []*Redemption) error {
+	ids := make([]int, 0, len(redemptions))
+	for _, code := range redemptions {
+		if code.RedemptionType == "" {
+			code.RedemptionType = RedemptionTypeBalance
+		}
+		if code.RedemptionType == RedemptionTypeSubscription {
+			ids = append(ids, code.PlanId)
+		}
 	}
-	if userId == 0 {
-		return 0, errors.New("invalid user id")
+	if len(ids) == 0 {
+		return nil
+	}
+	var plans []SubscriptionPlan
+	if err := DB.Select("id", "title").Where("id IN ?", ids).Find(&plans).Error; err != nil {
+		return err
+	}
+	names := make(map[int]string, len(plans))
+	for _, plan := range plans {
+		names[plan.Id] = plan.Title
+	}
+	for _, code := range redemptions {
+		code.PlanTitle = names[code.PlanId]
+	}
+	return nil
+}
+
+// ValidateBenefit normalizes legacy balance codes and validates the configured benefit.
+func (redemption *Redemption) ValidateBenefit(tx *gorm.DB) error {
+	if redemption.RedemptionType == "" {
+		redemption.RedemptionType = RedemptionTypeBalance
+	}
+	switch redemption.RedemptionType {
+	case RedemptionTypeBalance:
+		if redemption.PlanId != 0 {
+			return common.NewMessage("Balance redemption codes cannot bind a subscription plan")
+		}
+		if redemption.Quota <= 0 {
+			return common.NewMessage("Redemption quota must be positive")
+		}
+		return common.ValidateWalletQuota(redemption.Quota)
+	case RedemptionTypeSubscription:
+		if redemption.PlanId <= 0 {
+			return common.NewMessage("Please select an enabled subscription plan")
+		}
+		var plan SubscriptionPlan
+		if err := tx.First(&plan, redemption.PlanId).Error; err != nil {
+			return common.NewMessage("Please select an enabled subscription plan")
+		}
+		if !plan.Enabled {
+			return common.NewMessage("Subscription plan is not enabled")
+		}
+		redemption.Quota = 0
+		redemption.PlanTitle = plan.Title
+		return nil
+	default:
+		return common.NewMessage("Invalid redemption type")
+	}
+}
+
+// Redeem preserves the legacy numeric result for existing callers.
+func Redeem(key string, userId int) (int, error) {
+	result, err := RedeemWithResult(key, userId)
+	if err != nil {
+		return 0, err
+	}
+	return result.Quota, nil
+}
+
+func RedeemWithResult(key string, userId int) (*RedemptionResult, error) {
+	key = strings.TrimSpace(key)
+	if key == "" || userId <= 0 {
+		return nil, ErrRedeemFailed
 	}
 	redemption := &Redemption{}
-
-	keyCol := "`key`"
-	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		keyCol = `"key"`
-	}
+	benefit := &RedemptionResult{}
+	groupChanged := false
 	common.RandomSleep()
-	err = DB.Transaction(func(tx *gorm.DB) error {
-		err := lockForUpdate(tx).Where(keyCol+" = ?", key).First(redemption).Error
-		if err != nil {
-			return errors.New("invalid redemption code")
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx.Session(&gorm.Session{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})).Where(commonKeyCol+" = ?", key).First(redemption).Error; err != nil {
+			return ErrRedeemFailed
 		}
-		if redemption.Status != common.RedemptionCodeStatusEnabled {
-			return errors.New("redemption code already used")
+		if redemption.Status != common.RedemptionCodeStatusEnabled || (redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp()) {
+			return ErrRedeemFailed
 		}
-		if redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp() {
-			return errors.New("redemption code expired")
-		}
-		// Compare-and-swap on status: only the transaction that flips
-		// enabled -> used may credit quota, so a concurrent redeem of the
-		// same code loses here even without a row lock (e.g. on SQLite).
-		result := tx.Model(&Redemption{}).
-			Where("id = ? AND status = ?", redemption.Id, common.RedemptionCodeStatusEnabled).
-			Updates(map[string]any{
-				"redeemed_time": common.GetTimestamp(),
-				"status":        common.RedemptionCodeStatusUsed,
-				"used_user_id":  userId,
-			})
+		// Write before reading subscription counts: SQLite must acquire its writer lock.
+		result := tx.Model(&Redemption{}).Where("id = ? AND status = ?", redemption.Id, common.RedemptionCodeStatusEnabled).
+			Updates(map[string]any{"redeemed_time": common.GetTimestamp(), "status": common.RedemptionCodeStatusUsed, "used_user_id": userId})
 		if result.Error != nil {
 			return result.Error
 		}
-		if result.RowsAffected == 0 {
-			return errors.New("redemption code already used")
+		if result.RowsAffected != 1 {
+			return ErrRedeemFailed
 		}
-		return creditTopUpQuota(tx, userId, redemption.Quota, nil)
+		var user User
+		if err := lockForUpdate(tx).Select("id").Where("id = ?", userId).First(&user).Error; err != nil {
+			return err
+		}
+		if err := redemption.ValidateBenefit(tx); err != nil {
+			return err
+		}
+		benefit.Type = redemption.RedemptionType
+		if redemption.RedemptionType == RedemptionTypeBalance {
+			benefit.Quota = redemption.Quota
+			return creditTopUpQuota(tx, userId, redemption.Quota, nil)
+		}
+		// Deliberately bypass the plan cache: outstanding codes follow current settings.
+		var plan SubscriptionPlan
+		if err := tx.First(&plan, redemption.PlanId).Error; err != nil {
+			return err
+		}
+		if !plan.Enabled {
+			return common.NewMessage("Subscription plan is not enabled")
+		}
+		sub, err := CreateUserSubscriptionFromPlanTx(tx, userId, &plan, "redemption")
+		if err != nil {
+			return err
+		}
+		benefit.PlanId, benefit.PlanTitle, benefit.SubscriptionId = plan.Id, plan.Title, sub.Id
+		benefit.StartTime, benefit.EndTime = sub.StartTime, sub.EndTime
+		groupChanged = sub.PrevUserGroup != ""
+		return nil
 	})
 	if err != nil {
-		common.SysError(common.LogText("redemption failed: %s", err.Error()))
-		return 0, ErrRedeemFailed
+		// No key or driver error is logged; driver errors can contain the lookup value.
+		common.SysError(common.LogText("redemption failed for user %d", userId))
+		return nil, ErrRedeemFailed
 	}
-	syncCreditUserQuotaCache(userId, redemption.Quota, common.LogText("redemption"))
-	RecordLog(userId, LogTypeTopup, common.NewMessage("Topped up {{quota}} with a redemption code, code ID {{id}}", map[string]any{"quota": logger.FormatQuota(redemption.Quota), "id": redemption.Id}))
-	return redemption.Quota, nil
+	if benefit.Type == RedemptionTypeBalance {
+		syncCreditUserQuotaCache(userId, benefit.Quota, common.LogText("redemption"))
+		RecordLog(userId, LogTypeTopup, common.NewMessage("Topped up {{quota}} with a redemption code, code ID {{id}}", map[string]any{"quota": logger.FormatQuota(benefit.Quota), "id": redemption.Id}))
+	} else {
+		if groupChanged {
+			refreshSubscriptionUserGroupCache(userId, common.LogText("subscription redemption"))
+		}
+		RecordLog(userId, LogTypeTopup, common.NewMessage("Subscription activated with a redemption code, plan: {{plan}}, code ID {{id}}, subscription ID {{subscription_id}}", map[string]any{"plan": benefit.PlanTitle, "id": redemption.Id, "subscription_id": benefit.SubscriptionId}))
+	}
+	return benefit, nil
 }
 
 func (redemption *Redemption) Insert() error {
-	if redemption.Quota <= 0 {
-		return errors.New("redemption quota must be positive")
-	}
-	if err := common.ValidateWalletQuota(redemption.Quota); err != nil {
+	if err := redemption.ValidateBenefit(DB); err != nil {
 		return err
 	}
-	var err error
-	err = DB.Create(redemption).Error
-	return err
+	return DB.Session(&gorm.Session{Logger: gormlogger.Default.LogMode(gormlogger.Silent)}).Create(redemption).Error
 }
 
-func (redemption *Redemption) SelectUpdate() error {
-	// This can update zero values
-	return DB.Model(redemption).Select("redeemed_time", "status").Updates(redemption).Error
-}
-
-// Update Make sure your token's fields is completed, because this will update non-zero values
-func (redemption *Redemption) Update() error {
-	if redemption.Quota <= 0 {
-		return errors.New("redemption quota must be positive")
-	}
-	if err := common.ValidateWalletQuota(redemption.Quota); err != nil {
-		return err
-	}
-	var err error
-	err = DB.Model(redemption).Select("name", "status", "quota", "redeemed_time", "expired_time").Updates(redemption).Error
-	return err
+// Update serializes management edits with redemption and never resets redeemed state.
+func (redemption *Redemption) Update(statusOnly bool) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var current Redemption
+		if err := lockForUpdate(tx).First(&current, redemption.Id).Error; err != nil {
+			return err
+		}
+		if current.Status == common.RedemptionCodeStatusUsed || current.UsedUserId != 0 || current.RedeemedTime != 0 {
+			return common.NewMessage("Used redemption codes cannot be changed or enabled again")
+		}
+		if current.RedemptionType == "" {
+			current.RedemptionType = RedemptionTypeBalance
+		}
+		if redemption.RedemptionType == "" {
+			redemption.RedemptionType = current.RedemptionType
+		}
+		if redemption.RedemptionType != current.RedemptionType {
+			return common.NewMessage("Redemption type cannot be changed")
+		}
+		updates := map[string]any{}
+		if statusOnly {
+			if redemption.Status != common.RedemptionCodeStatusEnabled && redemption.Status != common.RedemptionCodeStatusDisabled {
+				return common.NewMessage("Invalid redemption status")
+			}
+			updates["status"] = redemption.Status
+		} else {
+			if err := redemption.ValidateBenefit(tx); err != nil {
+				return err
+			}
+			updates = map[string]any{"name": redemption.Name, "quota": redemption.Quota, "plan_id": redemption.PlanId, "expired_time": redemption.ExpiredTime}
+		}
+		result := tx.Model(&Redemption{}).Where("id = ? AND status = ? AND used_user_id = 0 AND redeemed_time = 0", current.Id, current.Status).Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		// MySQL may report zero changed rows for an unchanged value. The row
+		// was locked and checked above, so this does not reset a used code.
+		if result.RowsAffected != 1 && !common.UsingMainDatabase(common.DatabaseTypeMySQL) {
+			return common.NewMessage("Redemption code changed, please reload")
+		}
+		return nil
+	})
 }
 
 func (redemption *Redemption) Delete() error {

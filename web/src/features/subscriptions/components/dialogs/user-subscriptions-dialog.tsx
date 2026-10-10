@@ -301,7 +301,10 @@ export function UserSubscriptionsDialog(props: Props) {
                           {planTitleMap.get(sub.plan_id) || `#${sub.plan_id}`}
                         </div>
                         <div className='text-muted-foreground text-sm'>
-                          {t('Source')}: {sub.source || '-'}
+                          {t('Source')}:{' '}
+                          {sub.source === 'redemption'
+                            ? t('Redemption Code')
+                            : sub.source || '-'}
                         </div>
                       </div>
                     )

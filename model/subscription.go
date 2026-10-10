@@ -495,13 +495,13 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		return nil, errors.New("invalid user id")
 	}
 	if plan.MaxPurchasePerUser > 0 {
-		var count int64
-		if err := tx.Model(&UserSubscription{}).
-			Where("user_id = ? AND plan_id = ?", userId, plan.Id).
-			Count(&count).Error; err != nil {
+		// Locking reads avoid stale MySQL REPEATABLE READ snapshots when another
+		// purchase committed before this transaction acquired the user lock.
+		var existing []UserSubscription
+		if err := lockForUpdate(tx).Select("id").Where("user_id = ? AND plan_id = ?", userId, plan.Id).Find(&existing).Error; err != nil {
 			return nil, err
 		}
-		if count >= int64(plan.MaxPurchasePerUser) {
+		if len(existing) >= plan.MaxPurchasePerUser {
 			return nil, common.NewMessage("Purchase limit for this plan has been reached")
 		}
 	}

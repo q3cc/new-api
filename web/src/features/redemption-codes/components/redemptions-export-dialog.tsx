@@ -29,6 +29,7 @@ export type RedemptionExportData = {
   keys: string[]
   name: string
   quota: string
+  subscriptionBenefit?: string
 }
 
 type RedemptionsExportDialogProps = {
@@ -43,6 +44,9 @@ export function RedemptionsExportDialog(props: RedemptionsExportDialogProps) {
   const [format, setFormat] = useState<'txt' | 'md'>('txt')
   const [includeName, setIncludeName] = useState(true)
   const [includeQuota, setIncludeQuota] = useState(true)
+  const benefitLabel = props.data.subscriptionBenefit
+    ? t('Subscription plan')
+    : t('Quota')
 
   const handleComplete = () => {
     if (!saveToFile) {
@@ -52,13 +56,15 @@ export function RedemptionsExportDialog(props: RedemptionsExportDialogProps) {
     const headers: string[] = []
     if (includeName) headers.push(t('Name'))
     headers.push(t('Code'))
-    if (includeQuota) headers.push(t('Quota'))
+    if (includeQuota) headers.push(benefitLabel)
 
     const rows = props.data.keys.map((key) => {
       const row: string[] = []
       if (includeName) row.push(props.data.name)
       row.push(key)
-      if (includeQuota) row.push(props.data.quota)
+      if (includeQuota) {
+        row.push(props.data.subscriptionBenefit || props.data.quota)
+      }
       return row.map((value) => value.replaceAll(/[\t\r\n]+/g, ' '))
     })
 
@@ -158,7 +164,11 @@ export function RedemptionsExportDialog(props: RedemptionsExportDialogProps) {
                 checked={includeQuota}
                 onCheckedChange={setIncludeQuota}
               />
-              <Label htmlFor={`${id}-quota`}>{t('Include quota')}</Label>
+              <Label htmlFor={`${id}-quota`}>
+                {props.data.subscriptionBenefit
+                  ? t('Include subscription benefits')
+                  : t('Include quota')}
+              </Label>
             </div>
           </div>
         </div>

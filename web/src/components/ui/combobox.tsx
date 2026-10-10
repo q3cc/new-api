@@ -27,10 +27,7 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import {
-  ComboboxInput as LegacyComboboxInput,
-  type ComboboxInputOption,
-} from '@/components/ui/combobox-input'
+import { type ComboboxInputOption } from '@/components/ui/combobox-input'
 import {
   InputGroup,
   InputGroupAddon,
@@ -74,25 +71,7 @@ function Combobox(
     | LegacyComboboxProps
 ) {
   if ('options' in props) {
-    if (!props.allowCustomValue) return <OptionCombobox {...props} />
-    return (
-      <LegacyComboboxInput
-        id={props.id}
-        aria-label={props['aria-label']}
-        aria-labelledby={props['aria-labelledby']}
-        aria-invalid={props['aria-invalid']}
-        onKeyDown={props.onKeyDown}
-        options={props.options}
-        value={props.value ?? ''}
-        onValueChange={(value) => props.onValueChange?.(value)}
-        placeholder={props.searchPlaceholder ?? props.placeholder}
-        emptyText={props.emptyText}
-        className={props.className}
-        popupClassName={props.popupClassName}
-        allowCustomValue={props.allowCustomValue}
-        openOnFocus={props.openOnFocus}
-      />
-    )
+    return <OptionCombobox {...props} />
   }
 
   return <ComboboxPrimitive.Root {...props} />
@@ -102,9 +81,13 @@ function OptionCombobox(props: LegacyComboboxProps) {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState('')
+  const [searchChanged, setSearchChanged] = React.useState(false)
+  const [highlighted, setHighlighted] = React.useState(false)
   const anchor = useComboboxAnchor()
   const selected = props.options.find((option) => option.value === props.value)
-  const displayedValue = selected?.label ?? props.value ?? ''
+  const displayedValue = props.allowCustomValue
+    ? (props.value ?? '')
+    : (selected?.label ?? props.value ?? '')
   return (
     <ComboboxPrimitive.Root
       items={props.options}
@@ -114,16 +97,25 @@ function OptionCombobox(props: LegacyComboboxProps) {
       open={open && !props.disabled}
       inputValue={open ? search : displayedValue}
       onInputValueChange={(value, details) => {
-        if (details.reason === 'input-change') setSearch(value)
+        if (details.reason === 'input-change') {
+          setSearch(value)
+          setSearchChanged(true)
+          if (props.allowCustomValue) props.onValueChange?.(value)
+        }
       }}
       onOpenChange={(nextOpen, details) => {
         setOpen(nextOpen)
-        if (details.reason !== 'input-change') setSearch('')
+        if (details.reason !== 'input-change') {
+          setSearch(props.allowCustomValue ? (props.value ?? '') : '')
+          setSearchChanged(false)
+        }
       }}
       onValueChange={(option) => {
         if (option) props.onValueChange?.(option.value)
       }}
+      onItemHighlighted={(option) => setHighlighted(option !== undefined)}
       filter={(option, query) => {
+        if (props.allowCustomValue && !searchChanged) return true
         const term = query.trim().toLowerCase()
         return (
           option.label.toLowerCase().includes(term) ||
@@ -138,7 +130,20 @@ function OptionCombobox(props: LegacyComboboxProps) {
           id={props.id}
           disabled={props.disabled}
           onBlur={props.onBlur}
-          onKeyDown={props.onKeyDown}
+          onKeyDown={(event) => {
+            if (
+              props.allowCustomValue &&
+              open &&
+              event.key === 'Enter' &&
+              !highlighted
+            ) {
+              event.preventDefault()
+              props.onValueChange?.(search.trim())
+              setOpen(false)
+              return
+            }
+            props.onKeyDown?.(event)
+          }}
           onFocus={() => {
             // Dialog autofocus should not expand a select-style combobox.
             if (props.openOnFocus) setOpen(true)
@@ -175,7 +180,7 @@ function OptionCombobox(props: LegacyComboboxProps) {
               <span className='min-w-0 break-words'>
                 {option.label}
                 {option.description && (
-                  <span className='text-muted-foreground block text-xs break-all'>
+                  <span className='text-muted-foreground block break-all text-xs'>
                     {option.description}
                   </span>
                 )}
@@ -252,6 +257,7 @@ function ComboboxInput({
       <InputGroupAddon align='inline-end'>
         {showTrigger && (
           <InputGroupButton
+            nativeButton
             size='icon-xs'
             variant='ghost'
             render={<ComboboxTrigger aria-label={triggerAriaLabel} />}

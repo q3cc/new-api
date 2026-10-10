@@ -156,8 +156,17 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     },
     {
       accessorKey: 'quota',
-      header: t('Quota'),
+      header: t('Redemption benefit'),
       cell: ({ row }) => {
+        if (row.original.redemption_type === 'subscription') {
+          return (
+            <StatusBadge
+              label={`${t('Subscription plan')}: ${row.original.plan_title || `#${row.original.plan_id}`}`}
+              variant='neutral'
+              copyable={false}
+            />
+          )
+        }
         const quota = row.getValue('quota') as number
         return (
           <StatusBadge
@@ -233,7 +242,7 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
                   className='cursor-help'
                 />
               }
-            ></TooltipTrigger>
+            />
             <TooltipContent>
               <div className='space-y-1 text-xs'>
                 <div>

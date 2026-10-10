@@ -16,17 +16,28 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { act, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { createInstance } from 'i18next'
+import { useState } from 'react'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import { Toaster, toast } from 'sonner'
 import { beforeEach, expect, it, vi } from 'vitest'
 
+import { Button } from '@/components/ui/button'
 import { BillingHistoryDialog } from '@/features/wallet/components/dialogs/billing-history-dialog'
 import en from '@/i18n/locales/en.json'
+import fr from '@/i18n/locales/fr.json'
+import ja from '@/i18n/locales/ja.json'
+import ru from '@/i18n/locales/ru.json'
+import viLocale from '@/i18n/locales/vi.json'
+import zhTW from '@/i18n/locales/zh-TW.json'
 import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 
 import { RechargeFormCard } from '../components/recharge-form-card'
+import { SubscriptionPlansCard } from '../components/subscription-plans-card'
+import { useRedemption } from '../hooks/use-redemption'
 
 const i18n = createInstance()
 
@@ -35,7 +46,7 @@ beforeEach(async () => {
     lng: 'zh',
     fallbackLng: false,
     nsSeparator: false,
-    resources: { en, zh },
+    resources: { en, zh, 'zh-TW': zhTW, fr, ru, ja, vi: viLocale },
     interpolation: { escapeValue: false },
   })
 })
@@ -123,5 +134,167 @@ it.each([
       `Pay ${full}`
     )
     expect(screen.getByPlaceholderText('Minimum 1')).toBeVisible()
+  }
+)
+
+function SubscriptionCodeFlow() {
+  const { redeemCode } = useRedemption()
+  const [revision, setRevision] = useState(0)
+  return (
+    <>
+      <Button
+        onClick={async () => {
+          if (await redeemCode(' subscription-code ')) {
+            setRevision((value) => value + 1)
+          }
+        }}
+      >
+        Redeem
+      </Button>
+      <SubscriptionPlansCard topupInfo={null} refreshKey={revision} />
+      <Toaster />
+    </>
+  )
+}
+
+it('a subscription redemption with zero balance increase succeeds and refreshes subscriptions', async () => {
+  await i18n.changeLanguage('en')
+  toast.dismiss()
+  let active = false
+  const sub = {
+    subscription: {
+      id: 30,
+      user_id: 1,
+      plan_id: 7,
+      status: 'active',
+      source: 'redemption',
+      start_time: 1,
+      end_time: 2000000000,
+      amount_total: 5000000,
+      amount_used: 0,
+    },
+  }
+  vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    if (url === '/api/subscription/plans') {
+      return {
+        data: {
+          success: true,
+          data: [
+            {
+              plan: {
+                id: 7,
+                title: 'Monthly API',
+                enabled: true,
+                duration_unit: 'month',
+                duration_value: 1,
+                total_amount: 5000000,
+                quota_reset_period: 'monthly',
+                price_amount: 10,
+                max_purchase_per_user: 0,
+              },
+            },
+          ],
+        },
+      }
+    }
+    if (url === '/api/subscription/self') {
+      return {
+        data: {
+          success: true,
+          data: {
+            subscriptions: active ? [sub] : [],
+            all_subscriptions: active ? [sub] : [],
+          },
+        },
+      }
+    }
+    return { data: { success: true, data: { id: 1, quota: 10 } } }
+  })
+  const redeem = vi.spyOn(api, 'post').mockImplementation(async () => {
+    active = true
+    return {
+      data: {
+        success: true,
+        data: 0,
+        redemption: {
+          type: 'subscription',
+          plan_title: 'Monthly API',
+          subscription_id: 30,
+          end_time: 2000000000,
+        },
+      },
+    }
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const flow = render(
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>
+        <SubscriptionCodeFlow />
+      </I18nextProvider>
+    </QueryClientProvider>
+  )
+  await screen.findByText('No Active')
+  fireEvent.click(screen.getByRole('button', { name: 'Redeem' }))
+  await screen.findByText(/Subscription activated: Monthly API\. Expires:/)
+  await waitFor(() => expect(screen.getByText(/1 active/)).toBeVisible())
+  expect(redeem).toHaveBeenCalledWith('/api/user/topup', {
+    key: 'subscription-code',
+  })
+  expect(
+    screen.queryByText(/Redemption successful! Added/)
+  ).not.toBeInTheDocument()
+  flow.unmount()
+  client.clear()
+  toast.dismiss()
+})
+
+function RedemptionOnly() {
+  const { redeemCode } = useRedemption()
+  return (
+    <>
+      <Button onClick={() => void redeemCode('subscription-code')}>
+        Redeem
+      </Button>
+      <Toaster />
+    </>
+  )
+}
+
+it.each(['en', 'zh', 'zh-TW', 'fr', 'ru', 'ja', 'vi'])(
+  'subscription success is translated into %s',
+  async (language) => {
+    toast.dismiss()
+    await i18n.changeLanguage(language)
+    const key = 'Subscription activated: {{plan}}. Expires: {{expires}}'
+    expect(i18n.getResource(language, 'translation', key)).toBeDefined()
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: { id: 1 } },
+    })
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: {
+        success: true,
+        data: 0,
+        redemption: {
+          type: 'subscription',
+          plan_title: 'Gift Plan',
+          end_time: 2000000000,
+        },
+      },
+    })
+    const flow = render(
+      <I18nextProvider i18n={i18n}>
+        <RedemptionOnly />
+      </I18nextProvider>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Redeem' }))
+    const message = await screen.findByText(/Gift Plan/)
+    expect(message).not.toHaveTextContent('{{')
+    if (language !== 'en') {
+      expect(message).not.toHaveTextContent('Subscription activated:')
+    }
+    flow.unmount()
+    toast.dismiss()
   }
 )
