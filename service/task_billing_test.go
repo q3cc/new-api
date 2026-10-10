@@ -1910,4 +1910,40 @@ func TestTrialBillingSessionIsolationAndTaskSettlement(t *testing.T) {
 		assert.False(t, zero.NeedsRefund())
 	})
 
+	t.Run("multiple trial groups stay isolated throughout billing", func(t *testing.T) {
+		cfg := model.GetTrialCreditConfig()
+		cfg.Types = append(cfg.Types, model.TrialCreditType{Name: "Ds credit", Group: "default", Enabled: true})
+		require.NoError(t, model.UpdateTrialCreditConfig(cfg))
+		cfg = model.GetTrialCreditConfig()
+		require.Len(t, cfg.Types, 2)
+		u := model.User{Username: "trial-multiple-groups", AffCode: "trial-multiple-groups", Group: "default", Quota: 500}
+		require.NoError(t, model.DB.Create(&u).Error)
+		require.NoError(t, model.GrantTrialCredit(u.Id, 100, 0, "service-kind-one", "admin", 1, 1))
+		require.NoError(t, model.GrantTrialCredit(u.Id, 300, 0, "service-kind-two", "admin", 1, 2))
+		assert.Contains(t, GetUserUsableGroups("default", u.Id), "vip")
+		assert.Contains(t, GetUserUsableGroups("default", u.Id), "default")
+		assert.NotContains(t, GetUserAutoGroup("default"), "vip")
+		assert.NotContains(t, GetUserAutoGroup("default"), "default")
+		for group, want := range map[string]int{"vip": 100, "default": 300} {
+			available, err := RequestAvailableQuota(&relaycommon.RelayInfo{UserId: u.Id, UsingGroup: group})
+			require.NoError(t, err)
+			assert.Equal(t, want, available)
+		}
+		info := &relaycommon.RelayInfo{UserId: u.Id, UsingGroup: "vip", RequestId: "multi-session", IsPlayground: true, TokenUnlimited: true}
+		session, apiErr := NewBillingSession(ctx, info, 100)
+		require.Nil(t, apiErr)
+		assert.Equal(t, BillingSourceTrial, info.BillingSource)
+		require.NoError(t, session.Settle(100))
+		assert.NotContains(t, GetUserUsableGroups("default", u.Id), "vip")
+		assert.Contains(t, GetUserUsableGroups("default", u.Id), "default")
+		balance, err := model.GetTrialCreditGroupBalance(u.Id, "default")
+		require.NoError(t, err)
+		assert.Equal(t, 300, balance)
+		_, apiErr = NewBillingSession(ctx, &relaycommon.RelayInfo{UserId: u.Id, UsingGroup: "vip", RequestId: "multi-empty", IsPlayground: true}, 1)
+		require.NotNil(t, apiErr)
+		wallet, err := model.GetUserQuota(u.Id, true)
+		require.NoError(t, err)
+		assert.Equal(t, 500, wallet)
+	})
+
 }

@@ -20,10 +20,10 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { z } from 'zod'
 
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
+import { Combobox } from '@/components/ui/combobox'
 import {
   Form,
   FormField,
@@ -33,13 +33,6 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { SettingsForm } from '@/features/system-settings/components/settings-form-layout'
 import { SettingsPageFormActions } from '@/features/system-settings/components/settings-page-context'
@@ -47,13 +40,9 @@ import { SettingsSection } from '@/features/system-settings/components/settings-
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { getTrialConfig, saveTrialConfig, type TrialConfig } from './api'
+import { trialConfigSchema } from './lib/schema'
+import { TrialTypeEditor } from './type-editor'
 
-const schema = z.object({
-  enabled: z.boolean(),
-  group: z.string(),
-  affiliate: z.boolean(),
-  affiliate_days: z.number().int().min(0).max(36500),
-})
 export function TrialCreditSettings(props: { groups: string[] }) {
   const query = useQuery({
     queryKey: ['trial-config'],
@@ -70,17 +59,23 @@ function TrialCreditSettingsForm(props: {
   const { t } = useTranslation()
   const client = useQueryClient()
   const form = useForm<TrialConfig>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(trialConfigSchema),
     defaultValues: props.values,
   })
+  const kinds = form.watch('types')
+  const affiliate = form.watch('affiliate')
   const mutation = useMutation({
     mutationFn: saveTrialConfig,
-    onSuccess: () => client.invalidateQueries({ queryKey: ['trial-config'] }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['trial-config'] })
+      void client.invalidateQueries({ queryKey: ['trial-types'] })
+      void client.invalidateQueries({ queryKey: ['trial-balance'] })
+    },
     onError: (error) => handleServerError(error),
   })
   async function submit(values: TrialConfig) {
-    await mutation.mutateAsync(values)
-    form.reset(values)
+    const saved = await mutation.mutateAsync(values)
+    form.reset(saved ?? values)
   }
   return (
     <SettingsSection title={t('Trial credit')}>
@@ -107,32 +102,7 @@ function TrialCreditSettingsForm(props: {
               </FormItem>
             )}
           />
-          <FormField
-            control={form.control}
-            name='group'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Trial group')}</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {props.groups
-                      .filter((g) => g !== 'auto')
-                      .map((g) => (
-                        <SelectItem key={g} value={g}>
-                          {g}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <TrialTypeEditor form={form} groups={props.groups} />
           <FormField
             control={form.control}
             name='affiliate'
@@ -145,6 +115,29 @@ function TrialCreditSettingsForm(props: {
                     onCheckedChange={field.onChange}
                   />
                 </FormControl>
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='affiliate_type_id'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Invitation reward kind')}</FormLabel>
+                <FormControl>
+                  <Combobox
+                    disabled={!affiliate}
+                    value={field.value ? String(field.value) : null}
+                    onValueChange={(v) => field.onChange(Number(v))}
+                    options={kinds
+                      .filter((k) => k.id > 0 && k.enabled)
+                      .map((k) => ({
+                        value: String(k.id),
+                        label: `${k.id} · ${t(k.name)} · ${k.group}`,
+                      }))}
+                  />
+                </FormControl>
+                <FormMessage />
               </FormItem>
             )}
           />

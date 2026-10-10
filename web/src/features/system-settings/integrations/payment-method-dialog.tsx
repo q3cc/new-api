@@ -39,6 +39,7 @@ import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -75,6 +76,7 @@ type PaymentMethodDialogProps = {
   onOpenChange: (open: boolean) => void
   onSave: (data: PaymentMethodData) => void
   editData?: PaymentMethodData | null
+  initialData?: PaymentMethodData | null
   endpoints?: EpayEndpoint[]
 }
 
@@ -92,6 +94,7 @@ export function PaymentMethodDialog({
   onOpenChange,
   onSave,
   editData,
+  initialData,
   endpoints = [],
 }: PaymentMethodDialogProps) {
   const { t } = useTranslation()
@@ -140,13 +143,14 @@ export function PaymentMethodDialog({
   const methodType = form.watch('type')
 
   useEffect(() => {
-    if (editData) {
+    const data = editData ?? initialData
+    if (data) {
       form.reset({
-        name: editData.name,
-        type: editData.type,
-        icon: editData.icon ?? getDefaultIconName(editData.type),
-        min_topup: editData.min_topup ?? '',
-        epay_endpoint_id: editData.epay_endpoint_id ?? '',
+        name: data.name,
+        type: data.type,
+        icon: data.icon ?? getDefaultIconName(data.type),
+        min_topup: data.min_topup ?? '',
+        epay_endpoint_id: data.epay_endpoint_id ?? '',
       })
     } else {
       form.reset({
@@ -157,7 +161,7 @@ export function PaymentMethodDialog({
         epay_endpoint_id: '',
       })
     }
-  }, [editData, form, open])
+  }, [editData, initialData, form, open])
 
   const handleSubmit = (values: PaymentMethodDialogFormValues) => {
     const isEpay = ![
@@ -183,6 +187,8 @@ export function PaymentMethodDialog({
     }
     if (values.icon && values.icon.trim() !== '') {
       data.icon = values.icon.trim()
+    } else {
+      delete data.icon
     }
     if (values.min_topup && values.min_topup.trim() !== '') {
       data.min_topup = values.min_topup
@@ -319,12 +325,14 @@ export function PaymentMethodDialog({
                         />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
-                      {endpoints.map((endpoint) => (
-                        <SelectItem key={endpoint.id} value={endpoint.id}>
-                          {endpoint.name}
-                        </SelectItem>
-                      ))}
+                    <SelectContent alignItemWithTrigger={false} align='start'>
+                      <SelectGroup>
+                        {endpoints.map((endpoint) => (
+                          <SelectItem key={endpoint.id} value={endpoint.id}>
+                            {endpoint.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -338,25 +346,25 @@ export function PaymentMethodDialog({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>{t('Icon')}</FormLabel>
-                <FormControl>
-                  <div className='flex items-center gap-2'>
+                <div className='flex items-center gap-2'>
+                  <FormControl>
                     <Input
-                      placeholder={t('e.g., SiAlipay')}
+                      placeholder={t('e.g., SiAlipay, usdt')}
                       {...field}
                       className='flex-1'
                     />
-                    {iconValue && (
-                      <ReactIconByName
-                        name={iconValue}
-                        className='text-muted-foreground size-5 shrink-0'
-                        title={iconValue}
-                      />
-                    )}
-                  </div>
-                </FormControl>
+                  </FormControl>
+                  {iconValue && (
+                    <ReactIconByName
+                      name={iconValue}
+                      className='text-muted-foreground size-5 shrink-0'
+                      title={iconValue}
+                    />
+                  )}
+                </div>
                 <FormDescription>
                   {t(
-                    'Enter a react-icons component name. Invalid names show no icon.'
+                    'Use usdt for the USDT logo. Leave empty to use the default icon.'
                   )}
                 </FormDescription>
                 <FormMessage />

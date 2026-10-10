@@ -531,6 +531,8 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'channel.upstream_apply_all':
     'Applied upstream model changes to {{count}} channels',
   // Redemption codes
+  'redemption.subscription_create':
+    'Created {{count}} subscription redemption codes named {{name}} for plan {{plan}}',
   'redemption.create':
     'Created {{count}} redemption codes named {{name}} ({{quota}} each)',
   'redemption.update': 'Updated a redemption code',

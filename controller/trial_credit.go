@@ -27,7 +27,7 @@ func UpdateTrialCreditConfig(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, cfg)
+	GetTrialCreditConfig(c)
 }
 func AdminGrantTrialCredit(c *gin.Context) {
 	userId, err := strconv.Atoi(c.Param("id"))
@@ -45,6 +45,7 @@ func AdminGrantTrialCredit(c *gin.Context) {
 		return
 	}
 	var request struct {
+		TypeId    int    `json:"type_id"`
 		Quota     int    `json:"quota"`
 		ExpiresAt int64  `json:"expires_at"`
 		RequestId string `json:"request_id"`
@@ -58,7 +59,7 @@ func AdminGrantTrialCredit(c *gin.Context) {
 		return
 	}
 	key := fmt.Sprintf("admin:%d:%s", c.GetInt("id"), request.RequestId)
-	if err = model.GrantTrialCredit(userId, request.Quota, request.ExpiresAt, key, "admin", c.GetInt("id")); err != nil {
+	if err = model.GrantTrialCredit(userId, request.Quota, request.ExpiresAt, key, "admin", c.GetInt("id"), request.TypeId); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -71,7 +72,7 @@ func GetTrialCreditSelf(c *gin.Context) {
 		common.ApiError(c, cfgErr)
 		return
 	}
-	if !cfg.Enabled && cfg.Group == "" {
+	if !cfg.Enabled && len(cfg.Types) == 0 {
 		common.ApiSuccess(c, gin.H{"enabled": false, "balance": 0, "grants": []any{}, "records": []any{}})
 		return
 	}
@@ -103,5 +104,35 @@ func GetTrialCreditSelf(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"records_total": recordsTotal, "enabled": cfg.Enabled, "group": cfg.Group, "balance": balance, "grants": grants, "records": records, "total": total})
+	balances, err := model.GetTrialCreditTypeBalances(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	for i := range balances {
+		for _, kind := range cfg.Types {
+			if balances[i].TypeId == kind.Id {
+				balances[i].Name = kind.Name
+				break
+			}
+		}
+	}
+	common.ApiSuccess(c, gin.H{"balances": balances, "records_total": recordsTotal, "enabled": cfg.Enabled, "group": cfg.Group, "balance": balance, "grants": grants, "records": records, "total": total})
+}
+
+func GetTrialCreditTypes(c *gin.Context) {
+	cfg, err := model.ReadTrialCreditConfig()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	kinds := []model.TrialCreditType{}
+	if cfg.Enabled {
+		for _, kind := range cfg.Types {
+			if kind.Enabled {
+				kinds = append(kinds, kind)
+			}
+		}
+	}
+	common.ApiSuccess(c, kinds)
 }

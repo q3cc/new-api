@@ -20,7 +20,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { SettingsPageProvider } from '@/features/system-settings/components/settings-page-context'
 import { api } from '@/lib/api'
@@ -37,6 +37,14 @@ function mount(node: ReactNode) {
     <QueryClientProvider client={client}>{node}</QueryClientProvider>
   )
 }
+beforeEach(() => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: [{ id: 1, name: 'Ds credit', group: 'default', enabled: true }],
+    },
+  })
+})
 afterEach(() => vi.restoreAllMocks())
 describe('trial credit', () => {
   test('disabled feature without grants stays hidden', async () => {
@@ -58,15 +66,26 @@ describe('trial credit', () => {
           group: 'trial',
           balance: 500000,
           total: 1,
-          grants: [{ id: 1, remaining: 500000, quota: 1000000, expires_at: 0 }],
+          grants: [
+            {
+              id: 1,
+              type_id: 1,
+              type_name: 'Trial credit',
+              group: 'trial',
+              source: 'admin',
+              remaining: 500000,
+              quota: 1000000,
+              expires_at: 0,
+            },
+          ],
           records: [],
         },
       },
     })
     mount(<TrialBalanceCard />)
     expect(await screen.findByText('Never expires')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
-    expect(screen.getByText(/Trial group: trial/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+    expect(screen.getByText('1 · Trial credit · trial')).toBeInTheDocument()
   })
   test('server failure displays retry and retry restores balance', async () => {
     vi.spyOn(api, 'get')
@@ -169,15 +188,220 @@ describe('trial credit', () => {
       await userEvent.type(screen.getByRole('spinbutton'), '7')
       await userEvent.click(screen.getByRole('button', { name: 'Save' }))
       await waitFor(() =>
-        expect(put).toHaveBeenCalledWith('/api/trial-credit/config', {
-          enabled: true,
-          group: 'trial',
-          affiliate: true,
-          affiliate_days: 7,
-        })
+        expect(put).toHaveBeenCalledWith(
+          '/api/trial-credit/config',
+          expect.objectContaining({
+            enabled: true,
+            group: 'trial',
+            affiliate: true,
+            affiliate_days: 7,
+            affiliate_type_id: 1,
+          })
+        )
       )
     } finally {
       actions.remove()
     }
   })
+})
+
+describe('multiple trial credit kinds', () => {
+  const kinds = [
+    { id: 1, name: 'Ds credit', group: 'Ds', enabled: true },
+    { id: 2, name: 'Gpt credit', group: 'Gpt', enabled: true },
+  ]
+  test('wallet displays separate grants and groups', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          enabled: true,
+          balance: 1500000,
+          total: 2,
+          grants: [
+            {
+              id: 1,
+              type_id: 1,
+              type_name: 'Ds credit',
+              group: 'Ds',
+              source: 'admin',
+              quota: 500000,
+              remaining: 500000,
+              expires_at: 0,
+            },
+            {
+              id: 2,
+              type_id: 2,
+              type_name: 'Gpt credit',
+              group: 'Gpt',
+              source: 'admin',
+              quota: 1000000,
+              remaining: 1000000,
+              expires_at: 0,
+            },
+          ],
+          records: [],
+          balances: [
+            { type_id: 1, name: 'Ds credit', group: 'Ds', balance: 500000 },
+            { type_id: 2, name: 'Gpt credit', group: 'Gpt', balance: 1000000 },
+          ],
+        },
+      },
+    })
+    mount(<TrialBalanceCard />)
+    expect(await screen.findByText('1 · Ds credit · Ds')).toBeInTheDocument()
+    expect(screen.getByText('2 · Gpt credit · Gpt')).toBeInTheDocument()
+    expect(screen.getAllByRole('progressbar')).toHaveLength(2)
+  })
+  test('administrator must choose a kind when several are available', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: kinds },
+    })
+    const post = vi.spyOn(api, 'post')
+    mount(<TrialGrantDialog userId={17} open onOpenChange={() => {}} />)
+    await userEvent.type(screen.getByRole('spinbutton'), '2')
+    await waitFor(() =>
+      expect(
+        screen.getByRole('combobox', { name: 'Trial credit kind' })
+      ).toBeEnabled()
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('combobox', { name: 'Trial credit kind' })
+      ).toHaveAttribute('aria-invalid', 'true')
+    )
+    expect(post).not.toHaveBeenCalled()
+  })
+  test('administrator selecting Gpt sends its ID with the custom amount', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: kinds },
+    })
+    const post = vi
+      .spyOn(api, 'post')
+      .mockResolvedValue({ data: { success: true } })
+    const closed = vi.fn()
+    mount(<TrialGrantDialog userId={17} open onOpenChange={closed} />)
+    const selector = await screen.findByRole('combobox', {
+      name: 'Trial credit kind',
+    })
+    await waitFor(() => expect(selector).toBeEnabled())
+    await userEvent.click(selector)
+    await userEvent.click(
+      await screen.findByRole('option', { name: '2 · Gpt credit · Gpt' })
+    )
+    await userEvent.type(screen.getByRole('spinbutton'), '2')
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(closed).toHaveBeenCalledWith(false))
+    expect(post).toHaveBeenCalledWith(
+      '/api/user/17/trial-credit',
+      expect.objectContaining({ type_id: 2, quota: 1000000 })
+    )
+  })
+  test('invitation rewards can select the second saved kind', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          enabled: true,
+          group: 'Ds',
+          affiliate: true,
+          affiliate_days: 0,
+          affiliate_type_id: 1,
+          types: kinds,
+        },
+      },
+    })
+    const put = vi
+      .spyOn(api, 'put')
+      .mockResolvedValue({ data: { success: true } })
+    const actions = document.createElement('div')
+    document.body.append(actions)
+    try {
+      mount(
+        <SettingsPageProvider actionsContainer={actions}>
+          <TrialCreditSettings groups={['Ds', 'Gpt']} />
+        </SettingsPageProvider>
+      )
+      await userEvent.click(
+        await screen.findByRole('combobox', { name: 'Invitation reward kind' })
+      )
+      await userEvent.click(
+        await screen.findByRole('option', { name: '2 · Gpt credit · Gpt' })
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() =>
+        expect(put).toHaveBeenCalledWith(
+          '/api/trial-credit/config',
+          expect.objectContaining({ affiliate_type_id: 2, types: kinds })
+        )
+      )
+    } finally {
+      actions.remove()
+    }
+  })
+})
+
+test('adding a kind saves its selected group and displays the assigned ID', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        enabled: false,
+        group: '',
+        affiliate: false,
+        affiliate_days: 0,
+        affiliate_type_id: 0,
+        types: [],
+      },
+    },
+  })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        enabled: true,
+        group: 'Ds',
+        affiliate: false,
+        affiliate_days: 0,
+        affiliate_type_id: 0,
+        types: [{ id: 7, name: 'Ds credit', group: 'Ds', enabled: true }],
+      },
+    },
+  })
+  const actions = document.createElement('div')
+  document.body.append(actions)
+  try {
+    mount(
+      <SettingsPageProvider actionsContainer={actions}>
+        <TrialCreditSettings groups={['Ds', 'Gpt']} />
+      </SettingsPageProvider>
+    )
+    await userEvent.click(
+      await screen.findByRole('switch', { name: 'Trial credit' })
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Add trial credit kind' })
+    )
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Trial credit name 1' }),
+      'Ds credit'
+    )
+    await userEvent.click(
+      screen.getByRole('combobox', { name: 'Trial group 1' })
+    )
+    await userEvent.click(await screen.findByRole('option', { name: 'Ds' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith(
+        '/api/trial-credit/config',
+        expect.objectContaining({
+          types: [{ id: 0, name: 'Ds credit', group: 'Ds', enabled: true }],
+        })
+      )
+    )
+    expect(await screen.findByRole('cell', { name: '7' })).toBeInTheDocument()
+  } finally {
+    actions.remove()
+  }
 })

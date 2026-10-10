@@ -76,6 +76,7 @@ export function Wallet(props: WalletProps) {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [billingDialogOpen, setBillingDialogOpen] = useState(false)
   const [redemptionCode, setRedemptionCode] = useState('')
+  const [subscriptionRefreshKey, setSubscriptionRefreshKey] = useState(0)
   const [creemDialogOpen, setCreemDialogOpen] = useState(false)
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
@@ -219,6 +220,7 @@ export function Wallet(props: WalletProps) {
     const success = await redeemCode(redemptionCode)
     if (success) {
       setRedemptionCode('')
+      setSubscriptionRefreshKey((key) => key + 1)
       await fetchUser()
     }
   }
@@ -334,6 +336,7 @@ export function Wallet(props: WalletProps) {
               </div>
 
               <SubscriptionPlansCard
+                refreshKey={subscriptionRefreshKey}
                 topupInfo={topupInfo}
                 onAvailabilityChange={handleSubscriptionAvailabilityChange}
                 userQuota={user?.quota}

@@ -42,12 +42,21 @@ func GetUserUsableGroups(userGroup string, userIds ...int) map[string]string {
 	if err != nil {
 		return map[string]string{}
 	}
-	if cfg.Group != "" {
-		delete(groupsCopy, cfg.Group)
+	for _, kind := range cfg.Types {
+		delete(groupsCopy, kind.Group)
 	}
 	if cfg.Enabled && len(userIds) > 0 {
-		if balance, err := model.GetTrialCreditBalance(userIds[0]); err == nil && balance > 0 {
-			groupsCopy[cfg.Group] = cfg.Group
+		balances, err := model.GetTrialCreditTypeBalances(userIds[0])
+		if err == nil {
+			available := make(map[string]bool)
+			for _, balance := range balances {
+				available[balance.Group] = balance.Balance > 0
+			}
+			for _, kind := range cfg.Types {
+				if available[kind.Group] {
+					groupsCopy[kind.Group] = kind.Group
+				}
+			}
 		}
 	}
 	return groupsCopy

@@ -99,6 +99,7 @@ const ICON_PACK_CANDIDATES: Array<[RegExp, IconPackId[]]> = [
 
 function normalizeIconName(name: string | null | undefined): string | null {
   const trimmed = name?.trim()
+  if (trimmed?.toLowerCase() === 'usdt') return 'usdt'
   if (!trimmed || !/^[A-Z][A-Za-z0-9]*$/.test(trimmed)) return null
   return trimmed
 }
@@ -152,7 +153,7 @@ export function ReactIconByName({ name, ...props }: ReactIconByNameProps) {
   useEffect(() => {
     let cancelled = false
 
-    if (!iconName) return
+    if (!iconName || iconName === 'usdt') return
 
     void resolveReactIcon(iconName).then((Icon) => {
       if (!cancelled) setResolvedIcon({ iconName, Icon })
@@ -162,6 +163,26 @@ export function ReactIconByName({ name, ...props }: ReactIconByNameProps) {
       cancelled = true
     }
   }, [iconName])
+
+  if (iconName === 'usdt') {
+    return (
+      <svg
+        xmlns='http://www.w3.org/2000/svg'
+        viewBox='0 0 32 32'
+        width='1em'
+        height='1em'
+        role='img'
+        aria-label={props.title || 'USDT'}
+        {...props}
+      >
+        <circle cx='16' cy='16' r='16' fill='#26A17B' />
+        <path
+          fill='#fff'
+          d='M7 7h18v4h-7v3.05c5 .22 8 1.22 8 2.45s-3 2.23-8 2.45V25h-4v-6.05c-5-.22-8-1.22-8-2.45s3-2.23 8-2.45V11H7zm7 8.2c-3.45.18-6 .71-6 1.3 0 .72 3.58 1.3 8 1.3s8-.58 8-1.3c0-.59-2.55-1.12-6-1.3v1.7h-4z'
+        />
+      </svg>
+    )
+  }
 
   if (!iconName || resolvedIcon?.iconName !== iconName || !resolvedIcon.Icon) {
     return null

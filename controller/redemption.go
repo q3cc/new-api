@@ -84,11 +84,7 @@ func AddRedemption(c *gin.Context) {
 		common.ApiErrorT(c, "Maximum 100 redemption codes can be generated at once")
 		return
 	}
-	if redemption.Quota <= 0 {
-		common.ApiErrorT(c, "Redemption quota must be positive")
-		return
-	}
-	if err := common.ValidateWalletQuota(redemption.Quota); err != nil {
+	if err := redemption.ValidateBenefit(model.DB); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -97,28 +93,37 @@ func AddRedemption(c *gin.Context) {
 		return
 	}
 	var keys []string
-	for i := 0; i < redemption.Count; i++ {
+	for range redemption.Count {
 		key := common.GetUUID()
 		cleanRedemption := model.Redemption{
-			UserId:      c.GetInt("id"),
-			Name:        redemption.Name,
-			Key:         key,
-			CreatedTime: common.GetTimestamp(),
-			Quota:       redemption.Quota,
-			ExpiredTime: redemption.ExpiredTime,
+			UserId:         c.GetInt("id"),
+			RedemptionType: redemption.RedemptionType,
+			PlanId:         redemption.PlanId,
+			Name:           redemption.Name,
+			Key:            key,
+			CreatedTime:    common.GetTimestamp(),
+			Quota:          redemption.Quota,
+			ExpiredTime:    redemption.ExpiredTime,
 		}
 		err = cleanRedemption.Insert()
 		if err != nil {
-			common.SysError(common.LogText("failed to insert redemption: %s", err.Error()))
+			common.SysError(common.LogText("failed to insert redemption"))
 			common.ApiErrorStatus(c, http.StatusOK, common.NewMessage("Failed to create redemption code, please try again later"), gin.H{"data": keys})
 			return
 		}
 		keys = append(keys, key)
 	}
-	recordManageAudit(c, "redemption.create", map[string]any{
-		"name":  redemption.Name,
-		"count": redemption.Count,
-		"quota": logger.FormatQuota(redemption.Quota),
+	action := "redemption.create"
+	if redemption.RedemptionType == model.RedemptionTypeSubscription {
+		action = "redemption.subscription_create"
+	}
+	recordManageAudit(c, action, map[string]any{
+		"plan":            redemption.PlanTitle,
+		"name":            redemption.Name,
+		"redemption_type": redemption.RedemptionType,
+		"plan_id":         redemption.PlanId,
+		"count":           redemption.Count,
+		"quota":           logger.FormatQuota(redemption.Quota),
 	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -155,32 +160,35 @@ func UpdateRedemption(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if redemption.RedemptionType != "" && redemption.RedemptionType != cleanRedemption.RedemptionType {
+		common.ApiErrorT(c, "Redemption type cannot be changed")
+		return
+	}
 	if statusOnly == "" {
-		if redemption.Quota <= 0 {
-			common.ApiErrorT(c, "Redemption quota must be positive")
-			return
-		}
-		if err := common.ValidateWalletQuota(redemption.Quota); err != nil {
-			common.ApiError(c, err)
+		if utf8.RuneCountInString(redemption.Name) == 0 || utf8.RuneCountInString(redemption.Name) > 20 {
+			common.ApiErrorT(c, "Redemption code name length must be between 1-20")
 			return
 		}
 		if err := validateExpiredTime(redemption.ExpiredTime); err != nil {
 			common.ApiError(c, err)
 			return
 		}
-		// If you add more fields, please also update redemption.Update()
-		cleanRedemption.Name = redemption.Name
-		cleanRedemption.Quota = redemption.Quota
-		cleanRedemption.ExpiredTime = redemption.ExpiredTime
-	}
-	if statusOnly != "" {
+		cleanRedemption.Name, cleanRedemption.Quota = redemption.Name, redemption.Quota
+		cleanRedemption.PlanId, cleanRedemption.ExpiredTime = redemption.PlanId, redemption.ExpiredTime
+	} else {
 		cleanRedemption.Status = redemption.Status
 	}
-	err = cleanRedemption.Update()
+	err = cleanRedemption.Update(statusOnly != "")
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	cleanRedemption, err = model.GetRedemptionById(redemption.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "redemption.update", map[string]any{"id": redemption.Id, "redemption_type": cleanRedemption.RedemptionType, "plan_id": cleanRedemption.PlanId})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

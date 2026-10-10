@@ -24,9 +24,10 @@ import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { formatQuota, formatDateTimeStr } from '@/lib/format'
+import { formatQuota } from '@/lib/format'
 
 import { getTrialBalance } from './api'
+import { TrialGrantUsage } from './grant-usage'
 
 export function TrialBalanceCard() {
   const { t } = useTranslation()
@@ -48,28 +49,8 @@ export function TrialBalanceCard() {
         </CardTitle>
       </CardHeader>
       <CardContent className='space-y-3'>
-        <div className='text-sm'>
-          {t('Trial group')}: {data.group}
-        </div>
         {data.grants.map((grant) => (
-          <div
-            key={grant.id}
-            className='flex flex-wrap justify-between gap-2 text-sm'
-          >
-            <span>
-              {formatQuota(
-                grant.expires_at > 0 && grant.expires_at * 1000 <= Date.now()
-                  ? 0
-                  : grant.remaining
-              )}{' '}
-              / {formatQuota(grant.quota)}
-            </span>
-            <span>
-              {grant.expires_at
-                ? formatDateTimeStr(new Date(grant.expires_at * 1000))
-                : t('Never expires')}
-            </span>
-          </div>
+          <TrialGrantUsage key={grant.id} grant={grant} />
         ))}
         {data.grants.length === 0 && <div>{t('No records')}</div>}
         {data.records.map((record) => (
@@ -77,6 +58,7 @@ export function TrialBalanceCard() {
             key={record.id}
             className='flex flex-wrap gap-3 border-t pt-2 text-sm'
           >
+            <span>{record.group}</span>
             <span>
               {t('Trial credit')}: {formatQuota(record.trial_charged)}
             </span>
@@ -94,7 +76,7 @@ export function TrialBalanceCard() {
             disabled={page === 1}
             onClick={() => setPage((p) => p - 1)}
           >
-            {t('Previous')}
+            {t('Previous page')}
           </Button>
           <Button
             variant='outline'
@@ -103,7 +85,7 @@ export function TrialBalanceCard() {
             }
             onClick={() => setPage((p) => p + 1)}
           >
-            {t('Next')}
+            {t('Next page')}
           </Button>
         </div>
       </CardContent>

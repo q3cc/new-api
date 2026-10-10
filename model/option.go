@@ -365,15 +365,15 @@ func UpdateOptionsBulk(values map[string]string) error {
 				return err
 			}
 			var cfg TrialCreditConfig
-			if err = common.UnmarshalJsonStr(option.Value, &cfg); err != nil {
+			if err = parseTrialConfig(option.Value, &cfg); err != nil {
 				return err
 			}
 			var groups map[string]float64
 			if err = common.UnmarshalJsonStr(value, &groups); err != nil {
 				return err
 			}
-			if cfg.Group != "" {
-				if _, ok := groups[cfg.Group]; !ok {
+			for _, kind := range cfg.Types {
+				if _, ok := groups[kind.Group]; !ok {
 					return errors.New("不能删除体验分组")
 				}
 			}

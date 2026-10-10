@@ -316,3 +316,53 @@ describe('redemption drawer', () => {
     expect(updates[0]?.quota).toBe(1000001)
   })
 })
+
+test('editing a subscription code preserves its type and sends zero balance quota', async () => {
+  const original: Redemption = {
+    ...redemption(40, 0),
+    redemption_type: 'subscription',
+    plan_id: 42,
+    plan_title: 'Monthly API',
+  }
+  apiClient.get = async (url) => ({
+    data: {
+      success: true,
+      data:
+        url === '/api/subscription/admin/plans'
+          ? [
+              {
+                plan: {
+                  id: 42,
+                  title: 'Monthly API',
+                  enabled: true,
+                  duration_unit: 'month',
+                  duration_value: 1,
+                  total_amount: 5000000,
+                  quota_reset_period: 'monthly',
+                },
+              },
+            ]
+          : original,
+    },
+  })
+  const updates: unknown[] = []
+  apiClient.put = async (_url, payload) => {
+    updates.push(payload)
+    return { data: { success: true } }
+  }
+  await renderDrawer(original)
+  await waitForLoadedForm()
+  const selected = screen.getByRole('radio', { name: 'Subscription plan' })
+  expect(selected).toBeChecked()
+  fireEvent.click(screen.getByRole('radio', { name: 'Balance' }))
+  expect(selected).toBeChecked()
+  expect(screen.queryByLabelText(/Quota \(/)).not.toBeInTheDocument()
+  changeInput(getControlByLabel('Name'), 'Monthly gift')
+  submitForm()
+  await waitFor(() => expect(updates).toHaveLength(1))
+  expect(updates[0]).toMatchObject({
+    redemption_type: 'subscription',
+    plan_id: 42,
+    quota: 0,
+  })
+})

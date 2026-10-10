@@ -409,7 +409,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	if cfgErr != nil {
 		return nil, types.NewError(cfgErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 	}
-	if cfg.Group != "" && relayInfo.UsingGroup == cfg.Group {
+	if cfg.HasTrialGroup(relayInfo.UsingGroup) {
 		if !cfg.Enabled {
 			return nil, types.NewErrorWithStatusCode(model.ErrTrialInsufficient, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 		}

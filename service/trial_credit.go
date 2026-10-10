@@ -73,11 +73,11 @@ func RequestAvailableQuota(info *relaycommon.RelayInfo) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if cfg.Group != "" && cfg.Group == info.UsingGroup {
+	if cfg.HasTrialGroup(info.UsingGroup) {
 		if !cfg.Enabled {
 			return 0, model.ErrTrialInsufficient
 		}
-		return model.GetTrialCreditBalance(info.UserId)
+		return model.GetTrialCreditGroupBalance(info.UserId, info.UsingGroup)
 	}
 	return model.GetUserQuota(info.UserId, false)
 }
@@ -89,7 +89,7 @@ func PreConsumeTrialIfNeeded(c *gin.Context, info *relaycommon.RelayInfo, quota 
 	if err != nil {
 		return err
 	}
-	if cfg.Group == "" || cfg.Group != info.UsingGroup {
+	if !cfg.HasTrialGroup(info.UsingGroup) {
 		return nil
 	}
 	returnTrialErr := PreConsumeBilling(c, quota, info)
