@@ -24,6 +24,7 @@ import { StaticDataTable } from '@/components/data-table/static/static-data-tabl
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CHATBOX_PRESET_URL } from '@/features/chat/lib/chat-links'
 
 import { safeJsonParseWithValidation } from '../utils/json-parser'
 import { isArray } from '../utils/json-validators'
@@ -139,6 +140,27 @@ export function ChatSettingsVisualEditor({
             className='pl-9'
           />
         </div>
+        <Button
+          type='button'
+          variant='outline'
+          disabled={chats.some(
+            (chat) => chat.url === CHATBOX_PRESET_URL || chat.name === 'Chatbox'
+          )}
+          onClick={() => {
+            setEditData(null)
+            const entries = chats.map((chat) => ({ [chat.name]: chat.url }))
+            onChange(
+              JSON.stringify(
+                [...entries, { Chatbox: CHATBOX_PRESET_URL }],
+                null,
+                2
+              )
+            )
+          }}
+        >
+          <Plus className='mr-2 h-4 w-4' />
+          {t('Add Chatbox')}
+        </Button>
         <Button onClick={handleAdd}>
           <Plus className='mr-2 h-4 w-4' />
           {t('Add chat preset')}

@@ -50,11 +50,13 @@ import {
 } from '@/components/ui/tooltip'
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
 import { resolveChatUrl, type ChatPreset } from '@/features/chat/lib/chat-links'
+import { fetchChatboxModels } from '@/features/chat/lib/chatbox-models'
 import { sendToFluent } from '@/features/chat/lib/send-to-fluent'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { encodeChannelConnectionInfo } from '@/lib/channel-connection-info'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { updateApiKeyStatus } from '../api'
 import { API_KEY_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
@@ -108,8 +110,19 @@ export function DataTableRowActions<TData>({
 
   const handleOpenChatPreset = useCallback(
     async (preset: ChatPreset) => {
+      const ownerSession = useAuthStore.getState().auth.session?.sid
       const realKey = await resolveRealKey(apiKey.id)
       if (!realKey) return
+      let models: string[] | undefined
+      if (preset.url.includes('{chatboxConfig}')) {
+        try {
+          models = await fetchChatboxModels(realKey)
+        } catch (error) {
+          handleServerError(error, t('Failed to load models'))
+          return
+        }
+      }
+      if (ownerSession !== useAuthStore.getState().auth.session?.sid) return
 
       if (preset.type === 'fluent') {
         const success = sendToFluent(realKey, serverAddress)
@@ -129,6 +142,7 @@ export function DataTableRowActions<TData>({
         template: preset.url,
         apiKey: realKey,
         serverAddress,
+        models,
       })
 
       if (!resolvedUrl) {
