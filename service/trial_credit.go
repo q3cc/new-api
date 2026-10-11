@@ -68,16 +68,46 @@ func AppendTrialBillingInfo(other *model.LogOther, requestId string) {
 	other.SetPublic("trial_quota_waived", r.Waived)
 }
 
-func RequestAvailableQuota(info *relaycommon.RelayInfo) (int, error) {
+// trialFundingBalance keeps ordinary group access independent of trial grants.
+// Wallet/subscription fallback is permitted only by the user's ordinary access,
+// never by an expired, exhausted or disabled trial-only entitlement.
+func trialFundingBalance(info *relaycommon.RelayInfo) (int, error) {
 	cfg, err := model.ReadTrialCreditConfig()
 	if err != nil {
 		return 0, err
 	}
-	if cfg.HasTrialGroup(info.UsingGroup) {
-		if !cfg.Enabled {
-			return 0, model.ErrTrialInsufficient
+	if !cfg.HasTrialGroup(info.UsingGroup) {
+		return 0, nil
+	}
+	if cfg.Enabled {
+		balance, err := model.GetTrialCreditGroupBalance(info.UserId, info.UsingGroup)
+		if err != nil {
+			return 0, err
 		}
-		return model.GetTrialCreditGroupBalance(info.UserId, info.UsingGroup)
+		if balance > 0 {
+			return balance, nil
+		}
+	}
+	userGroup := info.UserGroup
+	if userGroup == "" {
+		userGroup, err = model.GetUserGroup(info.UserId, true)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if !GroupInUserUsableGroups(userGroup, info.UsingGroup) {
+		return 0, model.ErrTrialInsufficient
+	}
+	return 0, nil
+}
+
+func RequestAvailableQuota(info *relaycommon.RelayInfo) (int, error) {
+	balance, err := trialFundingBalance(info)
+	if err != nil {
+		return 0, err
+	}
+	if balance > 0 {
+		return balance, nil
 	}
 	return model.GetUserQuota(info.UserId, false)
 }
@@ -85,16 +115,15 @@ func PreConsumeTrialIfNeeded(c *gin.Context, info *relaycommon.RelayInfo, quota 
 	if info.Billing != nil {
 		return nil
 	}
-	cfg, err := model.ReadTrialCreditConfig()
+	balance, err := trialFundingBalance(info)
 	if err != nil {
 		return err
 	}
-	if !cfg.HasTrialGroup(info.UsingGroup) {
+	if balance == 0 {
 		return nil
 	}
-	returnTrialErr := PreConsumeBilling(c, quota, info)
-	if returnTrialErr != nil {
-		return returnTrialErr
+	if apiErr := PreConsumeBilling(c, quota, info); apiErr != nil {
+		return apiErr
 	}
 	return nil
 }

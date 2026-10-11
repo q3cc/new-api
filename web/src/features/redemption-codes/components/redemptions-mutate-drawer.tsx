@@ -459,11 +459,6 @@ export function RedemptionsMutateDrawer({
                                 )
                               : t('Please select an enabled subscription plan')}
                           </FormDescription>
-                          <FormDescription>
-                            {t(
-                              'The subscription starts when redeemed and follows the latest plan settings.'
-                            )}
-                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}

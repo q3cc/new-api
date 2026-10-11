@@ -193,11 +193,6 @@ export function EpayEndpointsEditor(props: Props) {
           },
         ]}
       />
-      <p className='text-muted-foreground text-sm'>
-        {t(
-          'Disabling a service stops new payments. Existing orders can still be confirmed.'
-        )}
-      </p>
       <Dialog
         open={open}
         onOpenChange={setOpen}

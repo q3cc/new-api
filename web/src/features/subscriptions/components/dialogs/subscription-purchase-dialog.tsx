@@ -43,6 +43,7 @@ import { formatDuration, formatResetPeriod } from '../../lib'
 import type { PlanRecord } from '../../types'
 
 interface PaymentMethod {
+  id?: string
   type: string
   name?: string
 }
@@ -70,7 +71,9 @@ export function SubscriptionPurchaseDialog(props: Props) {
 
   useEffect(() => {
     if (props.open && props.epayMethods && props.epayMethods.length > 0) {
-      setSelectedEpayMethod(props.epayMethods[0].type)
+      setSelectedEpayMethod(
+        props.epayMethods[0].id || props.epayMethods[0].type
+      )
     } else if (!props.open) {
       setSelectedEpayMethod('')
     }
@@ -375,7 +378,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
               <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
                 <Combobox
                   options={(props.epayMethods || []).map((m) => ({
-                    value: m.type,
+                    value: m.id || m.type,
                     label: m.name || m.type,
                   }))}
                   value={selectedEpayMethod}

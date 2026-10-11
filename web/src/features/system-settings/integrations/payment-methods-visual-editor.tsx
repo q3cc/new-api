@@ -16,8 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Lightbulb, Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import { useState, useMemo } from 'react'
+import {
+  GripVertical,
+  Lightbulb,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react'
+import { useState, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
@@ -38,6 +45,7 @@ import {
   PaymentMethodDialog,
   type PaymentMethodData,
 } from './payment-method-dialog'
+import { paymentMethodIdentity } from './payment-method-schema'
 
 type PaymentMethodsVisualEditorProps = {
   endpoints?: EpayEndpoint[]
@@ -117,6 +125,7 @@ export function PaymentMethodsVisualEditor({
         ?.name ?? t('Choose a payment service')
     )
   }
+  const dragging = useRef<PaymentMethodData | null>(null)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [initialData, setInitialData] = useState<PaymentMethodData | null>(null)
   const [searchText, setSearchText] = useState('')
@@ -173,7 +182,9 @@ export function PaymentMethodsVisualEditor({
           'name' in item &&
           'type' in item &&
           item.name === editData.name &&
-          item.type === editData.type
+          item.type === editData.type &&
+          paymentMethodIdentity(item as PaymentMethodData) ===
+            paymentMethodIdentity(editData)
       )
       if (index !== -1) {
         updatedArray[index] = data
@@ -202,7 +213,9 @@ export function PaymentMethodsVisualEditor({
           'name' in item &&
           'type' in item &&
           item.name === method.name &&
-          item.type === method.type
+          item.type === method.type &&
+          paymentMethodIdentity(item as PaymentMethodData) ===
+            paymentMethodIdentity(method)
         )
     )
 
@@ -214,6 +227,85 @@ export function PaymentMethodsVisualEditor({
     setEditData(method)
     setDialogOpen(true)
   }
+
+  const reorder = (from: PaymentMethodData, target: PaymentMethodData) => {
+    if (from === target) return
+    const parsed = JSON.parse(value) as PaymentMethodData[]
+    const start = parsed.findIndex(
+      (item) =>
+        item !== null &&
+        typeof item === 'object' &&
+        typeof item.type === 'string' &&
+        typeof item.name === 'string' &&
+        paymentMethodIdentity(item) === paymentMethodIdentity(from) &&
+        item.name === from.name
+    )
+    const end = parsed.findIndex(
+      (item) =>
+        item !== null &&
+        typeof item === 'object' &&
+        typeof item.type === 'string' &&
+        typeof item.name === 'string' &&
+        paymentMethodIdentity(item) === paymentMethodIdentity(target) &&
+        item.name === target.name
+    )
+    if (start < 0 || end < 0 || start === end) return
+    const [moved] = parsed.splice(start, 1)
+    parsed.splice(end, 0, moved)
+    onChange(JSON.stringify(parsed, null, 2))
+  }
+
+  const orderHandle = (method: PaymentMethodData) => (
+    <Button
+      type='button'
+      variant='ghost'
+      size='icon-sm'
+      draggable={paymentMethods.length > 1}
+      disabled={paymentMethods.length < 2}
+      className='cursor-grab touch-none active:cursor-grabbing'
+      aria-label={t(
+        'Drag {{method}} to reorder. Use the arrow keys to move it.',
+        { method: method.name }
+      )}
+      onDragStart={(event) => {
+        dragging.current = method
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', paymentMethodIdentity(method))
+      }}
+      onDragEnd={() => {
+        dragging.current = null
+      }}
+      onKeyDown={(event) => {
+        if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return
+        event.preventDefault()
+        const index = paymentMethods.indexOf(method)
+        const target =
+          paymentMethods[index + (event.key === 'ArrowUp' ? -1 : 1)]
+        if (target) reorder(method, target)
+      }}
+      onPointerDown={(event) => {
+        if (event.pointerType !== 'mouse') {
+          dragging.current = method
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }
+      }}
+      onPointerUp={(event) => {
+        if (event.pointerType === 'mouse' || !dragging.current) return
+        const row = document
+          .elementFromPoint(event.clientX, event.clientY)
+          ?.closest('[data-payment-order]')
+        const target =
+          paymentMethods[Number(row?.getAttribute('data-payment-order'))]
+        if (row && target) reorder(dragging.current, target)
+        dragging.current = null
+      }}
+      onPointerCancel={() => {
+        dragging.current = null
+      }}
+    >
+      <GripVertical aria-hidden='true' className='size-4' />
+    </Button>
+  )
 
   const handleAdd = () => {
     setInitialData(null)
@@ -235,7 +327,7 @@ export function PaymentMethodsVisualEditor({
     <div className='space-y-4'>
       <div className='flex flex-col gap-3 sm:flex-row sm:items-center'>
         <div className='relative flex-1'>
-          <Search className='text-muted-foreground absolute left-2.5 top-2.5 h-4 w-4' />
+          <Search className='text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4' />
           <Input
             placeholder={t('Search payment methods...')}
             value={searchText}
@@ -308,8 +400,28 @@ export function PaymentMethodsVisualEditor({
           <StaticDataTable
             className='hidden rounded-none border-0 md:block'
             data={filteredMethods}
-            getRowKey={(method) => method.type}
+            getRowKey={(method) => paymentMethodIdentity(method)}
+            getRowProps={(method) => ({
+              'data-payment-order': paymentMethods.indexOf(method),
+              onDragOver: (event) => {
+                if (dragging.current) {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                }
+              },
+              onDrop: (event) => {
+                event.preventDefault()
+                if (dragging.current) reorder(dragging.current, method)
+                dragging.current = null
+              },
+            })}
             columns={[
+              {
+                id: 'order',
+                header: <span className='sr-only'>{t('Display order')}</span>,
+                className: 'w-10',
+                cell: orderHandle,
+              },
               {
                 id: 'name',
                 header: t('Name'),
@@ -397,7 +509,20 @@ export function PaymentMethodsVisualEditor({
                 .join('-')
 
               return (
-                <div key={methodKey} className='p-4'>
+                <div
+                  key={paymentMethodIdentity(method) + methodKey}
+                  className='p-4'
+                  data-payment-order={paymentMethods.indexOf(method)}
+                  onDragOver={(event) => {
+                    if (dragging.current) event.preventDefault()
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    if (dragging.current) reorder(dragging.current, method)
+                    dragging.current = null
+                  }}
+                >
+                  {orderHandle(method)}
                   <div className='mb-3 flex items-start justify-between'>
                     <div className='flex-1'>
                       <div className='mb-1 font-medium'>{method.name}</div>
@@ -476,6 +601,7 @@ export function PaymentMethodsVisualEditor({
 
       <PaymentMethodDialog
         endpoints={endpoints}
+        existingMethods={paymentMethods}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onSave={handleSave}

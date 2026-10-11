@@ -187,6 +187,35 @@ func TestEpayDatabaseMatrix(t *testing.T) {
 			assert.Equal(t, 0, getUserQuotaForPaymentGuardTest(t, user.Id))
 			assert.Equal(t, common.TopUpStatusPending, GetTopUpByTradeNo(order.TradeNo).Status)
 
+			t.Run("same gateway type can select distinct endpoints", func(t *testing.T) {
+				original := config.PayMethods
+				config.PayMethods = []map[string]string{
+					{"name": "Alipay A", "type": "alipay", "epay_endpoint_id": "a"},
+					{"name": "Alipay B", "type": "alipay", "epay_endpoint_id": "b"},
+				}
+				require.NoError(t, SaveEpayConfig(config))
+				defer func() { config.PayMethods = original; require.NoError(t, SaveEpayConfig(config)) }()
+				_, err := ResolveEpayPaymentMethod("alipay")
+				require.Error(t, err, "ambiguous legacy selection must not choose the first service")
+				for _, method := range config.PayMethods {
+					version, err := ResolveEpayPaymentMethod(EpayPaymentMethodKey(method))
+					require.NoError(t, err)
+					assert.Equal(t, method["epay_endpoint_id"], version.EndpointId)
+				}
+				bad := append([]map[string]string{}, config.PayMethods...)
+				bad = append(bad, map[string]string{"name": "Duplicate", "type": "alipay", "epay_endpoint_id": "a"})
+				encoded, err := common.Marshal(bad)
+				require.NoError(t, err)
+				require.Error(t, UpdateOption("PayMethods", string(encoded)))
+				for _, kind := range []string{"", " ", " alipay", "bad\ttype"} {
+					encoded, err = common.Marshal([]map[string]string{{"name": "Alipay", "type": kind, "epay_endpoint_id": "a"}})
+					require.NoError(t, err)
+					require.Error(t, UpdateOption("PayMethods", string(encoded)))
+				}
+				encoded, err = common.Marshal([]map[string]string{{"name": " ", "type": "alipay", "epay_endpoint_id": "a"}})
+				require.NoError(t, err)
+				require.Error(t, UpdateOption("PayMethods", string(encoded)))
+			})
 			// Rotation and disabling affect only subsequent purchases.
 			newKey := "a-rotated"
 			config.Endpoints[0].Key = &newKey
@@ -282,6 +311,7 @@ func TestEpayDatabaseMatrix(t *testing.T) {
 			assert.Empty(t, results[0].Password)
 
 			assertEpaySearchAndHistoryContracts(t, db)
+			assertAdminOrderContracts(t, db)
 
 			// Fresh installation is also stable across consecutive starts.
 			resetEpayMatrixDatabase(t, db)
@@ -373,4 +403,106 @@ func resetEpayMatrixDatabase(t *testing.T, db *gorm.DB) {
 		}
 		require.NoError(t, db.Migrator().DropTable(table))
 	}
+}
+
+func assertAdminOrderContracts(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	owner := User{Username: "orders_owner", DisplayName: "orders%_!\\", Email: "orders@example.com", AffCode: "orders_owner", Password: "private-password"}
+	require.NoError(t, db.Create(&owner).Error)
+	plan := SubscriptionPlan{Title: "Orders monthly plan"}
+	require.NoError(t, db.Create(&plan).Error)
+	versionA := EpayEndpointVersion{EndpointId: "orders-a", Address: "https://private-a.invalid", MerchantId: "private-merchant", SecretKey: "private-key-a"}
+	versionB := EpayEndpointVersion{EndpointId: "orders-b", SecretKey: "private-key-b"}
+	require.NoError(t, db.Create(&versionA).Error)
+	require.NoError(t, db.Create(&versionB).Error)
+	require.NoError(t, db.Create(&EpayEndpoint{Id: "orders-a", Name: "Orders service A", Enabled: false, VersionId: versionB.Id}).Error)
+	require.NoError(t, db.Create(&EpayEndpoint{Id: "orders-b", Name: "Orders service B", Enabled: true, VersionId: versionB.Id}).Error)
+	start, end := int64(100), int64(200)
+	for _, order := range []TopUp{
+		{UserId: owner.Id, TradeNo: "orders%_!\\", Status: common.TopUpStatusPending, PaymentMethod: "retired-custom", PaymentProvider: PaymentProviderEpay, EpayVersionId: versionA.Id, CreateTime: start, Money: 12.34, Amount: 2},
+		{UserId: owner.Id, TradeNo: "orders-outside", Status: common.TopUpStatusPending, PaymentMethod: "retired-custom", CreateTime: end + 1},
+		{UserId: owner.Id, TradeNo: "orders-mirror", Status: common.TopUpStatusSuccess, PaymentMethod: "mirror-only-method", CreateTime: end + 2},
+	} {
+		require.NoError(t, db.Create(&order).Error)
+	}
+	for _, order := range []SubscriptionOrder{
+		{UserId: owner.Id, PlanId: plan.Id, TradeNo: "prefix-orders%_!\\-suffix", Status: common.TopUpStatusPending, PaymentMethod: "retired-custom", PaymentProvider: PaymentProviderEpay, EpayVersionId: versionB.Id, CreateTime: end, Money: 6.78, ProviderPayload: "private-callback-signature"},
+		{UserId: owner.Id, PlanId: plan.Id, TradeNo: "orders-mirror", Status: common.TopUpStatusFailed, PaymentMethod: PaymentMethodStripe, CreateTime: end},
+	} {
+		require.NoError(t, db.Create(&order).Error)
+	}
+
+	t.Run("combined filters apply before exact-first pagination with inclusive dates", func(t *testing.T) {
+		filter := BillingHistoryFilter{Status: common.TopUpStatusPending, PaymentMethod: "retired-custom", StartTimestamp: &start, EndTimestamp: &end}
+		for index, trade := range []string{"orders%_!\\", "prefix-orders%_!\\-suffix"} {
+			rows, total, err := GetAdminBillingHistory(" orders%_!\\ ", filter, &common.PageInfo{Page: index + 1, PageSize: 1})
+			require.NoError(t, err)
+			assert.Equal(t, int64(2), total)
+			require.Len(t, rows, 1)
+			assert.Equal(t, trade, rows[0].TradeNo)
+			assert.Equal(t, owner.Username, rows[0].Username)
+		}
+		filter.OrderType = "subscription"
+		rows, total, err := GetAdminBillingHistory(owner.Email, filter, &common.PageInfo{Page: 1, PageSize: 20})
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), total)
+		require.Len(t, rows, 1)
+		assert.Equal(t, plan.Title, rows[0].PlanTitle)
+		filter.Status = common.TopUpStatusSuccess
+		_, total, err = GetAdminBillingHistory("orders", filter, &common.PageInfo{Page: 1, PageSize: 20})
+		require.NoError(t, err)
+		assert.Zero(t, total)
+	})
+	t.Run("historical methods exclude subscription mirrors and retain retired methods", func(t *testing.T) {
+		methods, err := GetBillingPaymentMethods()
+		require.NoError(t, err)
+		assert.Contains(t, methods, "retired-custom")
+		assert.Contains(t, methods, PaymentMethodStripe)
+		assert.NotContains(t, methods, "mirror-only-method")
+		_, total, err := GetAdminBillingHistory(owner.Email, BillingHistoryFilter{}, &common.PageInfo{Page: 1, PageSize: 20})
+		require.NoError(t, err)
+		assert.Equal(t, int64(4), total)
+	})
+	t.Run("details resolve the saved endpoint version and expose only safe fields", func(t *testing.T) {
+		for _, tc := range []struct{ kind, trade, endpoint string }{
+			{"topup", "orders%_!\\", "orders-a"},
+			{"subscription", "prefix-orders%_!\\-suffix", "orders-b"},
+		} {
+			detail, err := GetBillingOrderDetail(tc.kind, tc.trade)
+			require.NoError(t, err)
+			assert.Equal(t, tc.endpoint, detail.PaymentServiceId)
+			assert.NotEmpty(t, detail.PaymentServiceName)
+			assert.Equal(t, owner.DisplayName, detail.DisplayName)
+			assert.Equal(t, owner.Email, detail.Email)
+			encoded, err := common.Marshal(detail)
+			require.NoError(t, err)
+			var fields map[string]any
+			require.NoError(t, common.Unmarshal(encoded, &fields))
+			for key := range fields {
+				assert.Contains(t, []string{"id", "user_id", "username", "amount", "money", "trade_no", "payment_method", "payment_provider", "create_time", "complete_time", "status", "order_type", "plan_id", "plan_title", "display_name", "email", "payment_service_id", "payment_service_name"}, key)
+			}
+			assert.NotContains(t, string(encoded), "private-")
+		}
+		_, err := GetBillingOrderDetail("topup", "orders-mirror")
+		assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+		detail, err := GetBillingOrderDetail("subscription", "orders-mirror")
+		require.NoError(t, err)
+		assert.Equal(t, common.TopUpStatusFailed, detail.Status)
+		assert.Empty(t, detail.PaymentServiceId)
+	})
+	t.Run("deleted users and plans leave original associations queryable", func(t *testing.T) {
+		require.NoError(t, db.Unscoped().Delete(&owner).Error)
+		require.NoError(t, db.Unscoped().Delete(&plan).Error)
+		detail, err := GetBillingOrderDetail("subscription", "orders-mirror")
+		require.NoError(t, err)
+		assert.Equal(t, owner.Id, detail.UserId)
+		assert.Equal(t, plan.Id, detail.PlanId)
+		assert.Empty(t, detail.Username)
+		assert.Empty(t, detail.PlanTitle)
+		rows, total, err := GetAdminBillingHistory("orders-mirror", BillingHistoryFilter{}, &common.PageInfo{Page: 1, PageSize: 20})
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), total)
+		require.Len(t, rows, 1)
+		assert.Equal(t, "subscription", rows[0].OrderType)
+	})
 }

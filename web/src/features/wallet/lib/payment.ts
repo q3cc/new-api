@@ -134,7 +134,7 @@ export async function dispatchSelectedPayment(
     return processors.waffoPancake(topupAmount)
   }
 
-  return processors.regular(topupAmount, paymentMethod.type)
+  return processors.regular(topupAmount, paymentMethod.id || paymentMethod.type)
 }
 
 /**

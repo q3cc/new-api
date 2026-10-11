@@ -120,6 +120,37 @@ describe('security sidebar visibility', () => {
   })
 })
 
+describe('orders sidebar entry', () => {
+  it('old configurations show Orders after Subscriptions and require an administrator', () => {
+    const { result } = sidebarFor({
+      admin: { enabled: true, subscription: true },
+    })
+    const items =
+      result.current.find((group) => group.id === 'admin')?.items ?? []
+    const index = items.findIndex((item) => item.title === 'Subscriptions')
+    expect(index).toBeGreaterThanOrEqual(0)
+    expect(items[index + 1]).toMatchObject({
+      title: 'Orders',
+      url: '/orders',
+      requiredRole: 10,
+    })
+    expect(
+      parseSidebarModulesAdmin('{"admin":{"enabled":true}}').admin.orders
+    ).toBe(true)
+  })
+  it('saving the order visibility setting hides only the orders entry', () => {
+    const config = parseSidebarModulesAdmin('{"admin":{"enabled":true}}')
+    config.admin.orders = false
+    const saved = parseSidebarModulesAdmin(serializeSidebarModulesAdmin(config))
+    const { result } = sidebarFor(saved)
+    const titles = result.current
+      .flatMap((group) => group.items)
+      .map((item) => item.title)
+    expect(titles).not.toContain('Orders')
+    expect(titles).toContain('Subscriptions')
+  })
+})
+
 describe('audit log sidebar entry', () => {
   it('admin settings default Audit Logs to visible and preserve its independent toggle when saved', () => {
     const config = parseSidebarModulesAdmin(

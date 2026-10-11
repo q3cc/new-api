@@ -154,6 +154,7 @@ export function SidebarModulesSection({
         title: t('Users'),
         description: t('Administer user accounts and roles.'),
       },
+      orders: { title: t('Orders'), description: '' },
       setting: {
         title: t('System settings'),
         description: t('Advanced platform configuration.'),
@@ -252,9 +253,11 @@ export function SidebarModulesSection({
                           <SettingsSwitchItem className='py-2'>
                             <SettingsSwitchContent>
                               <FormLabel>{moduleInfo.title}</FormLabel>
-                              <FormDescription>
-                                {moduleInfo.description}
-                              </FormDescription>
+                              {moduleInfo.description && (
+                                <FormDescription>
+                                  {moduleInfo.description}
+                                </FormDescription>
+                              )}
                             </SettingsSwitchContent>
                             <FormControl>
                               <Switch

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"github.com/Calcium-Ion/go-epay/epay"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -227,4 +229,94 @@ func TestEpaySubscriptionCreationPersistsHistoryAndServerSelectedService(t *test
 	var count int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Count(&count).Error)
 	assert.Equal(t, int64(1), count, "disabled service cannot create another order")
+}
+
+func TestEpaySameTypeSelectionsAndOrderIsolation(t *testing.T) {
+	a, b := setupEpayCallbackTest(t)
+	oldOptions := common.OptionMap
+	oldMethods := operation_setting.PayMethods2JsonString()
+	common.OptionMap = map[string]string{}
+	t.Cleanup(func() {
+		common.OptionMap = oldOptions
+		require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(oldMethods))
+	})
+	require.NoError(t, model.MigrateEpayEndpoints())
+	confirmPaymentComplianceForTest(t)
+	oldAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "https://api.example.com"
+	t.Cleanup(func() { system_setting.ServerAddress = oldAddress })
+	for _, version := range []*model.EpayEndpointVersion{a, b} {
+		require.NoError(t, model.DB.Create(&model.EpayEndpoint{Id: version.EndpointId, Name: version.EndpointId, Enabled: true, VersionId: version.Id}).Error)
+	}
+	methods := []map[string]string{{"name": "Alipay B", "type": "alipay", "epay_endpoint_id": "b"}, {"name": "Alipay A", "type": "alipay", "epay_endpoint_id": "a"}}
+	encoded, err := common.Marshal(methods)
+	require.NoError(t, err)
+	require.NoError(t, model.UpdateOption("PayMethods", string(encoded)))
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("id", 900); c.Next() })
+	router.GET("/info", GetTopUpInfo)
+	router.POST("/wallet", RequestEpay)
+	router.POST("/subscription", SubscriptionRequestEpay)
+	router.GET("/wallet/:endpoint_id", EpayNotify)
+	router.GET("/subscription/:endpoint_id", SubscriptionEpayNotify)
+	info := httptest.NewRecorder()
+	router.ServeHTTP(info, httptest.NewRequest(http.MethodGet, "/info", nil))
+	var listing struct {
+		Data struct {
+			Methods []map[string]string `json:"pay_methods"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(info.Body.Bytes(), &listing))
+	require.GreaterOrEqual(t, len(listing.Data.Methods), 2)
+	assert.Equal(t, "Alipay B", listing.Data.Methods[0]["name"])
+	assert.NotEqual(t, listing.Data.Methods[0]["id"], listing.Data.Methods[1]["id"])
+	for _, path := range []string{"/wallet", "/subscription"} {
+		for _, version := range []*model.EpayEndpointVersion{a, b} {
+			selection := model.EpayPaymentMethodKey(map[string]string{"type": "alipay", "epay_endpoint_id": version.EndpointId})
+			body := fmt.Sprintf(`{"plan_id":900,"amount":2,"payment_method":%q,"epay_endpoint_id":"ignored"}`, selection)
+			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			var payment struct {
+				Message string            `json:"message"`
+				Data    map[string]string `json:"data"`
+			}
+			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &payment))
+			require.Equal(t, "success", payment.Message, response.Body.String())
+			assert.Equal(t, "alipay", payment.Data["type"])
+			assert.Equal(t, version.MerchantId, payment.Data["pid"])
+			trade := payment.Data["out_trade_no"]
+			if path == "/wallet" {
+				order := model.GetTopUpByTradeNo(trade)
+				require.NotNil(t, order)
+				assert.Equal(t, version.Id, order.EpayVersionId)
+				assert.Equal(t, "alipay", order.PaymentMethod)
+			} else {
+				order := model.GetSubscriptionOrderByTradeNo(trade)
+				require.NotNil(t, order)
+				assert.Equal(t, version.Id, order.EpayVersionId)
+				assert.Equal(t, "alipay", order.PaymentMethod)
+			}
+			for _, signer := range []*model.EpayEndpointVersion{a, b, version} {
+				params := epay.GenerateParams(map[string]string{"pid": signer.MerchantId, "out_trade_no": trade, "money": payment.Data["money"], "type": "alipay", "trade_status": epay.StatusTradeSuccess, "sign_type": "MD5"}, signer.SecretKey)
+				values := url.Values{}
+				for key, value := range params {
+					values.Set(key, value)
+				}
+				callback := httptest.NewRecorder()
+				router.ServeHTTP(callback, httptest.NewRequest(http.MethodGet, path+"/"+signer.EndpointId+"?"+values.Encode(), nil))
+				if signer.EndpointId == version.EndpointId {
+					assert.Equal(t, "success", callback.Body.String())
+				} else {
+					assert.Equal(t, "fail", callback.Body.String())
+				}
+			}
+		}
+	}
+	for _, path := range []string{"/wallet", "/subscription"} {
+		rejected := httptest.NewRecorder()
+		router.ServeHTTP(rejected, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"amount":2,"plan_id":900,"payment_method":"alipay"}`)))
+		assert.NotContains(t, rejected.Body.String(), `"message":"success"`)
+	}
 }

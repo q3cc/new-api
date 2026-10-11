@@ -19,7 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 // Message types
 export type MessageRole = 'user' | 'assistant' | 'system'
 
-export type MessageStatus = 'loading' | 'streaming' | 'complete' | 'error'
+export type MessageStatus =
+  | 'loading'
+  | 'streaming'
+  | 'complete'
+  | 'error'
+  | 'interrupted'
 
 export type PlaygroundMessageLayoutMode = 'alternating' | 'left'
 

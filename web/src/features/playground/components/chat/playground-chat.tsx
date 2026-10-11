@@ -26,6 +26,7 @@ import {
 } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
 import { Message } from '@/components/ai-elements/message'
+import { Button } from '@/components/ui/button'
 
 import {
   getChatMessageRenderState,
@@ -80,13 +81,13 @@ export function PlaygroundChat({
   const { t } = useTranslation()
   const [editText, setEditText] = useState('')
   const [originalText, setOriginalText] = useState('')
+  const [historyLimit, setHistoryLimit] = useState(
+    MAX_RENDERED_HISTORY_MESSAGES
+  )
   const [sourceMessageKeys, setSourceMessageKeys] = useState<
     ReadonlySet<string>
   >(() => new Set())
-  const visibleMessageOffset = Math.max(
-    0,
-    messages.length - MAX_RENDERED_HISTORY_MESSAGES
-  )
+  const visibleMessageOffset = Math.max(0, messages.length - historyLimit)
   const visibleMessages = messages.slice(visibleMessageOffset)
 
   function handleToggleMessageSource(message: MessageType): void {
@@ -215,7 +216,21 @@ export function PlaygroundChat({
     <Conversation>
       {/* Remove outer padding; apply padding to inner centered container to align with input */}
       <ConversationContent className='p-0'>
-        <div className='mx-auto w-full max-w-4xl px-4 py-4'>{chatContent}</div>
+        <div className='mx-auto w-full max-w-4xl px-4 py-4'>
+          {visibleMessageOffset > 0 && (
+            <Button
+              variant='outline'
+              onClick={() =>
+                setHistoryLimit(
+                  (count) => count + MAX_RENDERED_HISTORY_MESSAGES
+                )
+              }
+            >
+              {t('Show earlier messages')}
+            </Button>
+          )}
+          {chatContent}
+        </div>
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>

@@ -57,7 +57,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		}
 	}
 
-	version, err := model.ResolveEpayPaymentMethod(req.PaymentMethod)
+	version, paymentType, err := model.ResolveEpayPaymentSelection(req.PaymentMethod)
 	if err != nil {
 		common.ApiErrorMsg(c, "支付服务不可用")
 		return
@@ -88,7 +88,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		PlanId:          plan.Id,
 		Money:           plan.PriceAmount,
 		TradeNo:         tradeNo,
-		PaymentMethod:   req.PaymentMethod,
+		PaymentMethod:   paymentType,
 		PaymentProvider: model.PaymentProviderEpay,
 		EpayVersionId:   version.Id,
 		EpayMoney:       strconv.FormatFloat(plan.PriceAmount, 'f', 2, 64),
@@ -100,7 +100,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		return
 	}
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
-		Type:           req.PaymentMethod,
+		Type:           paymentType,
 		ServiceTradeNo: tradeNo,
 		Name:           fmt.Sprintf("SUB:%s", plan.Title),
 		Money:          order.EpayMoney,

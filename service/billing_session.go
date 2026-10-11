@@ -405,14 +405,14 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		return nil, types.NewError(fmt.Errorf("relayInfo is nil"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 
-	cfg, cfgErr := model.ReadTrialCreditConfig()
-	if cfgErr != nil {
-		return nil, types.NewError(cfgErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
-	}
-	if cfg.HasTrialGroup(relayInfo.UsingGroup) {
-		if !cfg.Enabled {
-			return nil, types.NewErrorWithStatusCode(model.ErrTrialInsufficient, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+	trialBalance, trialErr := trialFundingBalance(relayInfo)
+	if trialErr != nil {
+		if errors.Is(trialErr, model.ErrTrialInsufficient) {
+			return nil, types.NewErrorWithStatusCode(trialErr, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 		}
+		return nil, types.NewError(trialErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+	}
+	if trialBalance > 0 {
 		session := &BillingSession{relayInfo: relayInfo, funding: &TrialFunding{requestId: relayInfo.RequestId, userId: relayInfo.UserId, group: relayInfo.UsingGroup}}
 		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
 			return nil, apiErr

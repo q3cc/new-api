@@ -46,11 +46,14 @@ import {
 } from '@/components/ui/select'
 
 import type { EpayEndpoint } from './epay-api'
+import {
+  paymentMethodFields,
+  paymentMethodIdentity,
+} from './payment-method-schema'
 
-const createPaymentMethodDialogSchema = (t: (key: string) => string) =>
+const createPaymentMethodDialogSchema = () =>
   z.object({
-    name: z.string().min(1, t('Payment method name is required')),
-    type: z.string().min(1, t('Payment type key is required')),
+    ...paymentMethodFields,
     icon: z.string().optional(),
     min_topup: z.string().optional(),
     epay_endpoint_id: z.string().optional(),
@@ -78,6 +81,7 @@ type PaymentMethodDialogProps = {
   editData?: PaymentMethodData | null
   initialData?: PaymentMethodData | null
   endpoints?: EpayEndpoint[]
+  existingMethods?: PaymentMethodData[]
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
@@ -96,10 +100,11 @@ export function PaymentMethodDialog({
   editData,
   initialData,
   endpoints = [],
+  existingMethods = [],
 }: PaymentMethodDialogProps) {
   const { t } = useTranslation()
   const isEditMode = !!editData
-  const paymentMethodDialogSchema = createPaymentMethodDialogSchema(t)
+  const paymentMethodDialogSchema = createPaymentMethodDialogSchema()
   const paymentTypeOptions = [
     {
       iconName: 'SiAlipay',
@@ -177,6 +182,18 @@ export function PaymentMethodDialog({
     ) {
       form.setError('epay_endpoint_id', {
         message: t('Choose a payment service'),
+      })
+      return
+    }
+    const identity = paymentMethodIdentity(values)
+    if (
+      existingMethods.some(
+        (method) =>
+          method !== editData && paymentMethodIdentity(method) === identity
+      )
+    ) {
+      form.setError('type', {
+        message: t('This payment type is already configured for this service'),
       })
       return
     }
@@ -291,11 +308,6 @@ export function PaymentMethodDialog({
                     allowCustomValue
                   />
                 </FormControl>
-                <FormDescription className='leading-relaxed'>
-                  {t(
-                    'Used to decide the payment flow. Built-in keys include stripe for Stripe and waffo_pancake for Waffo Pancake; other values are sent to Epay as the type parameter.'
-                  )}
-                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -362,11 +374,6 @@ export function PaymentMethodDialog({
                     />
                   )}
                 </div>
-                <FormDescription>
-                  {t(
-                    'Use usdt for the USDT logo. Leave empty to use the default icon.'
-                  )}
-                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}

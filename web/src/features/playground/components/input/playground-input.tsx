@@ -37,6 +37,8 @@ import { PlaygroundInputControls } from './playground-input-controls'
 import { PlaygroundInputTools } from './playground-input-tools'
 
 interface PlaygroundInputProps {
+  draft?: string
+  onDraftChange?: (value: string) => void
   config: PlaygroundConfig
   onSubmit: (text: string) => void
   onStop?: () => void
@@ -63,6 +65,8 @@ interface PlaygroundInputProps {
 }
 
 export function PlaygroundInput({
+  draft,
+  onDraftChange,
   config,
   onSubmit,
   onStop,
@@ -82,7 +86,9 @@ export function PlaygroundInput({
   parameterEnabled,
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
-  const [text, setText] = useState('')
+  const [localText, setLocalText] = useState('')
+  const text = draft ?? localText
+  const setText = onDraftChange ?? setLocalText
 
   const handleSubmit = (message: PromptInputMessage) => {
     const submittableText = getSubmittableInputText(message, disabled)

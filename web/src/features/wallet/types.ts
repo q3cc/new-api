@@ -99,6 +99,8 @@ export interface CreemPaymentRequest {
  * Payment method configuration
  */
 export interface PaymentMethod {
+  /** Stable server-issued selector for the configured payment binding. */
+  id?: string
   /** Display name of payment method */
   name: string
   /** Payment method type identifier */

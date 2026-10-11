@@ -41,10 +41,16 @@ func accessTokenScopeRule(scope string) accessTokenRouteRule {
 // Casbin-guarded routes declare themselves through
 // DeclareAccessTokenPermissionRoute when they are registered.
 var accessTokenRouteRules = map[string]accessTokenRouteRule{
-	"GET /api/trial-credit/config":    accessTokenScopeRule("option:read"),
-	"PUT /api/trial-credit/config":    accessTokenScopeRule("option:write"),
-	"GET /api/user/self/trial-credit": accessTokenScopeRule("wallet:read"),
-	"POST /api/user/:id/trial-credit": accessTokenScopeRule("user:write"),
+	"GET /api/playground/conversations":         accessTokenSessionRule,
+	"POST /api/playground/conversations":        accessTokenSessionRule,
+	"POST /api/playground/conversations/import": accessTokenSessionRule,
+	"GET /api/playground/conversations/:id":     accessTokenSessionRule,
+	"PUT /api/playground/conversations/:id":     accessTokenSessionRule,
+	"DELETE /api/playground/conversations/:id":  accessTokenSessionRule,
+	"GET /api/trial-credit/config":              accessTokenScopeRule("option:read"),
+	"PUT /api/trial-credit/config":              accessTokenScopeRule("option:write"),
+	"GET /api/user/self/trial-credit":           accessTokenScopeRule("wallet:read"),
+	"POST /api/user/:id/trial-credit":           accessTokenScopeRule("user:write"),
 
 	// router/api-router.go: top level
 	"GET /api/models":                     accessTokenScopeRule("profile:read"),
@@ -113,6 +119,8 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	// router/api-router.go: /api/user (admin)
 	"GET /api/user/":                                   accessTokenScopeRule("user:read"),
 	"GET /api/user/topup":                              accessTokenScopeRule("billing:read"),
+	"GET /api/user/topup/filters":                      accessTokenScopeRule("billing:read"),
+	"GET /api/user/topup/detail":                       accessTokenScopeRule("billing:read"),
 	"POST /api/user/topup/complete":                    accessTokenScopeRule("billing:write"),
 	"GET /api/user/search":                             accessTokenScopeRule("user:read"),
 	"GET /api/user/:id/oauth/bindings":                 accessTokenScopeRule("user:read"),

@@ -227,6 +227,77 @@ func TestTrialCreditAccounting(t *testing.T) {
 				require.NoError(t, db.Where("grant_key = ?", "affiliate:1234").First(&grant).Error)
 				assert.InDelta(t, time.Now().Unix()+7*86400, grant.ExpiresAt, 2)
 			})
+			t.Run("registration rewards use selected trial kind atomically", func(t *testing.T) {
+				original := GetTrialCreditConfig()
+				oldSignup, oldInvitee := common.QuotaForNewUser, common.QuotaForInvitee
+				oldPayment := *operation_setting.GetPaymentSetting()
+				common.QuotaForNewUser, common.QuotaForInvitee = 120, 30
+				operation_setting.GetPaymentSetting().ComplianceConfirmed = true
+				operation_setting.GetPaymentSetting().ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+				t.Cleanup(func() {
+					common.QuotaForNewUser, common.QuotaForInvitee = oldSignup, oldInvitee
+					*operation_setting.GetPaymentSetting() = oldPayment
+				})
+				cfg := original
+				cfg.Enabled, cfg.Affiliate, cfg.AffiliateDays = true, true, 7
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				defer func() { require.NoError(t, UpdateTrialCreditConfig(original)) }()
+				for _, invited := range []bool{false, true} {
+					u := User{Username: fmt.Sprintf("signup-trial-%v", invited), Group: "default"}
+					inviter := 0
+					want := 120
+					if invited {
+						inviter = user.Id
+						want += 30
+					}
+					require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return u.InsertWithTx(tx, inviter) }))
+					var stored User
+					require.NoError(t, db.First(&stored, u.Id).Error)
+					assert.Zero(t, stored.Quota)
+					var grants []TrialCreditGrant
+					require.NoError(t, db.Where("user_id = ?", u.Id).Find(&grants).Error)
+					total := 0
+					for _, grant := range grants {
+						total += grant.Quota
+						assert.Equal(t, cfg.AffiliateTypeId, grant.TypeId)
+						assert.Equal(t, cfg.Group, grant.GroupName)
+						assert.InDelta(t, time.Now().Unix()+7*86400, grant.ExpiresAt, 2)
+					}
+					assert.Equal(t, want, total)
+				}
+				// No fallback to wallet when issuance has been disabled or its configuration is corrupt.
+				bad := cfg
+				bad.Types = append([]TrialCreditType{}, cfg.Types...)
+				bad.Types[0].Enabled = false
+				encoded, err := common.Marshal(bad)
+				require.NoError(t, err)
+				require.NoError(t, db.Model(&Option{}).Where(map[string]any{"key": TrialConfigKey}).Update("value", string(encoded)).Error)
+				invalid := User{Username: "signup-disabled-kind", Group: "default"}
+				require.Error(t, db.Transaction(func(tx *gorm.DB) error { return invalid.InsertWithTx(tx, 0) }))
+				var invalidCount int64
+				require.NoError(t, db.Model(&User{}).Where("username = ?", invalid.Username).Count(&invalidCount).Error)
+				assert.Zero(t, invalidCount)
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				u := User{Username: "signup-rollback", Group: "default"}
+				require.Error(t, db.Transaction(func(tx *gorm.DB) error {
+					if err := u.InsertWithTx(tx, 0); err != nil {
+						return err
+					}
+					return fmt.Errorf("binding failed")
+				}))
+				var count int64
+				require.NoError(t, db.Model(&User{}).Where("username = ?", u.Username).Count(&count).Error)
+				assert.Zero(t, count)
+				require.NoError(t, db.Model(&TrialCreditGrant{}).Where("user_id = ?", u.Id).Count(&count).Error)
+				assert.Zero(t, count)
+				cfg.Affiliate = false
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				cash := User{Username: "signup-wallet", Group: "default"}
+				require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return cash.InsertWithTx(tx, user.Id) }))
+				assert.Equal(t, 150, cash.Quota)
+				require.NoError(t, db.Model(&TrialCreditGrant{}).Where("user_id = ?", cash.Id).Count(&count).Error)
+				assert.Zero(t, count)
+			})
 			t.Run("multiple kinds can be configured independently", func(t *testing.T) {
 				var cfg TrialCreditConfig
 				require.NoError(t, common.UnmarshalJsonStr(`{"enabled":true,"affiliate":true,"affiliate_type_id":1,"types":[{"id":1,"name":"Ds credit","group":"default","enabled":true},{"id":0,"name":"Gpt credit","group":"vip","enabled":true}]}`, &cfg))
@@ -301,6 +372,19 @@ func TestTrialCreditAccounting(t *testing.T) {
 				assert.Equal(t, "vip", reward.GroupName)
 				assert.Equal(t, 42, reward.Quota)
 				require.InDelta(t, time.Now().Unix()+7*86400, reward.ExpiresAt, 2)
+				// All newly registered users use the configured invitation kind, including a non-default group.
+				oldSignup := common.QuotaForNewUser
+				common.QuotaForNewUser = 37
+				t.Cleanup(func() { common.QuotaForNewUser = oldSignup })
+				newUser := User{Username: "chosen-signup-kind", Group: "default"}
+				require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return newUser.InsertWithTx(tx, 0) }))
+				assert.Zero(t, newUser.Quota)
+				var signup TrialCreditGrant
+				require.NoError(t, db.Where("user_id = ?", newUser.Id).First(&signup).Error)
+				assert.Equal(t, 2, signup.TypeId)
+				assert.Equal(t, "vip", signup.GroupName)
+				assert.Equal(t, 37, signup.Quota)
+				common.QuotaForNewUser = oldSignup
 				// Kind IDs cannot disappear or be redirected after issuance, including generic option updates.
 				bad := cfg
 				bad.Types = append([]TrialCreditType{}, cfg.Types...)

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -181,10 +183,14 @@ func validateEpayMethods(tx *gorm.DB, methods []map[string]string) error {
 	seen := map[string]bool{}
 	for _, method := range methods {
 		paymentType := method["type"]
-		if paymentType == "" || len(paymentType) > 50 || strings.TrimSpace(method["name"]) == "" || seen[paymentType] {
-			return errors.New("支付方式名称和类型必须有效，类型不能重复")
+		if paymentType == "" || len(paymentType) > 50 || strings.TrimSpace(method["name"]) == "" || strings.TrimSpace(paymentType) != paymentType || strings.ContainsFunc(paymentType, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+			return common.NewMessage("Enter a payment method name and a valid type key")
 		}
-		seen[paymentType] = true
+		identity := EpayPaymentMethodKey(method)
+		if seen[identity] {
+			return common.NewMessage("This payment type is already configured for this service")
+		}
+		seen[identity] = true
 		if !IsEpayPaymentMethod(paymentType) {
 			if method["epay_endpoint_id"] != "" {
 				return errors.New("该支付方式不能绑定易支付服务")
@@ -192,7 +198,7 @@ func validateEpayMethods(tx *gorm.DB, methods []map[string]string) error {
 			continue
 		}
 		var endpoint EpayEndpoint
-		if err := tx.Where("id = ?", method["epay_endpoint_id"]).First(&endpoint).Error; err != nil {
+		if err := tx.Where("id = ?", method["epay_endpoint_id"]).First(&endpoint).Error; err != nil || endpoint.Id != method["epay_endpoint_id"] {
 			return errors.New("请选择有效的易支付服务")
 		}
 	}
@@ -310,11 +316,25 @@ func UpdateEpayPaymentMethods(value string) error {
 	return updateOptionMap("PayMethods", value)
 }
 
-func ResolveEpayPaymentMethod(method string) (*EpayEndpointVersion, error) {
-	if !IsEpayPaymentMethod(method) {
-		return nil, ErrPaymentMethodMismatch
+// EpayPaymentMethodKey distinguishes gateway types bound to different logical services.
+// It remains stable across renaming, reordering and credential rotation.
+func EpayPaymentMethodKey(method map[string]string) string {
+	if !IsEpayPaymentMethod(method["type"]) {
+		return method["type"]
 	}
+	identity := sha256.Sum256([]byte(method["epay_endpoint_id"] + "\x00" + method["type"]))
+	return fmt.Sprintf("epay_%x", identity)
+}
+
+func ResolveEpayPaymentMethod(selection string) (*EpayEndpointVersion, error) {
+	version, _, err := ResolveEpayPaymentSelection(selection)
+	return version, err
+}
+
+// Legacy clients may submit a type only when it identifies exactly one configured method.
+func ResolveEpayPaymentSelection(selection string) (*EpayEndpointVersion, string, error) {
 	var version EpayEndpointVersion
+	var selectedType string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var option Option
 		if err := tx.Where(commonKeyCol+" = ?", "PayMethods").First(&option).Error; err != nil {
@@ -324,19 +344,40 @@ func ResolveEpayPaymentMethod(method string) (*EpayEndpointVersion, error) {
 		if err := common.UnmarshalJsonStr(option.Value, &methods); err != nil {
 			return err
 		}
+		var selected map[string]string
 		for _, candidate := range methods {
-			if candidate["type"] != method {
-				continue
+			if IsEpayPaymentMethod(candidate["type"]) && EpayPaymentMethodKey(candidate) == selection {
+				if selected != nil {
+					return common.NewMessage("Please select a payment method")
+				}
+				selected = candidate
 			}
-			var endpoint EpayEndpoint
-			if err := tx.Where("id = ? AND enabled = ?", candidate["epay_endpoint_id"], true).First(&endpoint).Error; err != nil {
-				return errors.New("支付服务不可用")
-			}
-			return tx.Where("id = ? AND endpoint_id = ?", endpoint.VersionId, endpoint.Id).First(&version).Error
 		}
-		return errors.New("支付方式不存在")
+		if selected == nil {
+			for _, candidate := range methods {
+				if !IsEpayPaymentMethod(candidate["type"]) || candidate["type"] != selection {
+					continue
+				}
+				if selected != nil {
+					return common.NewMessage("Please select a payment method")
+				}
+				selected = candidate
+			}
+		}
+		if selected == nil {
+			return errors.New("支付方式不存在")
+		}
+		selectedType = selected["type"]
+		var endpoint EpayEndpoint
+		if err := tx.Where("id = ? AND enabled = ?", selected["epay_endpoint_id"], true).First(&endpoint).Error; err != nil {
+			return errors.New("支付服务不可用")
+		}
+		if endpoint.Id != selected["epay_endpoint_id"] {
+			return ErrPaymentMethodMismatch
+		}
+		return tx.Where("id = ? AND endpoint_id = ?", endpoint.VersionId, endpoint.Id).First(&version).Error
 	})
-	return &version, err
+	return &version, selectedType, err
 }
 
 // EpayVerification carries verified order identity into the settlement transaction.
