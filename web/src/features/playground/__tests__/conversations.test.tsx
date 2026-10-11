@@ -39,6 +39,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
+import * as conversationsApi from '../conversations-api'
 import {
   conversationSearchSchema,
   emptyConversationDocument,
@@ -195,6 +196,40 @@ function renderPlayground(search = '?conversation=1') {
   )
   return { ...view, router }
 }
+
+it('shows upload and verification progress until the server confirms import', async () => {
+  localStorage.setItem('playground_messages', '[]')
+  let finish: (() => void) | undefined
+  let progress: conversationsApi.ImportProgress | undefined
+  let report: ((value: conversationsApi.ImportProgress) => void) | undefined
+  vi.spyOn(conversationsApi, 'importConversation').mockImplementation(
+    async (_source, _signal, onProgress) => {
+      report = onProgress
+      progress = { uploaded: 50, total: 100, phase: 'uploading' }
+      onProgress?.(progress)
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      onProgress?.({ uploaded: 100, total: 100, phase: 'complete' })
+      return { conversation_id: 1, deleted: true }
+    }
+  )
+  renderPlayground()
+  const bar = await screen.findByRole('progressbar', {
+    name: 'Conversation upload progress',
+  })
+  expect(bar).toHaveAttribute('aria-valuenow', '50')
+  expect(screen.getByText('Uploading conversations...')).toBeVisible()
+  await act(async () =>
+    report?.({ uploaded: 100, total: 100, phase: 'verifying' })
+  )
+  expect(screen.getByText('Verifying conversations...')).toBeVisible()
+  await act(async () => finish?.())
+  await waitFor(() =>
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  )
+  expect(localStorage.getItem('playground_messages')).toBeNull()
+})
 
 it('restores the URL-selected conversation and switches independent drafts', async () => {
   const view = renderPlayground('?conversation=2')

@@ -1,6 +1,9 @@
 package model
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -55,15 +58,21 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 			t.Logf("database version: %s", version)
 			for _, upgrade := range []bool{false, true} {
 				t.Run(fmt.Sprintf("upgrade=%v", upgrade), func(t *testing.T) {
-					require.NoError(t, db.Migrator().DropTable(&PlaygroundImport{}, &PlaygroundConversation{}, &Option{}))
+					require.NoError(t, db.Migrator().DropTable(&PlaygroundUploadChunk{}, &PlaygroundImport{}, &PlaygroundConversation{}, &Option{}))
 					if upgrade {
+						require.NoError(t, db.AutoMigrate(&PlaygroundConversation{}, &PlaygroundImport{}))
+						_, err := CreatePlaygroundConversation(903, playgroundTestWrite(t, "migration-survivor-01", "existing conversation"))
+						require.NoError(t, err)
 						require.NoError(t, db.AutoMigrate(&Option{}))
 						require.NoError(t, db.Create(&Option{Key: "PlaygroundMigrationSentinel", Value: "unchanged"}).Error)
 					}
 					for range 2 {
-						require.NoError(t, db.AutoMigrate(&PlaygroundConversation{}, &PlaygroundImport{}))
+						require.NoError(t, db.AutoMigrate(&PlaygroundConversation{}, &PlaygroundImport{}, &PlaygroundUploadChunk{}))
 					}
 					if upgrade {
+						var preserved PlaygroundConversation
+						require.NoError(t, db.Where("user_id = ?", 903).First(&preserved).Error)
+						assert.Contains(t, string(preserved.Content), "existing conversation")
 						var option Option
 						require.NoError(t, db.Where("value = ?", "unchanged").First(&option).Error)
 						assert.Equal(t, "PlaygroundMigrationSentinel", option.Key)
@@ -71,6 +80,7 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 					t.Run("ownership_search_and_retry", testPlaygroundOwnership)
 					t.Run("atomic_revision_updates", testPlaygroundConcurrentSave)
 					t.Run("legacy_import_and_deletion", testPlaygroundImport)
+					t.Run("resumable_verified_upload", testPlaygroundUpload)
 				})
 			}
 		})
@@ -237,4 +247,65 @@ func testPlaygroundImport(t *testing.T) {
 	require.NoError(t, DB.Callback().Create().Remove("playground_import_failure"))
 	require.NoError(t, DB.Model(&PlaygroundImport{}).Where("user_id = ?", 23).Count(&count).Error)
 	assert.Zero(t, count)
+}
+
+func testPlaygroundUpload(t *testing.T) {
+	messages := `[ {"key":"upload-message","from":"user","versions":[{"id":"v1","content":"` + strings.Repeat("中", 120000) + `"}]} ]`
+	source := PlaygroundLegacySource{Messages: &messages}
+	raw, err := common.Marshal(source)
+	require.NoError(t, err)
+	digest := sha256.Sum256(raw)
+	fingerprint := hex.EncodeToString(digest[:])
+	size := len(raw)
+	status, err := GetPlaygroundUpload(601, fingerprint, size)
+	require.NoError(t, err)
+	assert.Empty(t, status.Chunks)
+	_, err = CompletePlaygroundUpload(601, fingerprint, size)
+	require.ErrorIs(t, err, ErrPlaygroundInvalid)
+	for index := range (size + PlaygroundChunkSize - 1) / PlaygroundChunkSize {
+		data := raw[index*PlaygroundChunkSize : min((index+1)*PlaygroundChunkSize, size)]
+		digest := sha256.Sum256(data)
+		hash := hex.EncodeToString(digest[:])
+		encoded := base64.StdEncoding.EncodeToString(data)
+		require.ErrorIs(t, SavePlaygroundUploadChunk(601, fingerprint, size, index, strings.Repeat("0", 64), encoded), ErrPlaygroundInvalid)
+		require.NoError(t, SavePlaygroundUploadChunk(601, fingerprint, size, index, hash, encoded))
+		require.NoError(t, SavePlaygroundUploadChunk(601, strings.Repeat("0", 64), size, index, hash, encoded))
+		errors := make(chan error, 3)
+		var group sync.WaitGroup
+		for range 3 {
+			group.Go(func() { errors <- SavePlaygroundUploadChunk(601, fingerprint, size, index, hash, encoded) })
+		}
+		group.Wait()
+		close(errors)
+		for err := range errors {
+			require.NoError(t, err)
+		}
+		status, err = GetPlaygroundUpload(601, fingerprint, size)
+		require.NoError(t, err)
+		assert.Len(t, status.Chunks, index+1)
+	}
+	other, err := GetPlaygroundUpload(602, fingerprint, size)
+	require.NoError(t, err)
+	assert.Empty(t, other.Chunks)
+	_, err = CompletePlaygroundUpload(602, fingerprint, size)
+	require.ErrorIs(t, err, ErrPlaygroundInvalid)
+	_, err = CompletePlaygroundUpload(601, strings.Repeat("0", 64), size)
+	require.ErrorIs(t, err, ErrPlaygroundInvalid)
+	_, err = GetPlaygroundUpload(601, fingerprint, size+1)
+	require.ErrorIs(t, err, ErrPlaygroundInvalid)
+	result, err := CompletePlaygroundUpload(601, fingerprint, size)
+	require.NoError(t, err)
+	again, err := CompletePlaygroundUpload(601, fingerprint, size)
+	require.NoError(t, err)
+	assert.Equal(t, result.ConversationId, again.ConversationId)
+	row, err := GetPlaygroundConversation(601, result.ConversationId)
+	require.NoError(t, err)
+	assert.Contains(t, string(row.Document), strings.Repeat("中", 120000))
+	status, err = GetPlaygroundUpload(601, fingerprint, size)
+	require.NoError(t, err)
+	assert.Empty(t, status.Chunks)
+	require.NoError(t, DeletePlaygroundConversation(601, result.ConversationId))
+	again, err = CompletePlaygroundUpload(601, fingerprint, size)
+	require.NoError(t, err)
+	assert.True(t, again.Deleted)
 }

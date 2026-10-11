@@ -240,7 +240,7 @@ function ConversationView(props: ViewProps) {
           }
         />
       </div>
-      <div className='mx-auto w-full max-w-4xl'>
+      <div className='mx-auto w-full max-w-4xl shrink-0 pb-[env(safe-area-inset-bottom)]'>
         <PlaygroundInput
           config={document.config}
           parameterEnabled={document.parameterEnabled}

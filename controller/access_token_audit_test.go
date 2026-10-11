@@ -3,6 +3,9 @@ package controller
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -34,7 +37,7 @@ import (
 
 func TestPlaygroundConversationAuthorization(t *testing.T) {
 	admin, legacy := setupAccessTokenAudit(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.PlaygroundConversation{}, &model.PlaygroundImport{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.PlaygroundConversation{}, &model.PlaygroundImport{}, &model.PlaygroundUploadChunk{}))
 	user := model.User{Username: "playground-owner", AffCode: "playground-owner", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, AuthVersion: 1}
 	root := model.User{Username: "playground-root", AffCode: "playground-root", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1}
 	require.NoError(t, model.DB.Create(&user).Error)
@@ -53,6 +56,9 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 	pg.GET("", ListPlaygroundConversations)
 	pg.POST("", CreatePlaygroundConversation)
 	pg.POST("/import", ImportPlaygroundConversation)
+	pg.GET("/import/chunks/:fingerprint", PlaygroundUploadStatus)
+	pg.PUT("/import/chunks/:fingerprint", PlaygroundUploadChunk)
+	pg.POST("/import/chunks/:fingerprint/complete", PlaygroundUploadComplete)
 	pg.GET("/:id", GetPlaygroundConversation)
 	pg.PUT("/:id", SavePlaygroundConversation)
 	pg.DELETE("/:id", DeletePlaygroundConversation)
@@ -70,6 +76,22 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 	assert.NotContains(t, created.Body.String(), "last_operation")
 	assert.NotContains(t, created.Body.String(), "creation_hash")
 	path := fmt.Sprintf("/api/playground/conversations/%d", result.Data.Id)
+	legacyMessages := `[{"key":"legacy","from":"user","versions":[{"id":"v","content":"private-upload-sentinel"}]}]`
+	sourceBody, err := common.Marshal(model.PlaygroundLegacySource{Messages: &legacyMessages})
+	require.NoError(t, err)
+	digest := sha256.Sum256(sourceBody)
+	fingerprint := hex.EncodeToString(digest[:])
+	uploadPath := "/api/playground/conversations/import/chunks/" + fingerprint
+	uploadBody, err := common.Marshal(map[string]any{"size": len(sourceBody), "index": 0, "hash": fingerprint, "content": base64.StdEncoding.EncodeToString(sourceBody)})
+	require.NoError(t, err)
+	upload := accessTokenRequest(r, http.MethodPut, uploadPath, userJWT, "", string(uploadBody))
+	require.Equal(t, http.StatusOK, upload.Code)
+	for _, credential := range []string{adminJWT, rootJWT} {
+		status := accessTokenRequest(r, http.MethodGet, fmt.Sprintf("%s?size=%d", uploadPath, len(sourceBody)), credential, "", "")
+		assert.Contains(t, status.Body.String(), `"chunks":{}`)
+		complete := accessTokenRequest(r, http.MethodPost, uploadPath+"/complete", credential, "", fmt.Sprintf(`{"size":%d}`, len(sourceBody)))
+		assert.Equal(t, http.StatusBadRequest, complete.Code)
+	}
 	for _, credential := range []string{adminJWT, rootJWT} {
 		for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
 			response := accessTokenRequest(r, method, path, credential, "", body)
@@ -80,6 +102,7 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 		assert.NotContains(t, list.Body.String(), "private conversation")
 	}
 	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, uploadPath}, {http.MethodPut, uploadPath}, {http.MethodPost, uploadPath + "/complete"},
 		{http.MethodGet, "/api/playground/conversations"}, {http.MethodPost, "/api/playground/conversations"},
 		{http.MethodPost, "/api/playground/conversations/import"}, {http.MethodGet, path}, {http.MethodPut, path}, {http.MethodDelete, path},
 	} {

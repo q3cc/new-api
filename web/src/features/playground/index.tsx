@@ -31,6 +31,7 @@ import { useTranslation } from 'react-i18next'
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import {
   Sheet,
   SheetContent,
@@ -43,6 +44,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { toIntlLocale } from '@/i18n/languages'
+import { formatNumber } from '@/lib/format'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -64,7 +67,7 @@ export function Playground() {
 }
 
 function PlaygroundWorkspace(props: { owner: number }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const navigate = useNavigate({ from: '/playground/' })
   const search = useSearch({ from: '/_authenticated/playground/' })
@@ -354,6 +357,38 @@ function PlaygroundWorkspace(props: { owner: number }) {
               >
                 {t('Retry')}
               </Button>
+            </div>
+          )}
+        {snapshot.migrationProgress &&
+          !snapshot.migrationError &&
+          snapshot.migrationProgress.phase !== 'complete' && (
+            <div className='shrink-0 space-y-2 px-3 py-2' role='status'>
+              <div className='flex items-center justify-between gap-2 text-sm'>
+                <span>
+                  {snapshot.migrationProgress.phase === 'verifying'
+                    ? t('Verifying conversations...')
+                    : t('Uploading conversations...')}
+                </span>
+                <span>
+                  {formatNumber(
+                    Math.floor(
+                      (snapshot.migrationProgress.uploaded /
+                        snapshot.migrationProgress.total) *
+                        100
+                    ),
+                    toIntlLocale(i18n.resolvedLanguage || i18n.language)
+                  )}
+                  %
+                </span>
+              </div>
+              <Progress
+                value={
+                  (snapshot.migrationProgress.uploaded /
+                    snapshot.migrationProgress.total) *
+                  100
+                }
+                aria-label={t('Conversation upload progress')}
+              />
             </div>
           )}
         {!!snapshot.migrationError && (

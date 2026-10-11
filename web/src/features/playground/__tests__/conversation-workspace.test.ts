@@ -23,6 +23,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
+import * as conversationsApi from '../conversations-api'
 import {
   emptyConversationDocument,
   type ConversationWrite,
@@ -86,6 +87,12 @@ beforeEach(() => {
   titleCalls = []
   failSave = loseResponse = failImport = false
   operationResults.clear()
+  vi.spyOn(conversationsApi, 'importConversation').mockImplementation(
+    async () => {
+      if (failImport) throw new Error('Import unavailable')
+      return { conversation_id: 1, deleted: !rows.has(1) }
+    }
+  )
   vi.spyOn(pending, 'readPendingConversations').mockImplementation(
     async (owner) =>
       [...cached.values()]
@@ -320,13 +327,10 @@ it('does not truncate long legacy records and removes local originals only after
   expect(client.getSnapshot().migrationError).toBeTruthy()
   failImport = false
   await client.migrate()
-  const calls = vi
-    .mocked(api.post)
-    .mock.calls.filter(([url]) => url?.endsWith('/import'))
-  const imported = calls.at(-1)?.[1] as
-    | { source: { messages: string } }
-    | undefined
-  expect(imported?.source.messages).toBe(raw)
+  const imported = vi
+    .mocked(conversationsApi.importConversation)
+    .mock.calls.at(-1)?.[0]
+  expect(imported?.messages).toBe(raw)
   expect(localStorage.getItem('playground_messages')).toBeNull()
 })
 
