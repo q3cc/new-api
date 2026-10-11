@@ -146,11 +146,6 @@ export function TrialTypeEditor(props: {
           },
         ]}
       />
-      <p className='text-muted-foreground text-sm'>
-        {t(
-          'Each kind is used only in its assigned group. Disabling grants keeps existing credit usable.'
-        )}
-      </p>
     </div>
   )
 }

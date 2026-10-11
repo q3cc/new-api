@@ -20,6 +20,7 @@ import {
   Activity,
   Box,
   ClipboardList,
+  Receipt,
   CreditCard,
   FileText,
   FlaskConical,
@@ -156,6 +157,12 @@ export function useSidebarData(): SidebarData {
             title: t('Subscriptions'),
             url: '/subscriptions',
             icon: CreditCard,
+          },
+          {
+            title: t('Orders'),
+            url: '/orders',
+            icon: Receipt,
+            requiredRole: ROLE.ADMIN,
           },
           {
             title: t('System Info'),

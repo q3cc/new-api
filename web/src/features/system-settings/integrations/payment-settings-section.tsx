@@ -65,6 +65,7 @@ import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
 import { getEpayConfig, saveEpayConfig, type EpayEndpoint } from './epay-api'
 import { EpayEndpointsEditor } from './epay-endpoints-editor'
+import { paymentMethodsSchema } from './payment-method-schema'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
   formatJsonForEditor,
@@ -111,12 +112,16 @@ const paymentSchema = z.object({
       'Enter only a top-level callback domain, for example https://api.example.com, without any path.'
     ),
   PayMethods: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(value)
-    if (error) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: error,
-      })
+    try {
+      const result = paymentMethodsSchema.safeParse(JSON.parse(value))
+      if (!result.success) {
+        ctx.addIssue({
+          code: 'custom',
+          message: result.error.issues[0].message,
+        })
+      }
+    } catch {
+      ctx.addIssue({ code: 'custom', message: 'Invalid JSON format' })
     }
   }),
   AmountOptions: z.string().superRefine((value, ctx) => {
@@ -431,7 +436,9 @@ export function PaymentSettingsSection({
       Price: values.Price,
       MinTopUp: values.MinTopUp,
       CustomCallbackAddress: removeTrailingSlash(values.CustomCallbackAddress),
-      PayMethods: values.PayMethods.trim(),
+      PayMethods: JSON.stringify(
+        paymentMethodsSchema.parse(JSON.parse(values.PayMethods))
+      ),
       AmountOptions: values.AmountOptions.trim(),
       AmountDiscount: values.AmountDiscount.trim(),
       StripeApiSecret: values.StripeApiSecret.trim(),
@@ -1021,11 +1028,6 @@ export function PaymentSettingsSection({
                           />
                         )}
                       </FormControl>
-                      <FormDescription>
-                        {t(
-                          'Configured as PayMethods JSON. The type value decides which payment flow is used: stripe for Stripe, waffo_pancake for Waffo Pancake, and other values are sent to Epay as the type parameter.'
-                        )}
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

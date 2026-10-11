@@ -45,7 +45,16 @@ const trialKeys = [
   'Never expires',
   'Waived',
   'e.g., SiAlipay, usdt',
-  'Use usdt for the USDT logo. Leave empty to use the default icon.',
+  'Orders',
+  'Order details',
+  'Order type',
+  'Amount / Plan',
+  'Payment provider',
+  'Completed at',
+  'Search orders',
+  'Start time must not be after end time',
+  'Order not found',
+  'Search by order number, user ID, username, nickname or email...',
 ] as const
 
 describe('loaded interface translations', () => {
@@ -83,13 +92,7 @@ describe('loaded interface translations', () => {
       expect(i18n.t('Validity (days, 0 = never expires)')).not.toBe(
         'Validity (days, 0 = never expires)'
       )
-      expect(
-        i18n.t(
-          'Use usdt for the USDT logo. Leave empty to use the default icon.'
-        )
-      ).not.toBe(
-        'Use usdt for the USDT logo. Leave empty to use the default icon.'
-      )
+      expect(i18n.t('Orders')).toBe(language === 'zhCN' ? '订单' : '訂單')
     }
   )
 

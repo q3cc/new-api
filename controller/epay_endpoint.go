@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/Calcium-Ion/go-epay/epay"
 	"github.com/QuantumNous/new-api/common"
@@ -107,7 +106,7 @@ func enabledEpayMethods() []map[string]string {
 	methods := make([]map[string]string, 0)
 	for _, method := range operationPayMethods() {
 		if model.IsEpayPaymentMethod(method["type"]) {
-			if _, err := model.ResolveEpayPaymentMethod(method["type"]); err != nil {
+			if _, err := model.ResolveEpayPaymentMethod(model.EpayPaymentMethodKey(method)); err != nil {
 				continue
 			}
 		}
@@ -117,6 +116,7 @@ func enabledEpayMethods() []map[string]string {
 				public[key] = value
 			}
 		}
+		public["id"] = model.EpayPaymentMethodKey(method)
 		methods = append(methods, public)
 	}
 	return methods
@@ -135,7 +135,7 @@ func epayHasEnabledMethods() bool {
 		if !model.IsEpayPaymentMethod(method["type"]) {
 			continue
 		}
-		if _, err := model.ResolveEpayPaymentMethod(strings.TrimSpace(method["type"])); err == nil {
+		if _, err := model.ResolveEpayPaymentMethod(model.EpayPaymentMethodKey(method)); err == nil {
 			return true
 		}
 	}

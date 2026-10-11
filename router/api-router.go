@@ -22,6 +22,13 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	apiRouter.Use(middleware.GlobalAPIRateLimit())
 	anonymousRequestBodyLimit := middleware.AnonymousRequestBodyLimit()
+	conversations := apiRouter.Group("/playground/conversations", middleware.DisableCache(), middleware.UserAuth())
+	conversations.GET("", controller.ListPlaygroundConversations)
+	conversations.POST("", controller.CreatePlaygroundConversation)
+	conversations.POST("/import", controller.ImportPlaygroundConversation)
+	conversations.GET("/:id", controller.GetPlaygroundConversation)
+	conversations.PUT("/:id", controller.SavePlaygroundConversation)
+	conversations.DELETE("/:id", controller.DeletePlaygroundConversation)
 	{
 		apiRouter.GET("/setup", controller.GetSetup)
 		apiRouter.POST("/setup", anonymousRequestBodyLimit, controller.PostSetup)
@@ -159,6 +166,8 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/", controller.GetAllUsers)
 				adminRoute.POST("/:id/trial-credit", middleware.CriticalRateLimit(), controller.AdminGrantTrialCredit)
 				adminRoute.GET("/topup", controller.GetAllTopUps)
+				adminRoute.GET("/topup/filters", controller.GetTopUpFilters)
+				adminRoute.GET("/topup/detail", controller.GetTopUpDetail)
 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
 				adminRoute.GET("/search", controller.SearchUsers)
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)

@@ -344,6 +344,8 @@ func migrateDB() error {
 		&Channel{},
 		&Token{},
 		&User{},
+		&PlaygroundConversation{},
+		&PlaygroundImport{},
 
 		&UserSession{},
 		&AuthFlow{},

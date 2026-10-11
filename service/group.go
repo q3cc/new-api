@@ -40,10 +40,7 @@ func GetUserUsableGroups(userGroup string, userIds ...int) map[string]string {
 	}
 	cfg, err := model.ReadTrialCreditConfig()
 	if err != nil {
-		return map[string]string{}
-	}
-	for _, kind := range cfg.Types {
-		delete(groupsCopy, kind.Group)
+		return groupsCopy
 	}
 	if cfg.Enabled && len(userIds) > 0 {
 		balances, err := model.GetTrialCreditTypeBalances(userIds[0])
@@ -53,7 +50,7 @@ func GetUserUsableGroups(userGroup string, userIds ...int) map[string]string {
 				available[balance.Group] = balance.Balance > 0
 			}
 			for _, kind := range cfg.Types {
-				if available[kind.Group] {
+				if _, ordinary := groupsCopy[kind.Group]; !ordinary && available[kind.Group] {
 					groupsCopy[kind.Group] = kind.Group
 				}
 			}

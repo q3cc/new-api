@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/shopspring/decimal"
@@ -520,4 +521,88 @@ func GetMidjourneyTrialReservation(taskId int) (*TrialCreditReservation, error) 
 		return nil, nil
 	}
 	return &r, err
+}
+
+// createWithRegistrationRewards is shared by password, OAuth and administrator creation.
+// Binding failure rolls the account and all registration benefits back together.
+func (user *User) createWithRegistrationRewards(tx *gorm.DB, inviterId int) error {
+	signup := common.QuotaForNewUser
+	invitee := 0
+	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
+		invitee = common.QuotaForInvitee
+	}
+	if signup < 0 || invitee < 0 || signup > common.MaxWalletQuota || invitee > common.MaxWalletQuota-signup {
+		return errors.New("注册奖励金额无效")
+	}
+	var cfg TrialCreditConfig
+	if signup > 0 || invitee > 0 {
+		if trialCreditDatabase.Load() == DB {
+			option, err := trialPolicyLock(tx)
+			if err != nil {
+				return err
+			}
+			if err = parseTrialConfig(option.Value, &cfg); err != nil {
+				return err
+			}
+		} else {
+			var err error
+			cfg, err = ReadTrialCreditConfig()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	trial := cfg.Enabled && cfg.Affiliate
+	user.Quota = signup + invitee
+	var kind TrialCreditType
+	if trial {
+		var err error
+		kind, err = cfg.grantKind(cfg.AffiliateTypeId)
+		if err != nil {
+			return err
+		}
+		user.Quota = 0
+	}
+	if err := tx.Create(user).Error; err != nil {
+		return err
+	}
+	if !trial {
+		return nil
+	}
+	expires := int64(0)
+	if cfg.AffiliateDays > 0 {
+		expires = time.Now().Unix() + int64(cfg.AffiliateDays)*86400
+	}
+	for _, reward := range []struct {
+		source string
+		quota  int
+	}{{"signup", signup}, {"invitee", invitee}} {
+		if reward.quota <= 0 {
+			continue
+		}
+		key := fmt.Sprintf("%s:%d", reward.source, user.Id)
+		if err := grantTrialCreditTx(tx, user.Id, reward.quota, expires, key, reward.source, 0, kind); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func recordRegistrationReward(userId int, source string, quota int) {
+	if trialCreditDatabase.Load() == DB {
+		var grant TrialCreditGrant
+		if err := DB.Where("grant_key = ? AND user_id = ?", fmt.Sprintf("%s:%d", source, userId), userId).Find(&grant).Error; err == nil && grant.Id != 0 {
+			message := "Sign-up trial credit {{quota}}: {{name}} ({{group}})"
+			if source == "invitee" {
+				message = "Invitation trial credit {{quota}}: {{name}} ({{group}})"
+			}
+			RecordLog(userId, LogTypeSystem, common.NewMessage(message, map[string]any{"quota": logger.FormatQuota(grant.Quota), "name": grant.TypeName, "group": grant.GroupName}))
+			return
+		}
+	}
+	message := "New user sign-up bonus {{quota}}"
+	if source == "invitee" {
+		message = "Invitation code bonus {{quota}}"
+	}
+	RecordLog(userId, LogTypeSystem, common.NewMessage(message, map[string]any{"quota": logger.FormatQuota(quota)}))
 }

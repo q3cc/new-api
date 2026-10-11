@@ -18,13 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import { PAYMENT_TYPES } from '../constants'
+import { PAYMENT_TYPES } from '../../constants'
 import {
   dispatchSelectedPayment,
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
-} from './payment'
+} from '../payment'
 
 describe('payment type classification', () => {
   test('keeps Waffo and Waffo Pancake on their dedicated flows', () => {
@@ -82,4 +82,24 @@ describe('payment dispatch', () => {
     expect(success).toBe(false)
     expect(called).toBe(false)
   })
+})
+
+test('same gateway type dispatches the selected service identity rather than the ambiguous type', async () => {
+  const calls: string[] = []
+  for (const id of ['epay_a', 'epay_b']) {
+    await dispatchSelectedPayment(
+      { name: 'Alipay', type: 'alipay', id },
+      2,
+      null,
+      {
+        regular: async (_amount, key) => {
+          calls.push(key)
+          return true
+        },
+        waffo: async () => false,
+        waffoPancake: async () => false,
+      }
+    )
+  }
+  expect(calls).toEqual(['epay_a', 'epay_b'])
 })

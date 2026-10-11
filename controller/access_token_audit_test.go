@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -30,6 +31,124 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestPlaygroundConversationAuthorization(t *testing.T) {
+	admin, legacy := setupAccessTokenAudit(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.PlaygroundConversation{}, &model.PlaygroundImport{}))
+	user := model.User{Username: "playground-owner", AffCode: "playground-owner", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, AuthVersion: 1}
+	root := model.User{Username: "playground-root", AffCode: "playground-root", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1}
+	require.NoError(t, model.DB.Create(&user).Error)
+	require.NoError(t, model.DB.Create(&root).Error)
+	_, userJWT := createAccessTokenTestSession(t, user.Id, "playground-owner")
+	_, adminJWT := createAccessTokenTestSession(t, admin.Id, "playground-admin")
+	_, rootJWT := createAccessTokenTestSession(t, root.Id, "playground-root")
+	pat, _ := createScopedAccessToken(t, user.Id, 0, "profile:read")
+	var requestLogs bytes.Buffer
+	previousWriter := gin.DefaultWriter
+	gin.DefaultWriter = &requestLogs
+	t.Cleanup(func() { gin.DefaultWriter = previousWriter })
+	r := gin.New()
+	middleware.SetUpLogger(r)
+	pg := r.Group("/api/playground/conversations", middleware.UserAuth())
+	pg.GET("", ListPlaygroundConversations)
+	pg.POST("", CreatePlaygroundConversation)
+	pg.POST("/import", ImportPlaygroundConversation)
+	pg.GET("/:id", GetPlaygroundConversation)
+	pg.PUT("/:id", SavePlaygroundConversation)
+	pg.DELETE("/:id", DeletePlaygroundConversation)
+	body := `{"operation_id":"playground-auth-create","title":"private conversation","document":{"messages":[{"key":"u","from":"user","versions":[{"id":"v","content":"private-body-sentinel"}]}],"config":{},"parameterEnabled":{},"draft":""},"user_id":999}`
+	created := accessTokenRequest(r, http.MethodPost, "/api/playground/conversations", userJWT, "", body)
+	require.Equal(t, http.StatusOK, created.Code)
+	var result struct {
+		Data model.PlaygroundConversationDetail `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(created.Body.Bytes(), &result))
+	require.Positive(t, result.Data.Id)
+	var row model.PlaygroundConversation
+	require.NoError(t, model.DB.First(&row, result.Data.Id).Error)
+	assert.Equal(t, user.Id, row.UserId)
+	assert.NotContains(t, created.Body.String(), "last_operation")
+	assert.NotContains(t, created.Body.String(), "creation_hash")
+	path := fmt.Sprintf("/api/playground/conversations/%d", result.Data.Id)
+	for _, credential := range []string{adminJWT, rootJWT} {
+		for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+			response := accessTokenRequest(r, method, path, credential, "", body)
+			assert.Equal(t, http.StatusNotFound, response.Code)
+			assert.NotContains(t, response.Body.String(), "private-body-sentinel")
+		}
+		list := accessTokenRequest(r, http.MethodGet, fmt.Sprintf("/api/playground/conversations?user_id=%d", user.Id), credential, "", "")
+		assert.NotContains(t, list.Body.String(), "private conversation")
+	}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/api/playground/conversations"}, {http.MethodPost, "/api/playground/conversations"},
+		{http.MethodPost, "/api/playground/conversations/import"}, {http.MethodGet, path}, {http.MethodPut, path}, {http.MethodDelete, path},
+	} {
+		assert.Equal(t, http.StatusUnauthorized, accessTokenRequest(r, route.method, route.path, "", "", body).Code)
+		for _, credential := range []string{pat, legacy} {
+			assert.Equal(t, http.StatusForbidden, accessTokenRequest(r, route.method, route.path, credential, "", body).Code)
+		}
+	}
+	conflict := strings.Replace(body, "playground-auth-create", "playground-auth-update", 1)
+	response := accessTokenRequest(r, http.MethodPut, path, userJWT, "", conflict)
+	assert.Equal(t, http.StatusConflict, response.Code)
+	oversized := strings.Replace(body, "private-body-sentinel", strings.Repeat("x", model.PlaygroundDocumentLimit), 1)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, accessTokenRequest(r, http.MethodPost, "/api/playground/conversations", userJWT, "", oversized).Code)
+	assert.Equal(t, http.StatusBadRequest, accessTokenRequest(r, http.MethodPost, "/api/playground/conversations", userJWT, "", "{").Code)
+	assert.Equal(t, http.StatusOK, accessTokenRequest(r, http.MethodGet, path, userJWT, "", "").Code)
+	assert.Equal(t, http.StatusOK, accessTokenRequest(r, http.MethodGet, "/api/playground/conversations?keyword=private-query-sentinel", userJWT, "", "").Code)
+	assert.NotContains(t, requestLogs.String(), "private-query-sentinel")
+	assert.NotContains(t, requestLogs.String(), "private-body-sentinel")
+	assert.NotContains(t, requestLogs.String(), userJWT)
+}
+
+func TestAdminOrderAuthorizationAndValidation(t *testing.T) {
+	admin, _ := setupAccessTokenAudit(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.TopUp{}, &model.SubscriptionOrder{}, &model.SubscriptionPlan{}, &model.EpayEndpoint{}, &model.EpayEndpointVersion{}))
+	r := gin.New()
+	r.GET("/api/user/topup", middleware.AdminAuth(), GetAllTopUps)
+	r.GET("/api/user/topup/filters", middleware.AdminAuth(), GetTopUpFilters)
+	r.GET("/api/user/topup/detail", middleware.AdminAuth(), GetTopUpDetail)
+	r.POST("/api/user/topup/complete", middleware.AdminAuth(), AdminCompleteTopUp)
+	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser} {
+		user := model.User{Username: fmt.Sprintf("orders-role-%d", role), AffCode: fmt.Sprintf("orders-role-%d", role), Role: role, Status: common.UserStatusEnabled, AuthVersion: 1}
+		require.NoError(t, model.DB.Create(&user).Error)
+		_, jwt := createAccessTokenTestSession(t, user.Id, user.Username)
+		for _, path := range []string{"/api/user/topup", "/api/user/topup/filters", "/api/user/topup/detail?order_type=topup&trade_no=missing"} {
+			response := accessTokenRequest(r, http.MethodGet, path, jwt, "", "")
+			if role == common.RoleCommonUser {
+				assert.Equal(t, http.StatusForbidden, response.Code, path)
+			} else if strings.Contains(path, "detail") {
+				assert.Equal(t, http.StatusNotFound, response.Code)
+				assert.Contains(t, response.Body.String(), "Order not found")
+			} else {
+				assert.Equal(t, http.StatusOK, response.Code)
+				assert.Contains(t, response.Body.String(), `"success":true`)
+			}
+		}
+		if role == common.RoleCommonUser {
+			response := accessTokenRequest(r, http.MethodPost, "/api/user/topup/complete", jwt, "", `{"trade_no":"missing"}`)
+			assert.Equal(t, http.StatusForbidden, response.Code)
+		}
+	}
+	_, jwt := createAccessTokenTestSession(t, admin.Id, "orders-validation")
+	readToken, _ := createScopedAccessToken(t, admin.Id, 0, "billing:read")
+	profileToken, _ := createScopedAccessToken(t, admin.Id, 0, "profile:read")
+	for _, path := range []string{"/api/user/topup/filters", "/api/user/topup/detail?order_type=topup&trade_no=missing"} {
+		allowed := accessTokenRequest(r, http.MethodGet, path, readToken, "", "")
+		assert.Contains(t, []int{http.StatusOK, http.StatusNotFound}, allowed.Code)
+		assert.Equal(t, http.StatusForbidden, accessTokenRequest(r, http.MethodGet, path, profileToken, "", "").Code)
+	}
+	assert.Equal(t, http.StatusForbidden, accessTokenRequest(r, http.MethodPost, "/api/user/topup/complete", readToken, "", `{"trade_no":"missing"}`).Code)
+	for _, query := range []string{"order_type=unknown", "status=refunded", "start_timestamp=-1", "start_timestamp=200&end_timestamp=100", "end_timestamp=invalid"} {
+		response := accessTokenRequest(r, http.MethodGet, "/api/user/topup?"+query, jwt, "", "")
+		assert.Contains(t, response.Body.String(), `"success":false`, query)
+		assert.Contains(t, response.Body.String(), "Invalid parameters", query)
+	}
+	for _, query := range []string{"order_type=unknown&trade_no=x", "order_type=topup", "trade_no=x"} {
+		response := accessTokenRequest(r, http.MethodGet, "/api/user/topup/detail?"+query, jwt, "", "")
+		assert.Contains(t, response.Body.String(), `"success":false`, query)
+	}
+}
 
 func setupAccessTokenAudit(t *testing.T) (*model.User, string) {
 	t.Helper()

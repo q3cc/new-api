@@ -51,6 +51,7 @@ const messageStatusSchema = z.enum([
   'streaming',
   'complete',
   'error',
+  'interrupted',
 ])
 
 const messageVersionSchema = z.object({

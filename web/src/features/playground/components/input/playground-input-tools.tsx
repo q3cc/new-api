@@ -89,7 +89,6 @@ export function PlaygroundInputTools({
   const handleClearMessages = () => {
     onClearMessages?.()
     setClearConfirmOpen(false)
-    toast.success(t('Conversation cleared'))
   }
 
   return (
@@ -180,7 +179,7 @@ export function PlaygroundInputTools({
       <ConfirmDialog
         destructive
         desc={t(
-          'All playground messages saved in this browser will be removed. This cannot be undone.'
+          'All messages in this conversation will be removed. This cannot be undone.'
         )}
         confirmText={t('Clear')}
         handleConfirm={handleClearMessages}

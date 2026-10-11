@@ -29,10 +29,11 @@ func SetUpLogger(server *gin.Engine) {
 			tag = "web"
 		}
 		path := param.Path
-		// OAuth and payment callbacks carry credentials in the query string.
+		// Callback credentials and private conversation searches must not reach logs.
 		// Redact the log value only; the handler still needs the original query.
 		if strings.HasPrefix(path, "/api/oauth/") || strings.HasPrefix(path, "/oauth/") ||
-			strings.HasPrefix(path, "/api/user/epay/") || strings.HasPrefix(path, "/api/subscription/epay/") {
+			strings.HasPrefix(path, "/api/user/epay/") || strings.HasPrefix(path, "/api/subscription/epay/") ||
+			strings.HasPrefix(path, "/api/playground/conversations") {
 			path, _, _ = strings.Cut(path, "?")
 		}
 		return fmt.Sprintf("[GIN] %s | %s | %s | %3d | %13v | %15s | %7s %s\n",

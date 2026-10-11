@@ -304,19 +304,19 @@ func topUpQueryCutoff() int64 {
 }
 
 func GetUserTopUps(userId int, pageInfo *common.PageInfo) ([]*BillingRecord, int64, error) {
-	return queryBillingHistory(userId, false, "", pageInfo)
+	return queryBillingHistory(userId, false, "", pageInfo, BillingHistoryFilter{})
 }
 
 func GetAllTopUps(pageInfo *common.PageInfo) ([]*BillingRecord, int64, error) {
-	return queryBillingHistory(0, true, "", pageInfo)
+	return queryBillingHistory(0, true, "", pageInfo, BillingHistoryFilter{})
 }
 
 func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) ([]*BillingRecord, int64, error) {
-	return queryBillingHistory(userId, false, keyword, pageInfo)
+	return queryBillingHistory(userId, false, keyword, pageInfo, BillingHistoryFilter{})
 }
 
 func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) ([]*BillingRecord, int64, error) {
-	return queryBillingHistory(0, true, keyword, pageInfo)
+	return queryBillingHistory(0, true, keyword, pageInfo, BillingHistoryFilter{})
 }
 
 // ManualCompleteTopUp 管理员手动完成订单并给用户充值

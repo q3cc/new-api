@@ -20,9 +20,11 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 
 import { Main } from '@/components/layout'
 import { Playground } from '@/features/playground'
+import { conversationSearchSchema } from '@/features/playground/conversations-api'
 import { isSidebarModuleEnabled } from '@/lib/nav-modules'
 
 export const Route = createFileRoute('/_authenticated/playground/')({
+  validateSearch: conversationSearchSchema,
   beforeLoad: () => {
     if (!isSidebarModuleEnabled('chat', 'playground')) {
       throw redirect({ to: '/dashboard' })

@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -42,6 +43,12 @@ func TestMain(m *testing.M) {
 	model.LOG_DB = db
 
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	originalMaster := common.IsMasterNode
+	common.IsMasterNode = false
+	if err := model.InitLogDB(); err != nil {
+		panic(err)
+	}
+	common.IsMasterNode = originalMaster
 	common.RedisEnabled = false
 	common.BatchUpdateEnabled = false
 	common.LogConsumeEnabled = true
@@ -1812,6 +1819,14 @@ func TestSettle_TokenRecalcFallsBackToCompletionTokens(t *testing.T) {
 }
 
 func TestTrialBillingSessionIsolationAndTaskSettlement(t *testing.T) {
+	// VIP is accessible only through a grant; default retains ordinary access.
+	oldGroups, oldAuto := setting.UserUsableGroups2JSONString(), setting.AutoGroups2JsonString()
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["default","vip"]`))
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(oldGroups))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(oldAuto))
+	})
 	truncate(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Option{}, &model.TrialCreditGrant{}, &model.TrialCreditAllocation{}, &model.TrialCreditReservation{}))
 	oldMap := common.OptionMap
@@ -1923,7 +1938,7 @@ func TestTrialBillingSessionIsolationAndTaskSettlement(t *testing.T) {
 		assert.Contains(t, GetUserUsableGroups("default", u.Id), "vip")
 		assert.Contains(t, GetUserUsableGroups("default", u.Id), "default")
 		assert.NotContains(t, GetUserAutoGroup("default"), "vip")
-		assert.NotContains(t, GetUserAutoGroup("default"), "default")
+		assert.Contains(t, GetUserAutoGroup("default"), "default")
 		for group, want := range map[string]int{"vip": 100, "default": 300} {
 			available, err := RequestAvailableQuota(&relaycommon.RelayInfo{UserId: u.Id, UsingGroup: group})
 			require.NoError(t, err)

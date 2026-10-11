@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"gorm.io/gorm"
 	"maps"
 	"net/http"
 	"net/url"
@@ -295,7 +296,7 @@ func RequestEpay(c *gin.Context) {
 		return
 	}
 
-	version, err := model.ResolveEpayPaymentMethod(req.PaymentMethod)
+	version, paymentType, err := model.ResolveEpayPaymentSelection(req.PaymentMethod)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "支付服务不可用"})
 		return
@@ -329,7 +330,7 @@ func RequestEpay(c *gin.Context) {
 		Amount:          amount,
 		Money:           payMoney,
 		TradeNo:         tradeNo,
-		PaymentMethod:   req.PaymentMethod,
+		PaymentMethod:   paymentType,
 		PaymentProvider: model.PaymentProviderEpay,
 		EpayVersionId:   version.Id,
 		EpayMoney:       strconv.FormatFloat(payMoney, 'f', 2, 64),
@@ -343,7 +344,7 @@ func RequestEpay(c *gin.Context) {
 		return
 	}
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
-		Type:           req.PaymentMethod,
+		Type:           paymentType,
 		ServiceTradeNo: tradeNo,
 		Name:           fmt.Sprintf("TUC%d", req.Amount),
 		Money:          topUp.EpayMoney,
@@ -483,16 +484,12 @@ func GetAllTopUps(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	keyword := c.Query("keyword")
 
-	var (
-		topups []*model.BillingRecord
-		total  int64
-		err    error
-	)
-	if keyword != "" {
-		topups, total, err = model.SearchAllTopUps(keyword, pageInfo)
-	} else {
-		topups, total, err = model.GetAllTopUps(pageInfo)
+	var filters model.BillingHistoryFilter
+	if err := c.ShouldBindQuery(&filters); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
 	}
+	topups, total, err := model.GetAdminBillingHistory(keyword, filters, pageInfo)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -525,4 +522,26 @@ func AdminCompleteTopUp(c *gin.Context) {
 	}
 	recordManageAudit(c, "generic", map[string]any{"action": "payment.order_complete", "trade_no": req.TradeNo})
 	common.ApiSuccess(c, nil)
+}
+
+func GetTopUpFilters(c *gin.Context) {
+	methods, err := model.GetBillingPaymentMethods()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"payment_methods": methods})
+}
+
+func GetTopUpDetail(c *gin.Context) {
+	detail, err := model.GetBillingOrderDetail(c.Query("order_type"), c.Query("trade_no"))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		common.ApiErrorStatus(c, http.StatusNotFound, common.NewMessage("Order not found"))
+		return
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, detail)
 }

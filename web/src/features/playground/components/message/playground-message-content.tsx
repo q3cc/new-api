@@ -106,6 +106,12 @@ export function PlaygroundMessageContent({
         </Sources>
       )}
 
+      {message.status === 'interrupted' && (
+        <p className='text-muted-foreground text-sm'>
+          {t('Generation was interrupted')}
+        </p>
+      )}
+
       {hasReasoning && (
         <Reasoning
           defaultOpen
