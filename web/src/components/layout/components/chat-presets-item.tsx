@@ -48,7 +48,9 @@ import {
   resolveChatUrl,
   type ChatPreset,
 } from '@/features/chat/lib/chat-links'
+import { fetchChatboxModels } from '@/features/chat/lib/chatbox-models'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { normalizeHref } from '../lib/url-utils'
 import type { NavChatPresets } from '../types'
@@ -177,6 +179,8 @@ export function ChatPresetsItem({ item }: { item: NavChatPresets }) {
 
       const needsKey = chatLinkRequiresApiKey(preset.url)
       let activeKey: string | undefined
+      let models: string[] | undefined
+      const ownerSession = useAuthStore.getState().auth.session?.sid
 
       if (needsKey && loadingPresetIdRef.current) {
         toast.info(t('Preparing your chat link, please try again in a moment.'))
@@ -188,6 +192,9 @@ export function ChatPresetsItem({ item }: { item: NavChatPresets }) {
         setLoadingPresetId(preset.id)
         try {
           activeKey = await fetchActiveChatKey()
+          if (preset.url.includes('{chatboxConfig}')) {
+            models = await fetchChatboxModels(activeKey)
+          }
         } catch (error) {
           const message =
             error instanceof Error
@@ -203,10 +210,13 @@ export function ChatPresetsItem({ item }: { item: NavChatPresets }) {
         }
       }
 
+      if (ownerSession !== useAuthStore.getState().auth.session?.sid) return
+
       const url = resolveChatUrl({
         template: preset.url,
         apiKey: needsKey ? activeKey : undefined,
         serverAddress,
+        models,
       })
 
       if (!url) {

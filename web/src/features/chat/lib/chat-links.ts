@@ -38,6 +38,7 @@ export type ResolveChatUrlParams = {
   template: string
   apiKey?: string
   serverAddress: string
+  models?: string[]
 }
 
 export type ActiveApiKey = {
@@ -47,9 +48,15 @@ export type ActiveApiKey = {
 
 const HTTP_REGEX = /^https?:\/\//i
 
+export const CHATBOX_PRESET_URL =
+  'chatbox://provider/import?config={chatboxConfig}'
+
 function toBase64(value: string) {
   if (typeof window !== 'undefined' && typeof window.btoa === 'function') {
-    return window.btoa(value)
+    const bytes = new TextEncoder().encode(value)
+    return window.btoa(
+      Array.from(bytes, (byte) => String.fromCharCode(byte)).join('')
+    )
   }
 
   type BufferConstructorLike = {
@@ -90,7 +97,8 @@ export function chatLinkRequiresApiKey(url: string): boolean {
     url.includes('{cherryConfig}') ||
     url.includes('{aionuiConfig}') ||
     url.includes('{deepchatConfig}') ||
-    url.includes('{aqbotConfig}')
+    url.includes('{aqbotConfig}') ||
+    url.includes('{chatboxConfig}')
   )
 }
 
@@ -154,11 +162,56 @@ export function resolveChatUrl({
   template,
   apiKey,
   serverAddress,
+  models = [],
 }: ResolveChatUrlParams): string {
   let url = template
   const safeServerAddress = serverAddress || ''
 
   const safeApiKey = normalizeApiKey(apiKey || '')
+
+  if (url.includes('{chatboxConfig}')) {
+    if (!safeApiKey) {
+      return ''
+    }
+    let address: URL
+    try {
+      address = new URL(safeServerAddress)
+    } catch {
+      return ''
+    }
+    if (
+      !['https:', 'http:'].includes(address.protocol) ||
+      address.username ||
+      address.password
+    ) {
+      return ''
+    }
+    address.search = ''
+    address.hash = ''
+    address.pathname = address.pathname.replace(/\/+$/, '').replace(/\/v1$/, '')
+    const apiHost = address.toString().replace(/\/+$/, '')
+    const payload = {
+      isCustom: true,
+      id: `new-api:${apiHost}`,
+      name: 'New API',
+      type: 'openai',
+      iconUrl: `${apiHost}/favicon.ico`,
+      urls: { website: apiHost },
+      settings: {
+        apiHost,
+        apiPath: '/v1/chat/completions',
+        apiKey: safeApiKey,
+        models: [...new Set(models)]
+          .filter(Boolean)
+          .map((modelId) => ({ modelId })),
+      },
+    }
+    return replaceToken(
+      url,
+      '{chatboxConfig}',
+      encodeURIComponent(toBase64(JSON.stringify(payload)))
+    )
+  }
 
   if (url.includes('{cherryConfig}')) {
     const payload = {
