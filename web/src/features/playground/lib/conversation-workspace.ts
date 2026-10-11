@@ -29,6 +29,7 @@ import {
   type ConversationDocument,
   type ConversationWrite,
   type SavedConversation,
+  type ImportProgress,
 } from '../conversations-api'
 import {
   conversationTitleSource,
@@ -56,6 +57,7 @@ export type ConversationEntry = {
 type Snapshot = {
   entries: Record<string, ConversationEntry>
   migrationError?: unknown
+  migrationProgress?: ImportProgress
   cacheError?: unknown
   ready: boolean
 }
@@ -209,7 +211,13 @@ export class ConversationWorkspace {
     try {
       const source = readLegacySource(this.owner)
       if (!source) return
-      const result = await importConversation(source, this.controller.signal)
+      const result = await importConversation(
+        source,
+        this.controller.signal,
+        (migrationProgress) => {
+          if (this.isActive()) this.publish({ migrationProgress })
+        }
+      )
       if (!this.isActive()) return
       clearImportedSource(this.owner, source)
       if (!result.deleted) await this.open(result.conversation_id)

@@ -213,9 +213,12 @@ export function PlaygroundChat({
   }
 
   return (
-    <Conversation>
+    <Conversation className='h-full'>
       {/* Remove outer padding; apply padding to inner centered container to align with input */}
-      <ConversationContent className='p-0'>
+      <ConversationContent
+        className='p-0'
+        scrollClassName='overflow-x-hidden overflow-y-auto overscroll-y-contain touch-pan-y'
+      >
         <div className='mx-auto w-full max-w-4xl px-4 py-4'>
           {visibleMessageOffset > 0 && (
             <Button

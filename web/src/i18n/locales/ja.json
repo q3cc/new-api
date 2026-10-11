@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Conversation upload progress": "会話のアップロード進捗",
+    "Uploading conversations...": "会話をアップロード中…",
+    "Verifying conversations...": "会話を検証中…",
     "Add Chatbox": "Chatbox を追加",
     "360": "360",
     "1000": "1000",

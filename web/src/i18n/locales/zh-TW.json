@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Conversation upload progress": "會話上傳進度",
+    "Uploading conversations...": "正在上傳會話…",
+    "Verifying conversations...": "正在驗證會話…",
     "Add Chatbox": "新增 Chatbox",
     "360": "360",
     "1000": "1000",

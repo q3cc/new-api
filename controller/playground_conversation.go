@@ -123,3 +123,44 @@ func ImportPlaygroundConversation(c *gin.Context) {
 	}
 	common.ApiSuccess(c, result)
 }
+
+func PlaygroundUploadStatus(c *gin.Context) {
+	size, _ := strconv.Atoi(c.Query("size"))
+	result, err := model.GetPlaygroundUpload(c.GetInt("id"), c.Param("fingerprint"), size)
+	if err != nil {
+		playgroundConversationError(c, err)
+		return
+	}
+	common.ApiSuccess(c, result)
+}
+func PlaygroundUploadChunk(c *gin.Context) {
+	var request struct {
+		Size    int    `json:"size"`
+		Index   int    `json:"index"`
+		Hash    string `json:"hash"`
+		Content string `json:"content"`
+	}
+	if !decodePlaygroundWrite(c, &request) {
+		return
+	}
+	err := model.SavePlaygroundUploadChunk(c.GetInt("id"), c.Param("fingerprint"), request.Size, request.Index, request.Hash, request.Content)
+	if err != nil {
+		playgroundConversationError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+func PlaygroundUploadComplete(c *gin.Context) {
+	var request struct {
+		Size int `json:"size"`
+	}
+	if !decodePlaygroundWrite(c, &request) {
+		return
+	}
+	result, err := model.CompletePlaygroundUpload(c.GetInt("id"), c.Param("fingerprint"), request.Size)
+	if err != nil {
+		playgroundConversationError(c, err)
+		return
+	}
+	common.ApiSuccess(c, result)
+}

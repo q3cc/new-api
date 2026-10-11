@@ -346,6 +346,7 @@ func migrateDB() error {
 		&User{},
 		&PlaygroundConversation{},
 		&PlaygroundImport{},
+		&PlaygroundUploadChunk{},
 
 		&UserSession{},
 		&AuthFlow{},

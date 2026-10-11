@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Conversation upload progress": "Tiến độ tải cuộc trò chuyện lên",
+    "Uploading conversations...": "Đang tải cuộc trò chuyện lên…",
+    "Verifying conversations...": "Đang xác minh cuộc trò chuyện…",
     "Add Chatbox": "Thêm Chatbox",
     "360": "360",
     "1000": "1000",

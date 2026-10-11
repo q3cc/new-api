@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Conversation upload progress": "Conversation upload progress",
+    "Uploading conversations...": "Uploading conversations...",
+    "Verifying conversations...": "Verifying conversations...",
     "Add Chatbox": "Add Chatbox",
     "360": "360",
     "1000": "1000",

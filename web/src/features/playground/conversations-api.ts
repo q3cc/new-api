@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { isAxiosError } from 'axios'
 import { z } from 'zod'
 
 import { api } from '@/lib/api'
@@ -64,6 +65,11 @@ export type LegacySource = {
   parameter_enabled: string | null
 }
 export type ImportResult = { conversation_id: number; deleted: boolean }
+export type ImportProgress = {
+  uploaded: number
+  total: number
+  phase: 'uploading' | 'verifying' | 'complete'
+}
 export const conversationSearchSchema = z.object({
   conversation: z.coerce.number().int().positive().optional().catch(undefined),
 })
@@ -160,12 +166,141 @@ export async function deleteConversation(id: number, signal?: AbortSignal) {
 }
 export async function importConversation(
   source: LegacySource,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (progress: ImportProgress) => void
 ) {
-  const res = await api.post<Envelope<ImportResult>>(
-    `${path}/import`,
-    { source },
-    { signal }
-  )
-  return requireServerSuccess(res.data).data
+  const bytes = new TextEncoder().encode(JSON.stringify(source))
+  if (bytes.length > 8 * 1024 * 1024) {
+    throw new Error('Conversation exceeds the size limit')
+  }
+  const controller = new AbortController()
+  const uploadSignal = signal
+    ? AbortSignal.any([signal, controller.signal])
+    : controller.signal
+  const fingerprint = await playgroundUploadHash(bytes)
+  const uploadPath = `${path}/import/chunks/${fingerprint}`
+  const chunkSize = 256 * 1024
+  let uploaded = 0
+  onProgress?.({ uploaded, total: bytes.length, phase: 'uploading' })
+  try {
+    const statusResponse = await retryPlaygroundUpload(
+      () =>
+        api.get<
+          Envelope<{
+            chunks: Record<string, string>
+            result?: ImportResult
+          }>
+        >(uploadPath, {
+          params: { size: bytes.length },
+          signal: uploadSignal,
+          disableDuplicate: true,
+          skipErrorHandler: true,
+        }),
+      uploadSignal
+    )
+    const status = requireServerSuccess(statusResponse.data).data
+    if (status.result) {
+      onProgress?.({
+        uploaded: bytes.length,
+        total: bytes.length,
+        phase: 'complete',
+      })
+      return status.result
+    }
+    let nextIndex = 0
+    const count = Math.ceil(bytes.length / chunkSize)
+    await Promise.all(
+      Array.from({ length: Math.min(3, count) }, async () => {
+        while (nextIndex < count) {
+          uploadSignal.throwIfAborted()
+          const index = nextIndex++
+          const chunk = bytes.slice(index * chunkSize, (index + 1) * chunkSize)
+          const hash = await playgroundUploadHash(chunk)
+          if (status.chunks[String(index)] !== hash) {
+            const content = btoa(
+              Array.from(chunk, (byte) => String.fromCharCode(byte)).join('')
+            )
+            const response = await retryPlaygroundUpload(
+              () =>
+                api.put<Envelope<null>>(
+                  uploadPath,
+                  { size: bytes.length, index, hash, content },
+                  { signal: uploadSignal, skipErrorHandler: true }
+                ),
+              uploadSignal
+            )
+            requireServerSuccess(response.data)
+          }
+          uploaded += chunk.length
+          onProgress?.({ uploaded, total: bytes.length, phase: 'uploading' })
+        }
+      })
+    )
+    onProgress?.({ uploaded, total: bytes.length, phase: 'verifying' })
+    const response = await retryPlaygroundUpload(
+      () =>
+        api.post<Envelope<ImportResult>>(
+          `${uploadPath}/complete`,
+          { size: bytes.length },
+          { signal: uploadSignal, skipErrorHandler: true }
+        ),
+      uploadSignal
+    )
+    const result = requireServerSuccess(response.data).data
+    onProgress?.({ uploaded, total: bytes.length, phase: 'complete' })
+    return result
+  } finally {
+    controller.abort()
+  }
+}
+
+async function playgroundUploadHash(bytes: Uint8Array<ArrayBuffer>) {
+  if (!crypto.subtle) {
+    const { default: forge } = await import('node-forge')
+    const digest = forge.md.sha256.create()
+    digest.update(
+      Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''),
+      'raw'
+    )
+    return digest.digest().toHex()
+  }
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0')
+  ).join('')
+}
+
+async function retryPlaygroundUpload<T>(
+  request: () => Promise<T>,
+  signal: AbortSignal
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    signal.throwIfAborted()
+    try {
+      return await request()
+    } catch (error) {
+      const status = isAxiosError(error) ? error.response?.status : undefined
+      if (
+        signal.aborted ||
+        attempt >= 3 ||
+        (status !== undefined && status !== 429 && status < 500)
+      ) {
+        throw error
+      }
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(
+          () => {
+            signal.removeEventListener('abort', abort)
+            resolve()
+          },
+          300 * 2 ** attempt
+        )
+        function abort() {
+          clearTimeout(timer)
+          reject(signal.reason)
+        }
+        signal.addEventListener('abort', abort, { once: true })
+      })
+    }
+  }
 }
