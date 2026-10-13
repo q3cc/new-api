@@ -26,6 +26,12 @@ export const MODEL_PRICING_SETTINGS_PATH =
 const MODEL_PRICE_ERROR_CODE = 'model_price_error'
 export const FALLBACK_ERROR_CONTENT = 'An unknown error occurred'
 
+export function normalizeMessageErrorCode(code: unknown): string | undefined {
+  if (typeof code === 'string') return code || undefined
+  if (typeof code === 'number' && Number.isFinite(code)) return String(code)
+  return undefined
+}
+
 type MessageErrorState = {
   content: string
   kind: 'generic' | 'model-price'

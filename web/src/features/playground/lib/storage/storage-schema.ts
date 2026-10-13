@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+import { normalizeMessageErrorCode } from '../message/message-error-utils'
+
 export const STORAGE_VERSION = 1
 export const MAX_STORED_MESSAGES = 100
 export const MAX_STORED_MESSAGES_BYTES = 1024 * 1024
@@ -86,7 +88,10 @@ const messageSchema = z.object({
   isReasoningComplete: z.boolean().optional(),
   isContentComplete: z.boolean().optional(),
   status: messageStatusSchema.optional(),
-  errorCode: z.string().nullable().optional(),
+  errorCode: z.preprocess(
+    (value) => (value === null ? null : normalizeMessageErrorCode(value)),
+    z.string().nullable().optional()
+  ),
 })
 
 export const messagesSchema = z.array(messageSchema)

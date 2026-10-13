@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { ERROR_MESSAGES } from '../../constants'
 import type { ChatCompletionChunk } from '../../types'
+import { normalizeMessageErrorCode } from '../message/message-error-utils'
 
 const STREAM_DONE_MESSAGE = '[DONE]'
 const STREAM_CLOSED_READY_STATE = 2
@@ -31,8 +32,8 @@ export type StreamMessageUpdate = {
 
 type StreamErrorPayload = {
   error?: {
-    code?: string
-    message?: string
+    code?: unknown
+    message?: unknown
   }
 }
 
@@ -56,8 +57,11 @@ export function parseStreamErrorDetails(data?: string): StreamErrorDetails {
     }
 
     return {
-      errorCode: parsed.error.code || undefined,
-      errorMessage: parsed.error.message || fallbackMessage,
+      errorCode: normalizeMessageErrorCode(parsed.error.code),
+      errorMessage:
+        typeof parsed.error.message === 'string' && parsed.error.message
+          ? parsed.error.message
+          : fallbackMessage,
     }
   } catch {
     return { errorMessage: fallbackMessage }
