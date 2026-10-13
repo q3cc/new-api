@@ -17,15 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { ERROR_MESSAGES } from '../../constants'
+import { normalizeMessageErrorCode } from '../message/message-error-utils'
 
 type RequestErrorLike = {
-  message?: string
+  message?: unknown
   response?: {
     data?: {
       error?: {
-        code?: string
+        code?: unknown
+        message?: unknown
       }
-      message?: string
+      message?: unknown
     }
   }
 }
@@ -37,12 +39,17 @@ export type RequestErrorDetails = {
 
 export function parseRequestErrorDetails(error: unknown): RequestErrorDetails {
   const requestError = error as RequestErrorLike
+  const data = requestError?.response?.data
+  const errorMessage = [
+    data?.error?.message,
+    data?.message,
+    requestError?.message,
+  ].find(
+    (value): value is string => typeof value === 'string' && value.length > 0
+  )
 
   return {
-    errorCode: requestError?.response?.data?.error?.code || undefined,
-    errorMessage:
-      requestError?.response?.data?.message ||
-      requestError?.message ||
-      ERROR_MESSAGES.API_REQUEST_ERROR,
+    errorCode: normalizeMessageErrorCode(data?.error?.code),
+    errorMessage: errorMessage || ERROR_MESSAGES.API_REQUEST_ERROR,
   }
 }
