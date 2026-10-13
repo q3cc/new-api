@@ -34,11 +34,12 @@ import {
   within,
 } from '@testing-library/react'
 import { StrictMode } from 'react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, assert, beforeEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
+import type { ModelCapability } from '../compression-api'
 import * as conversationsApi from '../conversations-api'
 import {
   conversationSearchSchema,
@@ -53,7 +54,8 @@ let records: Map<number, SavedConversation>
 let client: QueryClient
 let failSave: boolean
 let failDelete: boolean
-let completions: { text: string; finish: () => void }[]
+let completions: { text: string; finish: (content?: string) => void }[]
+let modelCapabilities: ModelCapability[]
 
 function row(id: number, title: string): SavedConversation {
   const document = emptyConversationDocument()
@@ -71,6 +73,7 @@ beforeEach(() => {
     [2, row(2, 'Beta')],
   ])
   completions = []
+  modelCapabilities = []
   failSave = failDelete = false
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -78,6 +81,17 @@ beforeEach(() => {
   vi.spyOn(pending, 'readPendingConversations').mockResolvedValue([])
   vi.spyOn(pending, 'writePendingConversation').mockResolvedValue()
   vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
+    if (url === '/api/playground/settings') {
+      return {
+        data: {
+          success: true,
+          data: { model: '', automatic: false, revision: 0 },
+        },
+      }
+    }
+    if (url === '/api/playground/model-capabilities') {
+      return { data: { success: true, data: modelCapabilities } }
+    }
     if (url === '/api/user/self/groups') {
       return {
         data: {
@@ -127,18 +141,31 @@ beforeEach(() => {
     return { data: { success: true, data: value } }
   })
   vi.spyOn(api, 'post').mockImplementation(async (url, body) => {
+    if (url === '/api/playground/context/estimate') {
+      const payload = body as { messages: { content: string }[] }
+      const tokens = payload.messages.map((message) => message.content.length)
+      return {
+        data: {
+          success: true,
+          data: {
+            input_tokens: tokens.reduce((sum, count) => sum + count, 0),
+            message_tokens: tokens,
+          },
+        },
+      }
+    }
     if (url === '/pg/chat/completions') {
       const payload = body as { messages: { role: string; content: string }[] }
       const text = payload.messages.at(-1)?.content ?? ''
       return await new Promise((resolve) =>
         completions.push({
           text,
-          finish: () =>
+          finish: (content = `Reply to ${text}`) =>
             resolve({
               data: {
                 choices: [
                   {
-                    message: { role: 'assistant', content: `Reply to ${text}` },
+                    message: { role: 'assistant', content },
                     finish_reason: 'stop',
                   },
                 ],
@@ -196,6 +223,172 @@ function renderPlayground(search = '?conversation=1') {
   )
   return { ...view, router }
 }
+
+it('shows the current context and draft usage from the input toolbar and updates after editing', async () => {
+  modelCapabilities = [
+    {
+      model: 'test-model',
+      context_window: 4120,
+      input_limit: 0,
+      output_limit: 0,
+      text_generation: true,
+      compression_warning: false,
+    },
+  ]
+  renderPlayground()
+  const ring = await screen.findByRole('button', {
+    name: 'Model context usage',
+  })
+  await waitFor(() =>
+    expect(ring).toHaveAccessibleDescription('11 / 24 tokens · 45.83%')
+  )
+  fireEvent.pointerEnter(ring, { pointerType: 'mouse' })
+  fireEvent.mouseOver(ring)
+  fireEvent.mouseEnter(ring)
+  fireEvent.mouseMove(ring)
+  expect(await screen.findByText('11 / 24 tokens · 45.83%')).toBeVisible()
+  fireEvent.mouseLeave(ring)
+  fireEvent.click(ring)
+  expect(
+    await screen.findByRole('button', { name: 'Compression settings' })
+  ).toBeEnabled()
+  expect(
+    screen.getByRole('button', { name: 'Compress context' })
+  ).toBeDisabled()
+  fireEvent.click(ring)
+  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+    target: { value: 'A longer draft' },
+  })
+  await waitFor(() =>
+    expect(ring).toHaveAccessibleDescription('14 / 24 tokens · 58.33%')
+  )
+  expect(completions).toHaveLength(0)
+})
+
+it('opens context actions on a touch long press without closing on release and shows unknown limits honestly', async () => {
+  renderPlayground()
+  const ring = await screen.findByRole('button', {
+    name: 'Model context usage',
+  })
+  expect(ring).toHaveAccessibleDescription('Context size unavailable')
+  vi.useFakeTimers()
+  try {
+    fireEvent.pointerDown(ring, { pointerType: 'touch' })
+    fireEvent.pointerMove(ring, { pointerType: 'touch' })
+    await act(async () => vi.advanceTimersByTime(450))
+    expect(
+      screen.queryByRole('button', { name: 'Compression settings' })
+    ).not.toBeInTheDocument()
+    fireEvent.pointerUp(ring, { pointerType: 'touch' })
+    fireEvent.pointerDown(ring, { pointerType: 'touch' })
+    await act(async () => vi.advanceTimersByTime(450))
+    expect(
+      screen.getByRole('button', { name: 'Compression settings' })
+    ).toBeVisible()
+    fireEvent.pointerUp(ring, { pointerType: 'touch' })
+    fireEvent.click(ring)
+    expect(
+      screen.getByRole('button', { name: 'Compression settings' })
+    ).toBeVisible()
+  } finally {
+    vi.useRealTimers()
+  }
+  expect(completions).toHaveLength(0)
+})
+
+it('automatically saves a shorter summary before sending with the chat model and preserves all original replies', async () => {
+  modelCapabilities = [
+    {
+      model: 'test-model',
+      context_window: 5000,
+      input_limit: 0,
+      output_limit: 0,
+      text_generation: true,
+      compression_warning: false,
+    },
+    {
+      model: 'other-model',
+      context_window: 128000,
+      input_limit: 0,
+      output_limit: 0,
+      text_generation: true,
+      compression_warning: false,
+    },
+  ]
+  const first = records.get(1)
+  assert(first)
+  first.document.compressionSettings = { model: 'other-model', automatic: true }
+  first.document.messages = Array.from({ length: 8 }, (_, index) => ({
+    key: `history-${index}`,
+    from: index % 2 ? 'assistant' : 'user',
+    status: 'complete',
+    versions: [{ id: `original-${index}`, content: String(index).repeat(100) }],
+  }))
+  const original = structuredClone(first.document.messages)
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+    target: { value: 'Continue' },
+  })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+  await waitFor(() => expect(completions).toHaveLength(1))
+  const calls = () =>
+    vi
+      .mocked(api.post)
+      .mock.calls.filter(([url]) => url === '/pg/chat/completions')
+  expect(calls()[0][1]).toMatchObject({
+    model: 'other-model',
+    max_tokens: 4096,
+    stream: false,
+  })
+  expect(records.get(1)?.document.compressionAttempt).toBe('requested')
+  await act(async () => completions[0].finish('Summary'))
+  await waitFor(() => expect(completions).toHaveLength(2))
+  expect(records.get(1)?.document.compression?.summary).toBe('Summary')
+  expect(calls()[1][1]).toMatchObject({ model: 'test-model' })
+  expect(calls()[1][1]).not.toHaveProperty('max_tokens')
+  await act(async () => completions[1].finish('Continued reply'))
+  await screen.findByText('Continued reply')
+  expect(records.get(1)?.document.messages.slice(0, 8)).toEqual(original)
+})
+
+it('switches saved reply versions and keeps messages left aligned', async () => {
+  const first = records.get(1)
+  assert(first)
+  first.document.messages = [
+    {
+      key: 'question',
+      from: 'user',
+      versions: [{ id: 'q1', content: 'Version question' }],
+    },
+    {
+      key: 'answer',
+      from: 'assistant',
+      status: 'complete',
+      selectedVersionId: 'a2',
+      versions: [
+        { id: 'a1', content: 'First answer', state: { status: 'complete' } },
+        { id: 'a2', content: 'Second answer' },
+      ],
+    },
+  ]
+  const view = renderPlayground()
+  expect(await screen.findByText('Second answer')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Previous reply' }))
+  expect(await screen.findByText('First answer')).toBeVisible()
+  expect(screen.queryByText('Second answer')).not.toBeInTheDocument()
+  await waitFor(() =>
+    expect(records.get(1)?.document.messages[1].selectedVersionId).toBe('a1')
+  )
+  for (const content of ['Version question', 'First answer']) {
+    expect(screen.getByText(content).closest('.text-left')).not.toBeNull()
+  }
+  view.unmount()
+  renderPlayground()
+  expect(await screen.findByText('First answer')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Next reply' }))
+  expect(await screen.findByText('Second answer')).toBeVisible()
+})
 
 it('shows upload and verification progress until the server confirms import', async () => {
   localStorage.setItem('playground_messages', '[]')

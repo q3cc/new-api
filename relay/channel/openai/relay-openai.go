@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -121,15 +123,46 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var secondLastStreamData string // 保留倒数第二个stream data；部分兼容网关把完整usage放在倒数第二个事件
 	seenStreamToolCalls := make(map[string]struct{})
 	var streamFunctionCallNames []string
+	var streamErr *types.NewAPIError
+	var hasChoices bool
+	unfinishedChoices := make(map[int]struct{})
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		if lastStreamData != "" {
 			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
-				common.SysLog(common.LogText("error handling stream format: %s", err.Error()))
-				sr.Error(err)
+				if c.Request.Context().Err() == nil {
+					streamErr = chatStreamFailure(c, info, i18n.MsgRelayStreamIncomplete, types.ErrorCodeBadResponse)
+				}
+				sr.Stop(errors.New("stream delivery failed"))
+				return
 			}
 		}
 		if len(data) > 0 {
+			var envelope struct {
+				dto.ChatCompletionsStreamResponse
+				Error any `json:"error"`
+			}
+			if err := common.UnmarshalJsonStr(data, &envelope); err != nil {
+				streamErr = chatStreamFailure(c, info, i18n.MsgRelayStreamInvalid, types.ErrorCodeBadResponseBody)
+				sr.Stop(errors.New("invalid stream response"))
+				return
+			}
+			if upstreamErr := dto.GetOpenAIError(envelope.Error); upstreamErr != nil {
+				streamErr = types.WithOpenAIError(*upstreamErr, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+				streamErr.SetMessage(streamErr.MaskSensitiveError())
+				info.StreamStatus.MarkFailed(string(streamErr.GetErrorCode()), streamErr.ToOpenAIError().Type, streamErr.StatusCode)
+				// Keep upstream messages out of scanner logs; the normal relay error path handles them.
+				sr.Stop(errors.New("upstream stream error"))
+				return
+			}
+			hasChoices = hasChoices || len(envelope.Choices) > 0
+			for _, choice := range envelope.Choices {
+				if choice.FinishReason != nil && *choice.FinishReason != "" {
+					delete(unfinishedChoices, choice.Index)
+				} else {
+					unfinishedChoices[choice.Index] = struct{}{}
+				}
+			}
 			if lastStreamData != "" {
 				secondLastStreamData = lastStreamData
 			}
@@ -137,19 +170,38 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			lastStreamData = data
 			observeStreamChoices(info, data, seenStreamToolCalls, &streamFunctionCallNames)
 			if err := processTokenData(info, data, &responseTextBuilder, &toolCount); err != nil {
-				logger.LogError(c, common.LogText("error processing stream token data: %s", err.Error()))
-				sr.Error(err)
+				streamErr = chatStreamFailure(c, info, i18n.MsgRelayStreamInvalid, types.ErrorCodeBadResponseBody)
+				sr.Stop(errors.New("invalid stream response"))
 			}
 		}
 	})
 
 	info.StreamStatus.RequireTerminal()
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	outcome := info.StreamStatus.OutcomeSnapshot()
+	cancelled := outcome.EndReason == relaycommon.StreamEndReasonClientGone || c.Request.Context().Err() != nil
+	if cancelled {
+		info.StreamStatus.MarkCancelled()
+	} else if !hasChoices {
+		return nil, chatStreamFailure(c, info, i18n.MsgRelayStreamEmpty, types.ErrorCodeEmptyResponse)
+	} else if !info.StreamStatus.IsNormalEnd() || outcome.HasErrors ||
+		(outcome.EndReason != relaycommon.StreamEndReasonDone && (outcome.Response != relaycommon.ResponseOutcomeCompleted || len(unfinishedChoices) > 0)) {
+		// Deliver the buffered partial reply, but never fabricate usage or a success terminator.
+		_ = HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
+		return nil, chatStreamFailure(c, info, i18n.MsgRelayStreamIncomplete, types.ErrorCodeBadResponse)
+	} else {
+		info.StreamStatus.MarkCompleted()
+	}
 
 	// 处理最后的响应
 	shouldSendLastResp := true
-	if err := handleLastResponse(lastStreamData, &responseId, &createAt, &systemFingerprint, &model, &usage,
-		&containStreamUsage, info, &shouldSendLastResp); err != nil {
-		logger.LogError(c, common.LogText("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
+	if lastStreamData != "" {
+		if err := handleLastResponse(lastStreamData, &responseId, &createAt, &systemFingerprint, &model, &usage,
+			&containStreamUsage, info, &shouldSendLastResp); err != nil {
+			return nil, chatStreamFailure(c, info, i18n.MsgRelayStreamInvalid, types.ErrorCodeBadResponseBody)
+		}
 	}
 
 	// 部分兼容网关把完整的累计usage附在倒数第二个事件上，随后发送一个空的最后事件。
@@ -192,9 +244,17 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		info.CountBillableToolCall(dto.BuildInCallFunctionCall, name)
 	}
 
-	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
+	if !cancelled {
+		HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
+	}
 
 	return usage, nil
+}
+
+func chatStreamFailure(c *gin.Context, info *relaycommon.RelayInfo, messageKey string, code types.ErrorCode) *types.NewAPIError {
+	apiErr := types.NewOpenAIError(errors.New(i18n.T(c, messageKey)), code, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+	info.StreamStatus.MarkFailed(string(code), apiErr.ToOpenAIError().Type, apiErr.StatusCode)
+	return apiErr
 }
 
 // observeStreamChoices collects billable function call names and records the

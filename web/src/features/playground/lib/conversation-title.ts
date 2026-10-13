@@ -32,7 +32,11 @@ export function conversationTitleSource(
   ) {
     const message = document.messages[index]
     if (message.from === 'system' || message.status === 'error') continue
-    const content = message.versions.at(-1)?.content.trim()
+    const content = (
+      message.versions.find(
+        (version) => version.id === message.selectedVersionId
+      ) ?? message.versions[0]
+    )?.content.trim()
     if (!content) continue
     const part = `${message.from}: ${content.slice(0, remaining)}`.slice(
       0,

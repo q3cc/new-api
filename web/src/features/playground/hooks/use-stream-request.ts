@@ -24,10 +24,9 @@ import { getFreshAuthHeaders } from '@/lib/api'
 import { API_ENDPOINTS, ERROR_MESSAGES } from '../constants'
 import {
   getStreamReadyStateError,
-  isStreamClosedReadyState,
   isStreamDoneMessage,
   parseStreamErrorDetails,
-  parseStreamMessageUpdates,
+  parseStreamMessage,
 } from '../lib'
 import type { ChatCompletionRequest } from '../types'
 
@@ -121,26 +120,24 @@ export function createStreamRequestController(
       }
 
       try {
-        const updates = parseStreamMessageUpdates(data)
+        const { updates, error } = parseStreamMessage(data)
+        if (error) {
+          handleError(error.errorMessage, error.errorCode)
+          return
+        }
 
         for (const update of updates) {
           callbacks.onUpdate(update.type, update.chunk)
         }
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to parse SSE message:', error)
+      } catch {
         handleError(ERROR_MESSAGES.PARSE_ERROR)
       }
     })
 
     nextSource.addEventListener('error', (event) => {
       if (!isCurrent() || completed) return
-      if (!isStreamClosedReadyState(nextSource.readyState)) {
-        // eslint-disable-next-line no-console
-        console.error('SSE Error:', event)
-        const { errorCode, errorMessage } = parseStreamErrorDetails(event.data)
-        handleError(errorMessage, errorCode)
-      }
+      const { errorCode, errorMessage } = parseStreamErrorDetails(event.data)
+      handleError(errorMessage, errorCode)
     })
 
     nextSource.addEventListener('readystatechange', (event) => {

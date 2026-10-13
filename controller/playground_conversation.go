@@ -22,7 +22,7 @@ func playgroundConversationError(c *gin.Context, err error) {
 		status, message = http.StatusNotFound, errors.New("Conversation not found")
 	case errors.Is(err, model.ErrPlaygroundConflict):
 		status, message = http.StatusConflict, err
-	case errors.Is(err, model.ErrPlaygroundInvalid):
+	case errors.Is(err, model.ErrPlaygroundInvalid), errors.Is(err, model.ErrPlaygroundSettingsInvalid):
 		status, message = http.StatusBadRequest, err
 	case errors.As(err, &maxBytes), errors.Is(err, model.ErrPlaygroundTooLarge):
 		status, message = http.StatusRequestEntityTooLarge, model.ErrPlaygroundTooLarge

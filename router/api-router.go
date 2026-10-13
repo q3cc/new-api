@@ -32,6 +32,11 @@ func SetApiRouter(router *gin.Engine) {
 	conversations.GET("/:id", controller.GetPlaygroundConversation)
 	conversations.PUT("/:id", controller.SavePlaygroundConversation)
 	conversations.DELETE("/:id", controller.DeletePlaygroundConversation)
+	playground := apiRouter.Group("/playground", middleware.DisableCache(), middleware.UserAuth())
+	playground.GET("/settings", controller.GetPlaygroundSettings)
+	playground.PUT("/settings", controller.SavePlaygroundSettings)
+	playground.GET("/model-capabilities", controller.GetPlaygroundModelCapabilities)
+	playground.POST("/context/estimate", controller.EstimatePlaygroundContext)
 	{
 		apiRouter.GET("/setup", controller.GetSetup)
 		apiRouter.POST("/setup", anonymousRequestBodyLimit, controller.PostSetup)
