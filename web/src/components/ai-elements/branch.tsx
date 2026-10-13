@@ -58,17 +58,23 @@ const useBranch = () => {
 
 export type BranchProps = HTMLAttributes<HTMLDivElement> & {
   defaultBranch?: number
+  branch?: number
+  branchCount?: number
   onBranchChange?: (branchIndex: number) => void
 }
 
 export const Branch = ({
   defaultBranch = 0,
+  branch,
+  branchCount,
   onBranchChange,
   className,
   ...props
 }: BranchProps) => {
-  const [currentBranch, setCurrentBranch] = useState(defaultBranch)
+  const [localBranch, setCurrentBranch] = useState(defaultBranch)
+  const currentBranch = branch ?? localBranch
   const [branches, setBranches] = useState<ReactElement[]>([])
+  const totalBranches = branchCount ?? branches.length
 
   const handleBranchChange = (newBranch: number) => {
     setCurrentBranch(newBranch)
@@ -76,20 +82,18 @@ export const Branch = ({
   }
 
   const goToPrevious = () => {
-    const newBranch =
-      currentBranch > 0 ? currentBranch - 1 : branches.length - 1
+    const newBranch = currentBranch > 0 ? currentBranch - 1 : totalBranches - 1
     handleBranchChange(newBranch)
   }
 
   const goToNext = () => {
-    const newBranch =
-      currentBranch < branches.length - 1 ? currentBranch + 1 : 0
+    const newBranch = currentBranch < totalBranches - 1 ? currentBranch + 1 : 0
     handleBranchChange(newBranch)
   }
 
   const contextValue: BranchContextType = {
     currentBranch,
-    totalBranches: branches.length,
+    totalBranches,
     goToPrevious,
     goToNext,
     branches,

@@ -20,6 +20,7 @@ import { isAxiosError } from 'axios'
 
 import { useAuthStore } from '@/stores/auth-store'
 
+import type { ModelCapability } from '../compression-api'
 import {
   deleteConversation,
   getConversation,
@@ -31,10 +32,12 @@ import {
   type SavedConversation,
   type ImportProgress,
 } from '../conversations-api'
+import { compressContext, validCompression } from './context-compression'
 import {
   conversationTitleSource,
   generateConversationTitle,
 } from './conversation-title'
+import { discardFailedReply, getMessageContent } from './message/message-utils'
 import {
   clearImportedSource,
   readLegacySource,
@@ -50,6 +53,8 @@ export type ConversationEntry = {
   dirty: boolean
   saving: boolean
   titleGenerating?: boolean
+  compressionProgress?: { completed: number; total: number }
+  compressionError?: unknown
   error?: unknown
   pending?: ConversationWrite
   pendingVersion?: number
@@ -68,7 +73,11 @@ export function interruptedDocument(
     ...document,
     messages: document.messages.map((message) =>
       message.status === 'loading' || message.status === 'streaming'
-        ? { ...message, status: 'interrupted', isReasoningStreaming: false }
+        ? discardFailedReply({
+            ...message,
+            status: 'interrupted',
+            isReasoningStreaming: false,
+          })
         : message
     ),
   }
@@ -91,6 +100,7 @@ export class ConversationWorkspace {
   private leases = new Map<string, () => void>()
   private opening = new Map<number, Promise<string | undefined>>()
   private titleRequests = new Map<string, AbortController>()
+  private compressionRequests = new Map<string, AbortController>()
   constructor(
     readonly owner: number,
     private onSaved: (row?: SavedConversation) => void
@@ -297,6 +307,13 @@ export class ConversationWorkspace {
     const row = update(previous.row)
     if (row === previous.row) return
     if (
+      row.document.compression &&
+      row.document.messages !== previous.row.document.messages &&
+      !validCompression(row.document)
+    ) {
+      row.document = { ...row.document, compression: undefined }
+    }
+    if (
       previous.row.document.messages.length &&
       !row.document.messages.length
     ) {
@@ -347,13 +364,114 @@ export class ConversationWorkspace {
       this.setEntry({ ...entry, titleGenerating: false })
     }
   }
+  cancelCompression(key: string) {
+    this.compressionRequests.get(key)?.abort()
+    this.compressionRequests.delete(key)
+    const entry = this.snapshot.entries[key]
+    if (entry?.compressionProgress) {
+      this.setEntry({ ...entry, compressionProgress: undefined })
+    }
+  }
+  async compress(
+    key: string,
+    capability: ModelCapability,
+    signal?: AbortSignal
+  ): Promise<boolean> {
+    const entry = this.snapshot.entries[key]
+    if (
+      !this.isActive() ||
+      !entry ||
+      entry.error ||
+      this.compressionRequests.has(key)
+    ) {
+      return false
+    }
+    this.cancelTitle(key)
+    const controller = new AbortController()
+    this.compressionRequests.set(key, controller)
+    this.setEntry({
+      ...entry,
+      compressionProgress: { completed: 0, total: 0 },
+      compressionError: undefined,
+    })
+    const document = entry.row.document
+    this.update(key, (row) => ({
+      ...row,
+      document: { ...row.document, compressionAttempt: 'requested' },
+    }))
+    try {
+      if (!(await this.flush(key))) return false
+      const compression = await compressContext({
+        document,
+        capability,
+        signal: AbortSignal.any([
+          controller.signal,
+          this.controller.signal,
+          ...(signal ? [signal] : []),
+        ]),
+        onProgress: (completed, total) => {
+          const current = this.snapshot.entries[key]
+          if (
+            this.isActive() &&
+            current &&
+            this.compressionRequests.get(key) === controller
+          ) {
+            this.setEntry({
+              ...current,
+              compressionProgress: { completed, total },
+            })
+          }
+        },
+      })
+      const current = this.snapshot.entries[key]
+      if (
+        !this.isActive() ||
+        !current ||
+        this.compressionRequests.get(key) !== controller
+      ) {
+        return false
+      }
+      if (!validCompression({ ...current.row.document, compression })) {
+        throw new Error('Conversation changed during compression')
+      }
+      this.update(key, (row) => ({
+        ...row,
+        document: {
+          ...row.document,
+          compression,
+          compressionAttempt: undefined,
+        },
+      }))
+      return await this.flush(key)
+    } catch (error) {
+      const current = this.snapshot.entries[key]
+      if (
+        this.isActive() &&
+        current &&
+        this.compressionRequests.get(key) === controller
+      ) {
+        this.setEntry({ ...current, compressionError: error })
+        this.update(key, (row) => ({
+          ...row,
+          document: { ...row.document, compressionAttempt: 'failed' },
+        }))
+        await this.flush(key)
+      }
+      return false
+    } finally {
+      if (this.compressionRequests.get(key) === controller) {
+        this.cancelCompression(key)
+      }
+    }
+  }
   async generateTitle(key: string, retry = false): Promise<void> {
     const entry = this.snapshot.entries[key]
     if (
       !this.isActive() ||
       !entry ||
       entry.error ||
-      this.titleRequests.has(key)
+      this.titleRequests.has(key) ||
+      this.compressionRequests.has(key)
     ) {
       return
     }
@@ -377,7 +495,7 @@ export class ConversationWorkspace {
         (message) =>
           message.from === 'assistant' &&
           message.status === 'complete' &&
-          message.versions.at(-1)?.content.trim()
+          getMessageContent(message).trim()
       )
     ) {
       return
@@ -521,6 +639,7 @@ export class ConversationWorkspace {
     const entry = this.snapshot.entries[key]
     if (!this.isActive() || !entry) return
     this.cancelTitle(key)
+    this.cancelCompression(key)
     this.stopHandlers.get(key)?.()
     // Join prior writes so an in-flight first create cannot become an orphan.
     await this.taskQueue.catch(() => {})
@@ -547,6 +666,9 @@ export class ConversationWorkspace {
   dispose() {
     if (this.stopped) return
     for (const key of this.titleRequests.keys()) this.cancelTitle(key)
+    for (const key of this.compressionRequests.keys()) {
+      this.cancelCompression(key)
+    }
     for (const stop of this.stopHandlers.values()) stop()
     for (const entry of Object.values(this.snapshot.entries)) {
       if (entry.dirty) {

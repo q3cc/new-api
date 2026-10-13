@@ -31,12 +31,14 @@ export type PlaygroundMessageLayoutMode = 'alternating' | 'left'
 export interface MessageVersion {
   id: string
   content: string
+  state?: Omit<Message, 'key' | 'from' | 'versions' | 'selectedVersionId'>
 }
 
 export interface Message {
   key: string
   from: MessageRole
   versions: MessageVersion[]
+  selectedVersionId?: string
   createdAt?: number
   startedAt?: number
   completedAt?: number

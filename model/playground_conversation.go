@@ -48,10 +48,14 @@ type PlaygroundImport struct {
 }
 
 type PlaygroundDocument struct {
-	Messages         []json.RawMessage `json:"messages"`
-	Config           map[string]any    `json:"config"`
-	ParameterEnabled map[string]bool   `json:"parameterEnabled"`
-	Draft            string            `json:"draft"`
+	Messages            []json.RawMessage              `json:"messages"`
+	Config              map[string]any                 `json:"config"`
+	ParameterEnabled    map[string]bool                `json:"parameterEnabled"`
+	Draft               string                         `json:"draft"`
+	CompressionSettings *PlaygroundCompressionSettings `json:"compressionSettings,omitempty"`
+	ContextLimits       map[string]int                 `json:"contextLimits,omitempty"`
+	Compression         *PlaygroundCompression         `json:"compression,omitempty"`
+	CompressionAttempt  string                         `json:"compressionAttempt,omitempty"`
 }
 
 type PlaygroundConversationDetail struct {
@@ -114,10 +118,11 @@ func (write *PlaygroundWrite) Validate() error {
 	keys := make(map[string]bool, len(doc.Messages))
 	for _, raw := range doc.Messages {
 		var message struct {
-			Key      string `json:"key"`
-			From     string `json:"from"`
-			Status   string `json:"status"`
-			Versions []struct {
+			SelectedVersionId string `json:"selectedVersionId"`
+			Key               string `json:"key"`
+			From              string `json:"from"`
+			Status            string `json:"status"`
+			Versions          []struct {
 				Id      string `json:"id"`
 				Content string `json:"content"`
 			} `json:"versions"`
@@ -136,10 +141,34 @@ func (write *PlaygroundWrite) Validate() error {
 		default:
 			return ErrPlaygroundInvalid
 		}
+		selectedFound := message.SelectedVersionId == ""
 		for _, version := range message.Versions {
 			if version.Id == "" {
 				return ErrPlaygroundInvalid
 			}
+			selectedFound = selectedFound || version.Id == message.SelectedVersionId
+		}
+		if !selectedFound {
+			return ErrPlaygroundInvalid
+		}
+	}
+	if doc.CompressionSettings != nil {
+		if err := doc.CompressionSettings.Validate(); err != nil {
+			return err
+		}
+	}
+	if doc.CompressionAttempt != "" && doc.CompressionAttempt != "requested" && doc.CompressionAttempt != "failed" {
+		return ErrPlaygroundSettingsInvalid
+	}
+	for name, limit := range doc.ContextLimits {
+		capability := GetPlaygroundModelCapability(name)
+		if limit < 1 || limit > max(capability.ContextWindow, capability.InputLimit) {
+			return ErrPlaygroundSettingsInvalid
+		}
+	}
+	if c := doc.Compression; c != nil {
+		if strings.TrimSpace(c.Summary) == "" || !keys[c.Boundary] || len(c.SourceHash) != 64 || !GetPlaygroundModelCapability(c.Model).TextGeneration || c.CreatedAt <= 0 {
+			return ErrPlaygroundSettingsInvalid
 		}
 	}
 	return nil

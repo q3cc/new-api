@@ -40,6 +40,7 @@ import {
   createLoadingAssistantMessage,
   createUserMessage,
   getMessageContent,
+  getCurrentVersion,
   updateCurrentVersionContent,
 } from './message-utils'
 
@@ -79,14 +80,41 @@ export function createRegeneratedMessages(
     return null
   }
 
-  if (messages[messageIndex].from === MESSAGE_ROLES.USER) {
-    return [
-      ...messages.slice(0, messageIndex + 1),
-      createLoadingAssistantMessage(),
-    ]
+  const replyIndex =
+    messages[messageIndex].from === MESSAGE_ROLES.USER
+      ? messageIndex + 1
+      : messageIndex
+  const previous = messages[replyIndex]
+  const loading = createLoadingAssistantMessage()
+  if (!previous || previous.from !== MESSAGE_ROLES.ASSISTANT) {
+    return [...messages.slice(0, replyIndex), loading]
   }
-
-  return [...messages.slice(0, messageIndex), createLoadingAssistantMessage()]
+  const current = getCurrentVersion(previous)
+  const {
+    key: _key,
+    from: _from,
+    versions: _versions,
+    selectedVersionId: _selected,
+    ...state
+  } = previous
+  const versions = previous.versions
+    .map((version) =>
+      version.id === current.id ? { ...version, state } : version
+    )
+    .filter(
+      (version) =>
+        (!version.state?.status || version.state.status === 'complete') &&
+        version.content.trim()
+    )
+  return [
+    ...messages.slice(0, replyIndex),
+    {
+      ...loading,
+      key: previous.key,
+      versions: [...versions, ...loading.versions],
+      selectedVersionId: loading.versions[0].id,
+    },
+  ]
 }
 
 export function removeMessageByKey(

@@ -22,6 +22,12 @@ import { z } from 'zod'
 import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
+import {
+  compressionSchema,
+  compressionSettingsSchema,
+  type Compression,
+  type CompressionSettings,
+} from './compression-api'
 import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from './constants'
 import {
   messagesSchema,
@@ -35,6 +41,10 @@ export type ConversationDocument = {
   config: PlaygroundConfig
   parameterEnabled: ParameterEnabled
   draft: string
+  compressionSettings?: CompressionSettings
+  contextLimits?: Record<string, number>
+  compression?: Compression
+  compressionAttempt?: 'requested' | 'failed'
   titleGeneration?:
     | 'awaiting_reply'
     | 'ready'
@@ -106,6 +116,18 @@ export function parseConversation(row: SavedConversation): SavedConversation {
         ...parameterEnabledSchema.parse(row.document.parameterEnabled),
       },
       draft: z.string().parse(row.document.draft),
+      compressionSettings: compressionSettingsSchema
+        .optional()
+        .parse(row.document.compressionSettings),
+      contextLimits: z
+        .record(z.string(), z.number().int().positive())
+        .optional()
+        .parse(row.document.contextLimits),
+      compression: compressionSchema.optional().parse(row.document.compression),
+      compressionAttempt: z
+        .enum(['requested', 'failed'])
+        .optional()
+        .parse(row.document.compressionAttempt),
       titleGeneration: z
         .enum([
           'awaiting_reply',

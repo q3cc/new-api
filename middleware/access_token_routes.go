@@ -41,6 +41,10 @@ func accessTokenScopeRule(scope string) accessTokenRouteRule {
 // Casbin-guarded routes declare themselves through
 // DeclareAccessTokenPermissionRoute when they are registered.
 var accessTokenRouteRules = map[string]accessTokenRouteRule{
+	"GET /api/playground/settings":                                           accessTokenSessionRule,
+	"PUT /api/playground/settings":                                           accessTokenSessionRule,
+	"GET /api/playground/model-capabilities":                                 accessTokenSessionRule,
+	"POST /api/playground/context/estimate":                                  accessTokenSessionRule,
 	"GET /api/playground/conversations":                                      accessTokenSessionRule,
 	"POST /api/playground/conversations":                                     accessTokenSessionRule,
 	"POST /api/playground/conversations/import":                              accessTokenSessionRule,

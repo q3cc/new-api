@@ -36,9 +36,12 @@ import (
 )
 
 func TestPlaygroundConversationAuthorization(t *testing.T) {
+	previousDB := model.DB
+	initModelListColumnNames(t)
+	model.DB = previousDB
 	admin, legacy := setupAccessTokenAudit(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.PlaygroundConversation{}, &model.PlaygroundImport{}, &model.PlaygroundUploadChunk{}))
-	user := model.User{Username: "playground-owner", AffCode: "playground-owner", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, AuthVersion: 1}
+	require.NoError(t, model.DB.AutoMigrate(&model.PlaygroundConversation{}, &model.PlaygroundImport{}, &model.PlaygroundUploadChunk{}, &model.PlaygroundPreference{}, &model.Ability{}))
+	user := model.User{Username: "playground-owner", AffCode: "playground-owner", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, AuthVersion: 1, Group: "default"}
 	root := model.User{Username: "playground-root", AffCode: "playground-root", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1}
 	require.NoError(t, model.DB.Create(&user).Error)
 	require.NoError(t, model.DB.Create(&root).Error)
@@ -62,6 +65,39 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 	pg.GET("/:id", GetPlaygroundConversation)
 	pg.PUT("/:id", SavePlaygroundConversation)
 	pg.DELETE("/:id", DeletePlaygroundConversation)
+	settings := r.Group("/api/playground", middleware.UserAuth())
+	settings.GET("/settings", GetPlaygroundSettings)
+	settings.PUT("/settings", SavePlaygroundSettings)
+	settings.GET("/model-capabilities", GetPlaygroundModelCapabilities)
+	settings.POST("/context/estimate", EstimatePlaygroundContext)
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "gpt-4o", ChannelId: 1, Enabled: true}).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "private", Model: "private-model", ChannelId: 2, Enabled: true}).Error)
+	prefBody := `{"model":"gpt-4o","automatic":true,"revision":0,"operation_id":"compression-pref-create","user_id":999}`
+	pref := accessTokenRequest(r, http.MethodPut, "/api/playground/settings", userJWT, "", prefBody)
+	require.Equal(t, http.StatusOK, pref.Code, pref.Body.String())
+	assert.Contains(t, pref.Body.String(), `"revision":1`)
+	assert.Contains(t, accessTokenRequest(r, http.MethodGet, "/api/playground/settings", adminJWT, "", "").Body.String(), `"model":""`)
+	assert.Contains(t, accessTokenRequest(r, http.MethodGet, "/api/playground/settings", userJWT, "", "").Body.String(), `"model":"gpt-4o"`)
+	assert.Equal(t, http.StatusConflict, accessTokenRequest(r, http.MethodPut, "/api/playground/settings", userJWT, "", strings.Replace(prefBody, "compression-pref-create", "compression-pref-stale", 1)).Code)
+	capabilities := accessTokenRequest(r, http.MethodGet, "/api/playground/model-capabilities?group=default", userJWT, "", "")
+	assert.Contains(t, capabilities.Body.String(), `"context_window":128000`)
+	assert.NotContains(t, capabilities.Body.String(), "private-model")
+	assert.Equal(t, http.StatusForbidden, accessTokenRequest(r, http.MethodGet, "/api/playground/model-capabilities?group=private", userJWT, "", "").Code)
+	estimateBody := `{"model":"gpt-4o","group":"default","messages":[{"role":"user","content":"hello"}]}`
+	estimate := accessTokenRequest(r, http.MethodPost, "/api/playground/context/estimate", userJWT, "", estimateBody)
+	require.Equal(t, http.StatusOK, estimate.Code, estimate.Body.String())
+	assert.Contains(t, estimate.Body.String(), `"input_tokens":7`)
+	imageRead := false
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { imageRead = true }))
+	t.Cleanup(imageServer.Close)
+	imageBody := fmt.Sprintf(`{"model":"gpt-4o","group":"default","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":%q}}]}]}`, imageServer.URL)
+	imageEstimate := accessTokenRequest(r, http.MethodPost, "/api/playground/context/estimate", userJWT, "", imageBody)
+	require.Equal(t, http.StatusOK, imageEstimate.Code)
+	assert.Contains(t, imageEstimate.Body.String(), `"input_tokens":8198`)
+	assert.False(t, imageRead, "estimation must not fetch remote images")
+	assert.Equal(t, http.StatusForbidden, accessTokenRequest(r, http.MethodPost, "/api/playground/context/estimate", userJWT, "", strings.Replace(estimateBody, "gpt-4o", "private-model", 1)).Code)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, accessTokenRequest(r, http.MethodPost, "/api/playground/context/estimate", userJWT, "", strings.Replace(estimateBody, "hello", strings.Repeat("x", model.PlaygroundDocumentLimit), 1)).Code)
+	assert.Equal(t, http.StatusBadRequest, accessTokenRequest(r, http.MethodPost, "/api/playground/context/estimate", userJWT, "", strings.Replace(estimateBody, `"hello"`, "null", 1)).Code)
 	body := `{"operation_id":"playground-auth-create","title":"private conversation","document":{"messages":[{"key":"u","from":"user","versions":[{"id":"v","content":"private-body-sentinel"}]}],"config":{},"parameterEnabled":{},"draft":""},"user_id":999}`
 	created := accessTokenRequest(r, http.MethodPost, "/api/playground/conversations", userJWT, "", body)
 	require.Equal(t, http.StatusOK, created.Code)
@@ -102,6 +138,7 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 		assert.NotContains(t, list.Body.String(), "private conversation")
 	}
 	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/api/playground/settings"}, {http.MethodPut, "/api/playground/settings"}, {http.MethodGet, "/api/playground/model-capabilities"}, {http.MethodPost, "/api/playground/context/estimate"},
 		{http.MethodGet, uploadPath}, {http.MethodPut, uploadPath}, {http.MethodPost, uploadPath + "/complete"},
 		{http.MethodGet, "/api/playground/conversations"}, {http.MethodPost, "/api/playground/conversations"},
 		{http.MethodPost, "/api/playground/conversations/import"}, {http.MethodGet, path}, {http.MethodPut, path}, {http.MethodDelete, path},

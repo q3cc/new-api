@@ -81,10 +81,21 @@ export const Context = ({
 )
 
 const ContextIcon = () => {
-  const { t } = useTranslation()
   const { usedTokens, maxTokens } = useContextValue()
+  return <ContextUsageIcon usedTokens={usedTokens} maxTokens={maxTokens} />
+}
+
+export const ContextUsageIcon = ({
+  usedTokens,
+  maxTokens,
+  ...props
+}: ComponentProps<'svg'> & { usedTokens?: number; maxTokens?: number }) => {
+  const { t } = useTranslation()
   const circumference = 2 * Math.PI * ICON_RADIUS
-  const usedPercent = usedTokens / maxTokens
+  const usedPercent =
+    maxTokens && usedTokens !== undefined
+      ? Math.min(1, Math.max(0, usedTokens / maxTokens))
+      : 0
   const dashOffset = circumference * (1 - usedPercent)
 
   return (
@@ -95,6 +106,7 @@ const ContextIcon = () => {
       style={{ color: 'currentcolor' }}
       viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
       width='20'
+      {...props}
     >
       <circle
         cx={ICON_CENTER}

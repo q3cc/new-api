@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { GlobeIcon, PaperclipIcon, Trash2Icon } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -47,6 +47,7 @@ import type { ParameterEnabled, PlaygroundConfig } from '../../types'
 import { PlaygroundParameterPanel } from './playground-parameter-panel'
 
 type PlaygroundInputToolsProps = {
+  compressionControl?: ReactNode
   config: PlaygroundConfig
   disabled?: boolean
   hasMessages?: boolean
@@ -63,6 +64,7 @@ type PlaygroundInputToolsProps = {
 }
 
 export function PlaygroundInputTools({
+  compressionControl,
   config,
   disabled,
   hasMessages = false,
@@ -174,6 +176,7 @@ export function PlaygroundInputTools({
             <p>{t('Clear chat history')}</p>
           </TooltipContent>
         </Tooltip>
+        {compressionControl}
       </PromptInputTools>
 
       <ConfirmDialog

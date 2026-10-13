@@ -31,10 +31,12 @@ export type StreamMessageUpdate = {
 }
 
 type StreamErrorPayload = {
-  error?: {
-    code?: unknown
-    message?: unknown
-  }
+  error?:
+    | string
+    | {
+        code?: unknown
+        message?: unknown
+      }
 }
 
 export type StreamErrorDetails = {
@@ -56,6 +58,10 @@ export function parseStreamErrorDetails(data?: string): StreamErrorDetails {
       return { errorMessage: fallbackMessage }
     }
 
+    if (typeof parsed.error === 'string') {
+      return { errorMessage: parsed.error }
+    }
+
     return {
       errorCode: normalizeMessageErrorCode(parsed.error.code),
       errorMessage:
@@ -68,12 +74,18 @@ export function parseStreamErrorDetails(data?: string): StreamErrorDetails {
   }
 }
 
-export function parseStreamMessageUpdates(data: string): StreamMessageUpdate[] {
-  const chunk = JSON.parse(data) as ChatCompletionChunk
-  const delta = chunk.choices?.[0]?.delta
+export function parseStreamMessage(data: string): {
+  updates: StreamMessageUpdate[]
+  error?: StreamErrorDetails
+} {
+  const chunk = JSON.parse(data) as ChatCompletionChunk & StreamErrorPayload
+  if (chunk?.error != null) {
+    return { updates: [], error: parseStreamErrorDetails(data) }
+  }
+  const delta = chunk?.choices?.[0]?.delta
 
   if (!delta) {
-    return []
+    return { updates: [] }
   }
 
   const updates: StreamMessageUpdate[] = []
@@ -86,15 +98,11 @@ export function parseStreamMessageUpdates(data: string): StreamMessageUpdate[] {
     updates.push({ type: 'content', chunk: delta.content })
   }
 
-  return updates
+  return { updates }
 }
 
 export function isStreamDoneMessage(data: string): boolean {
   return data === STREAM_DONE_MESSAGE
-}
-
-export function isStreamClosedReadyState(readyState?: number): boolean {
-  return readyState === STREAM_CLOSED_READY_STATE
 }
 
 export function getStreamReadyStateError(
@@ -105,11 +113,11 @@ export function getStreamReadyStateError(
 
   if (
     eventReadyState !== undefined &&
-    eventReadyState >= STREAM_CLOSED_READY_STATE &&
-    status !== undefined &&
-    status !== 200
+    eventReadyState >= STREAM_CLOSED_READY_STATE
   ) {
-    return `HTTP ${status}: ${ERROR_MESSAGES.CONNECTION_CLOSED}`
+    return status !== undefined && status !== 200
+      ? `HTTP ${status}: ${ERROR_MESSAGES.CONNECTION_CLOSED}`
+      : ERROR_MESSAGES.CONNECTION_CLOSED
   }
 
   return null

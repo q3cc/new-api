@@ -95,15 +95,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
-			case types.RelayFormatClaude:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"type":  "error",
-					"error": newAPIError.ToClaudeError(),
-				})
 			default:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"error": newAPIError.ToOpenAIError(),
-				})
+				writeRelayError(c, relayFormat, newAPIError)
 			}
 		}
 	}()
@@ -219,6 +212,27 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		retryLogStr := common.LogText("retry: %s", strings.Trim(strings.Join(strings.Fields(fmt.Sprint(useChannel)), "->"), "[]"))
 		logger.LogInfo(c, retryLogStr)
 	}
+}
+
+// A started SSE response must stay SSE, including its terminal error. Before
+// any bytes are sent, return an ordinary non-2xx JSON error instead.
+func writeRelayError(c *gin.Context, relayFormat types.RelayFormat, apiErr *types.NewAPIError) {
+	payload := gin.H{"error": apiErr.ToOpenAIError()}
+	if relayFormat == types.RelayFormatClaude {
+		payload = gin.H{"type": "error", "error": apiErr.ToClaudeError()}
+	}
+	if c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
+		if relayFormat == types.RelayFormatClaude {
+			c.SSEvent("error", payload)
+			_ = helper.FlushWriter(c)
+		} else {
+			_ = helper.ObjectData(c, payload)
+		}
+		return
+	}
+	c.Header("Content-Type", "application/json; charset=utf-8")
+	c.Writer.Header().Del("Transfer-Encoding")
+	c.JSON(apiErr.StatusCode, payload)
 }
 
 // CountClaudeTokens implements Anthropic's token-counting utility endpoint.

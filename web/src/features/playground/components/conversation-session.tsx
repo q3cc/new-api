@@ -28,14 +28,20 @@ import {
   usePlaygroundConversation,
   usePlaygroundOptions,
 } from '../hooks'
+import { usePlaygroundCompression } from '../hooks/use-playground-compression'
 import {
   interruptedDocument,
   type ConversationEntry,
   type ConversationWorkspace,
 } from '../lib/conversation-workspace'
+import { discardFailedReply } from '../lib/message/message-utils'
 import type { Message, GroupOption, ModelOption } from '../types'
 import { PlaygroundChat } from './chat/playground-chat'
 import { PlaygroundInput } from './input/playground-input'
+import {
+  PlaygroundCompressionPanel,
+  PlaygroundCompressionStatus,
+} from './playground-compression-panel'
 
 type Props = {
   entry: ConversationEntry
@@ -47,9 +53,16 @@ type Props = {
 
 export function ConversationSession(props: Props) {
   const [starting, setStarting] = useState(false)
+  const [preparationError, setPreparationError] = useState<unknown>()
+  const preparing = useRef<AbortController | null>(null)
   const generation = useRef(0)
   const key = props.entry.key
   const workspace = props.workspace
+  const compression = usePlaygroundCompression(
+    props.entry,
+    workspace,
+    props.active
+  )
   const updateMessages = useCallback(
     (updater: Message[] | ((previous: Message[]) => Message[])) => {
       workspace.update(key, (row) => {
@@ -77,6 +90,8 @@ export function ConversationSession(props: Props) {
   })
   const { stopGeneration, sendChat: sendRequest } = chat
   const stop = useCallback(() => {
+    preparing.current?.abort()
+    workspace.cancelCompression(key)
     const pendingKeys = new Set(
       workspace
         .getSnapshot()
@@ -96,7 +111,11 @@ export function ConversationSession(props: Props) {
         ...row.document,
         messages: row.document.messages.map((message) =>
           pendingKeys.has(message.key)
-            ? { ...message, status: 'interrupted', isReasoningStreaming: false }
+            ? discardFailedReply({
+                ...message,
+                status: 'interrupted',
+                isReasoningStreaming: false,
+              })
             : message
         ),
       },
@@ -113,21 +132,49 @@ export function ConversationSession(props: Props) {
         return
       }
       const request = ++generation.current
+      const controller = new AbortController()
+      preparing.current?.abort()
+      preparing.current = controller
+      setPreparationError(undefined)
       setStarting(true)
-      void workspace.flush(key).then((saved) => {
-        if (!workspace.isActive() || request !== generation.current) return
-        setStarting(false)
-        if (saved) {
-          sendRequest(messages)
-        } else {
+      void workspace
+        .flush(key)
+        .then(async (saved) => {
+          if (!workspace.isActive() || request !== generation.current) return
+          if (saved) {
+            const context = await compression.prepare(
+              messages,
+              controller.signal
+            )
+            if (!workspace.isActive() || request !== generation.current) return
+            setStarting(false)
+            sendRequest(context)
+          } else {
+            workspace.update(key, (row) => ({
+              ...row,
+              document: interruptedDocument(row.document),
+            }))
+          }
+        })
+        .catch((error: unknown) => {
+          if (
+            controller.signal.aborted ||
+            !workspace.isActive() ||
+            request !== generation.current
+          ) {
+            return
+          }
+          setPreparationError(error)
           workspace.update(key, (row) => ({
             ...row,
             document: interruptedDocument(row.document),
           }))
-        }
-      })
+        })
+        .finally(() => {
+          if (request === generation.current) setStarting(false)
+        })
     },
-    [sendRequest, key, workspace]
+    [sendRequest, key, workspace, compression]
   )
   const conversation = usePlaygroundConversation({
     messages: props.entry.row.document.messages,
@@ -151,13 +198,19 @@ export function ConversationSession(props: Props) {
     <ConversationView
       {...props}
       conversation={conversation}
-      generating={starting || chat.isGenerating}
+      generating={
+        starting || chat.isGenerating || !!props.entry.compressionProgress
+      }
       stop={stop}
+      compression={compression}
+      preparationError={preparationError}
     />
   )
 }
 
 type ViewProps = Props & {
+  compression: ReturnType<typeof usePlaygroundCompression>
+  preparationError?: unknown
   conversation: ReturnType<typeof usePlaygroundConversation>
   generating: boolean
   stop: () => void
@@ -198,6 +251,23 @@ function ConversationView(props: ViewProps) {
     isAxiosError(error) && [404, 409].includes(error.response?.status ?? 0)
   return (
     <div className='flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'>
+      <PlaygroundCompressionStatus
+        entry={props.entry}
+        compression={props.compression}
+      />
+      {!!props.preparationError && (
+        <div
+          className='text-destructive shrink-0 px-4 py-2 text-sm'
+          role='alert'
+        >
+          {t(
+            getServerErrorMessage(
+              props.preparationError,
+              'Compression did not complete'
+            )
+          )}
+        </div>
+      )}
       {!!error && (
         <div
           className='border-destructive text-destructive flex flex-wrap items-center gap-2 border-b px-4 py-2'
@@ -227,6 +297,7 @@ function ConversationView(props: ViewProps) {
       <div className='min-h-0 flex-1 overflow-hidden'>
         <PlaygroundChat
           messages={document.messages}
+          onSelectVersion={props.conversation.handleSelectVersion}
           onRegenerateMessage={props.conversation.handleRegenerateMessage}
           onEditMessage={props.conversation.handleEditMessage}
           onDeleteMessage={props.conversation.handleDeleteMessage}
@@ -242,6 +313,14 @@ function ConversationView(props: ViewProps) {
       </div>
       <div className='mx-auto w-full max-w-4xl shrink-0 pb-[env(safe-area-inset-bottom)]'>
         <PlaygroundInput
+          compressionControl={
+            <PlaygroundCompressionPanel
+              entry={props.entry}
+              workspace={props.workspace}
+              compression={props.compression}
+              disabled={props.generating || !!error}
+            />
+          }
           config={document.config}
           parameterEnabled={document.parameterEnabled}
           draft={document.draft}
@@ -277,7 +356,12 @@ function ConversationView(props: ViewProps) {
             props.conversation.handleEditOpenChange(false)
             props.workspace.update(props.entry.key, (row) => ({
               ...row,
-              document: { ...row.document, messages: [] },
+              document: {
+                ...row.document,
+                messages: [],
+                compression: undefined,
+                compressionAttempt: undefined,
+              },
             }))
             void props.workspace.flush(props.entry.key)
           }}

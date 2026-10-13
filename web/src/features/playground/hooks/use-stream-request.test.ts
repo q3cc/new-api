@@ -16,8 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
+import { ERROR_MESSAGES } from '../constants'
+import { updateAssistantMessageWithError } from '../lib/message/message-update-utils'
+import {
+  createLoadingAssistantMessage,
+  getMessageContent,
+} from '../lib/message/message-utils'
 import type { ChatCompletionRequest } from '../types'
 import { createStreamRequestController } from './use-stream-request'
 
@@ -31,6 +37,7 @@ function deferred<T>() {
 
 class FakeStreamSource {
   readyState = 0
+  status = 200
   closed = false
   streamed = false
   private listeners = new Map<
@@ -76,6 +83,148 @@ const noopCallbacks = {
   onComplete: () => undefined,
   onError: () => undefined,
 }
+
+describe('stream failures', () => {
+  test.each([400, 402, 404, 'context_length_exceeded'])(
+    'reports an in-band error %s once instead of completing an empty reply',
+    async (code) => {
+      const source = new FakeStreamSource()
+      const callbacks = {
+        onUpdate: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      }
+      const controller = createStreamRequestController({
+        getHeaders: async () => ({}),
+        createSource: () => source,
+        setStreaming: vi.fn(),
+      })
+      await controller.send(payload, callbacks)
+      source.emit(
+        'message',
+        JSON.stringify({
+          error: { code, message: 'Upstream rejected the request' },
+        })
+      )
+      source.emit('message', '[DONE]')
+      expect(callbacks.onError).toHaveBeenCalledExactlyOnceWith(
+        'Upstream rejected the request',
+        String(code)
+      )
+      expect(callbacks.onComplete).not.toHaveBeenCalled()
+      expect(source.closed).toBe(true)
+    }
+  )
+
+  test('reports a 200 connection closing before DONE as interrupted', async () => {
+    const source = new FakeStreamSource()
+    const callbacks = {
+      onUpdate: vi.fn(),
+      onComplete: vi.fn(),
+      onError: vi.fn(),
+    }
+    const controller = createStreamRequestController({
+      getHeaders: async () => ({}),
+      createSource: () => source,
+      setStreaming: vi.fn(),
+    })
+    await controller.send(payload, callbacks)
+    source.emit(
+      'message',
+      JSON.stringify({ choices: [{ delta: { content: 'partial' } }] })
+    )
+    source.readyState = 2
+    source.emit('readystatechange')
+    expect(callbacks.onUpdate).toHaveBeenCalledWith('content', 'partial')
+    expect(callbacks.onError).toHaveBeenCalledOnce()
+    expect(callbacks.onComplete).not.toHaveBeenCalled()
+  })
+
+  test.each([
+    [
+      'error',
+      JSON.stringify({ error: { code: 404, message: 'Model not found' } }),
+      'Model not found',
+      '404',
+    ],
+    [
+      'message',
+      JSON.stringify({ error: 'Upstream unavailable' }),
+      'Upstream unavailable',
+      undefined,
+    ],
+    ['message', '{broken', ERROR_MESSAGES.PARSE_ERROR, undefined],
+  ] as const)(
+    'handles %s error payload %s after the source closes',
+    async (eventType, data, message, code) => {
+      const source = new FakeStreamSource()
+      const callbacks = {
+        onUpdate: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      }
+      const controller = createStreamRequestController({
+        getHeaders: async () => ({}),
+        createSource: () => source,
+        setStreaming: vi.fn(),
+      })
+      await controller.send(payload, callbacks)
+      source.readyState = 2
+      source.emit(eventType, data)
+      source.emit('readystatechange')
+      source.emit('message', '[DONE]')
+      expect(callbacks.onError).toHaveBeenCalledExactlyOnceWith(message, code)
+      expect(callbacks.onComplete).not.toHaveBeenCalled()
+    }
+  )
+
+  test.each(['complete', 'stop', 'dispose'] as const)(
+    'does not report a connection error after %s',
+    async (action) => {
+      const source = new FakeStreamSource()
+      const callbacks = {
+        onUpdate: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+      }
+      const controller = createStreamRequestController({
+        getHeaders: async () => ({}),
+        createSource: () => source,
+        setStreaming: vi.fn(),
+      })
+      await controller.send(payload, callbacks)
+      if (action === 'complete') source.emit('message', '[DONE]')
+      else controller[action]()
+      source.readyState = 2
+      source.emit('readystatechange')
+      source.emit('error')
+      expect(callbacks.onError).not.toHaveBeenCalled()
+      expect(callbacks.onComplete).toHaveBeenCalledTimes(
+        action === 'complete' ? 1 : 0
+      )
+    }
+  )
+
+  test('keeps partial content and reasoning when saving a failed reply', () => {
+    const message = {
+      ...createLoadingAssistantMessage(),
+      versions: [{ id: 'partial', content: 'Partial answer' }],
+      reasoning: { content: 'Preserved reasoning', duration: 1 },
+    }
+    const [failed] = updateAssistantMessageWithError(
+      [message],
+      'Connection closed',
+      '502',
+      'Request failed'
+    )
+    expect(failed && getMessageContent(failed)).toBe(
+      'Partial answer\n\nRequest failed: Connection closed'
+    )
+    expect(failed?.reasoning?.content).toBe('Preserved reasoning')
+    expect(failed?.status).toBe('error')
+    expect(failed?.errorCode).toBe('502')
+  })
+})
 
 describe('latest-wins stream request coordination', () => {
   test('only creates a stream for the latest header request', async () => {

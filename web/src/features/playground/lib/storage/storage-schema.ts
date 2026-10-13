@@ -56,11 +56,6 @@ const messageStatusSchema = z.enum([
   'interrupted',
 ])
 
-const messageVersionSchema = z.object({
-  id: z.string(),
-  content: z.string(),
-})
-
 const sourceSchema = z.object({
   href: z.string(),
   title: z.string(),
@@ -74,10 +69,7 @@ const reasoningSchema = z.object({
   durationMs: z.number().optional(),
 })
 
-const messageSchema = z.object({
-  key: z.string(),
-  from: messageRoleSchema,
-  versions: z.array(messageVersionSchema).min(1),
+const messageStateSchema = z.object({
   createdAt: z.number().optional(),
   startedAt: z.number().optional(),
   completedAt: z.number().optional(),
@@ -92,6 +84,21 @@ const messageSchema = z.object({
     (value) => (value === null ? null : normalizeMessageErrorCode(value)),
     z.string().nullable().optional()
   ),
+})
+
+const messageSchema = messageStateSchema.extend({
+  key: z.string(),
+  from: messageRoleSchema,
+  selectedVersionId: z.string().optional(),
+  versions: z
+    .array(
+      z.object({
+        id: z.string(),
+        content: z.string(),
+        state: messageStateSchema.optional(),
+      })
+    )
+    .min(1),
 })
 
 export const messagesSchema = z.array(messageSchema)

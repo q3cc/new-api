@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -37,6 +37,7 @@ import { PlaygroundInputControls } from './playground-input-controls'
 import { PlaygroundInputTools } from './playground-input-tools'
 
 interface PlaygroundInputProps {
+  compressionControl?: ReactNode
   draft?: string
   onDraftChange?: (value: string) => void
   config: PlaygroundConfig
@@ -65,6 +66,7 @@ interface PlaygroundInputProps {
 }
 
 export function PlaygroundInput({
+  compressionControl,
   draft,
   onDraftChange,
   config,
@@ -132,6 +134,7 @@ export function PlaygroundInput({
             text={text}
             tools={
               <PlaygroundInputTools
+                compressionControl={compressionControl}
                 config={config}
                 disabled={disabled}
                 hasMessages={hasMessages}

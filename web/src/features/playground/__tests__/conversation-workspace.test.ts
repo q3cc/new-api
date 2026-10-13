@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { waitFor } from '@testing-library/react'
 import { AxiosError } from 'axios'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, assert, beforeEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
@@ -29,6 +29,7 @@ import {
   type ConversationWrite,
   type SavedConversation,
 } from '../conversations-api'
+import * as compression from '../lib/context-compression'
 import { ConversationWorkspace } from '../lib/conversation-workspace'
 import * as pending from '../lib/storage/pending-conversations'
 import type { ChatCompletionRequest } from '../types'
@@ -77,6 +78,99 @@ function responseError(status: number) {
     },
   })
 }
+
+it('retries saving an existing summary without paying again and invalidates edited source', async () => {
+  const client = workspace()
+  const key = await client.create(emptyConversationDocument())
+  assert(key)
+  expect(key).toBeTruthy()
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, messages: [message('original source')] },
+  }))
+  await client.flush(key)
+  const source = client.getSnapshot().entries[key].row.document.messages
+  const result = {
+    summary: 'summary',
+    boundary: 'message',
+    sourceHash: compression.compressionSourceHash(source),
+    model: 'gpt-4o',
+    createdAt: 1,
+  }
+  const call = vi
+    .spyOn(compression, 'compressContext')
+    .mockImplementation(async () => {
+      failSave = true
+      return result
+    })
+  const capability = {
+    model: 'gpt-4o',
+    context_window: 128000,
+    input_limit: 0,
+    output_limit: 16384,
+    text_generation: true,
+    compression_warning: false,
+  }
+  expect(await client.compress(key, capability)).toBe(false)
+  expect(client.getSnapshot().entries[key].row.document.compression).toEqual(
+    result
+  )
+  expect(client.getSnapshot().entries[key].error).toBeTruthy()
+  failSave = false
+  expect(await client.flush(key)).toBe(true)
+  expect(call).toHaveBeenCalledTimes(1)
+  expect(
+    rows.get(client.getSnapshot().entries[key].row.id)?.document.compression
+  ).toEqual(result)
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, messages: [message('edited source')] },
+  }))
+  expect(
+    client.getSnapshot().entries[key].row.document.compression
+  ).toBeUndefined()
+})
+
+it('discards delayed compression after account switch and never starts overlapping compression', async () => {
+  const client = workspace()
+  const key = await client.create(emptyConversationDocument())
+  assert(key)
+  const call = vi.spyOn(compression, 'compressContext')
+  let finish:
+    | ((value: Awaited<ReturnType<typeof compression.compressContext>>) => void)
+    | undefined
+  call.mockImplementation(
+    async () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+  )
+  const capability = {
+    model: 'gpt-4o',
+    context_window: 128000,
+    input_limit: 0,
+    output_limit: 16384,
+    text_generation: true,
+    compression_warning: false,
+  }
+  const request = client.compress(key, capability)
+  await waitFor(() => expect(call).toHaveBeenCalledTimes(1))
+  expect(await client.compress(key, capability)).toBe(false)
+  setOwner(2)
+  finish?.({
+    summary: 'late summary',
+    boundary: 'missing',
+    sourceHash: 'a'.repeat(64),
+    model: 'gpt-4o',
+    createdAt: 1,
+  })
+  expect(await request).toBe(false)
+  expect(
+    writes.some(
+      (write) => write.document.compression?.summary === 'late summary'
+    )
+  ).toBe(false)
+})
 beforeEach(() => {
   localStorage.clear()
   setOwner(1)

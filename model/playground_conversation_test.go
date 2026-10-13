@@ -58,7 +58,7 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 			t.Logf("database version: %s", version)
 			for _, upgrade := range []bool{false, true} {
 				t.Run(fmt.Sprintf("upgrade=%v", upgrade), func(t *testing.T) {
-					require.NoError(t, db.Migrator().DropTable(&PlaygroundUploadChunk{}, &PlaygroundImport{}, &PlaygroundConversation{}, &Option{}))
+					require.NoError(t, db.Migrator().DropTable(&PlaygroundPreference{}, &PlaygroundUploadChunk{}, &PlaygroundImport{}, &PlaygroundConversation{}, &Option{}))
 					if upgrade {
 						require.NoError(t, db.AutoMigrate(&PlaygroundConversation{}, &PlaygroundImport{}))
 						_, err := CreatePlaygroundConversation(903, playgroundTestWrite(t, "migration-survivor-01", "existing conversation"))
@@ -67,7 +67,7 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 						require.NoError(t, db.Create(&Option{Key: "PlaygroundMigrationSentinel", Value: "unchanged"}).Error)
 					}
 					for range 2 {
-						require.NoError(t, db.AutoMigrate(&PlaygroundConversation{}, &PlaygroundImport{}, &PlaygroundUploadChunk{}))
+						require.NoError(t, db.AutoMigrate(&PlaygroundPreference{}, &PlaygroundConversation{}, &PlaygroundImport{}, &PlaygroundUploadChunk{}))
 					}
 					if upgrade {
 						var preserved PlaygroundConversation
@@ -81,9 +81,89 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 					t.Run("atomic_revision_updates", testPlaygroundConcurrentSave)
 					t.Run("legacy_import_and_deletion", testPlaygroundImport)
 					t.Run("resumable_verified_upload", testPlaygroundUpload)
+					t.Run("compression_preferences_and_document", testPlaygroundCompression)
 				})
 			}
 		})
+	}
+}
+
+func testPlaygroundCompression(t *testing.T) {
+	empty, err := GetPlaygroundPreference(110)
+	require.NoError(t, err)
+	assert.Zero(t, empty.Revision)
+	write := PlaygroundPreferenceWrite{PlaygroundCompressionSettings: PlaygroundCompressionSettings{Model: "gpt-4o", Automatic: true}, OperationId: "preference-create-01"}
+	saved, err := SavePlaygroundPreference(110, write)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, saved.Revision)
+	repeated, err := SavePlaygroundPreference(110, write)
+	require.NoError(t, err)
+	assert.Equal(t, saved, repeated)
+	other, err := GetPlaygroundPreference(111)
+	require.NoError(t, err)
+	assert.Empty(t, other.Model)
+	write.OperationId = "preference-stale-01"
+	_, err = SavePlaygroundPreference(110, write)
+	assert.ErrorIs(t, err, ErrPlaygroundConflict)
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for _, name := range []string{"gpt-4o-mini", "deepseek-v3.2"} {
+		go func() {
+			<-start
+			_, e := SavePlaygroundPreference(110, PlaygroundPreferenceWrite{PlaygroundCompressionSettings: PlaygroundCompressionSettings{Model: name}, Revision: 1, OperationId: "preference-race-" + name})
+			results <- e
+		}()
+	}
+	close(start)
+	err1, err2 := <-results, <-results
+	if err1 != nil {
+		err1, err2 = err2, err1
+	}
+	require.NoError(t, err1)
+	assert.ErrorIs(t, err2, ErrPlaygroundConflict)
+	for _, bad := range []PlaygroundCompressionSettings{{Model: "gpt-image-2.5", Automatic: true}, {Model: "unknown"}, {Automatic: true}} {
+		assert.ErrorIs(t, bad.Validate(), ErrPlaygroundSettingsInvalid)
+	}
+	documentWrite := playgroundTestWrite(t, "compressed-create-01", "original conversation must survive")
+	var document map[string]any
+	require.NoError(t, common.Unmarshal(documentWrite.Document, &document))
+	document["compressionSettings"] = PlaygroundCompressionSettings{Model: "gpt-4o", Automatic: true}
+	document["contextLimits"] = map[string]int{"gpt-4o": 32000}
+	document["compression"] = PlaygroundCompression{Summary: "summary", Boundary: "user-1", SourceHash: strings.Repeat("a", 64), Model: "gpt-4o", CreatedAt: 1}
+	documentWrite.Document, err = common.Marshal(document)
+	require.NoError(t, err)
+	row, err := CreatePlaygroundConversation(110, documentWrite)
+	require.NoError(t, err)
+	assert.Contains(t, string(row.Document), "original conversation must survive")
+	assert.Contains(t, string(row.Document), `"summary":"summary"`)
+	document["contextLimits"] = map[string]int{"gpt-4o": 128001}
+	documentWrite.Document, err = common.Marshal(document)
+	require.NoError(t, err)
+	assert.ErrorIs(t, documentWrite.Validate(), ErrPlaygroundSettingsInvalid)
+}
+
+func TestPlaygroundModelCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		names                 []string
+		window, input, output int
+		warning               bool
+	}{
+		{[]string{"claude-opus-4-6", "claude-opus-4-6-thinking", "claude-opus-5-5"}, 1000000, 0, 128000, false},
+		{[]string{"deepseek-v3.1", "deepseek.v3.1", "DeepSeek-V3.1"}, 128000, 0, 8000, true},
+		{[]string{"deepseek-v3.2", "deepseek.v3.2"}, 163840, 0, 8000, true},
+		{[]string{"deepseek-v4-pro-preview", "deepseek/deepseek-v4-pro"}, 1000000, 0, 0, false},
+		{[]string{"gemini-3.1-pro", "gemini-3.1-pro-preview", "gemini-3.8-flash"}, 0, 1048576, 65536, false},
+		{[]string{"gemma-4-31b", "google.gemma-4-31b"}, 256000, 0, 0, false},
+		{[]string{"gpt-4o", "gpt-4o-mini"}, 128000, 0, 16384, false},
+		{[]string{"grok-4.3", "xai.grok-4.3"}, 1000000, 0, 0, false},
+		{[]string{"grok-4.6", "xai.grok-4.6"}, 500000, 0, 0, false},
+		{[]string{"gpt-image-2.5", "grok-imagine-image-2.0", "unknown", "deepseek-r1", "custom-gpt-4o"}, 0, 0, 0, false},
+	} {
+		for _, name := range tc.names {
+			t.Run(name, func(t *testing.T) {
+				assert.Equal(t, PlaygroundModelCapability{Model: name, ContextWindow: tc.window, InputLimit: tc.input, OutputLimit: tc.output, TextGeneration: tc.window > 0 || tc.input > 0, CompressionWarning: tc.warning}, GetPlaygroundModelCapability(name))
+			})
+		}
 	}
 }
 

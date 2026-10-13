@@ -24,6 +24,7 @@ import {
   createRegeneratedMessages,
   removeMessageByKey,
 } from '../lib'
+import { selectMessageVersion } from '../lib/message/message-utils'
 import type { Message } from '../types'
 
 type UsePlaygroundConversationOptions = {
@@ -105,6 +106,12 @@ export function usePlaygroundConversation({
   )
 
   return {
+    handleSelectVersion: (message: Message, id: string) =>
+      updateMessages((previous) =>
+        previous.map((item) =>
+          item.key === message.key ? selectMessageVersion(item, id) : item
+        )
+      ),
     editingMessageKey,
     handleSendMessage,
     handleRegenerateMessage,

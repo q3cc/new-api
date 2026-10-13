@@ -37,10 +37,15 @@ export function createMessageVersion(content: string): MessageVersion {
 }
 
 /**
- * Get current version from message (always returns the first version)
+ * Read the selected reply, including conversations saved before version selection.
  */
 export function getCurrentVersion(message: Message): MessageVersion {
-  return message.versions[0] || { id: 'default', content: '' }
+  return (
+    message.versions.find(
+      (version) => version.id === message.selectedVersionId
+    ) ??
+    message.versions[0] ?? { id: 'default', content: '' }
+  )
 }
 
 /**
@@ -67,8 +72,44 @@ export function updateCurrentVersionContent(
   const currentVersion = getCurrentVersion(message)
   return {
     ...message,
-    versions: [{ ...currentVersion, content }],
+    versions: message.versions.map((version) =>
+      version.id === currentVersion.id ? { ...version, content } : version
+    ),
   }
+}
+
+export function selectMessageVersion(message: Message, id: string): Message {
+  const target = message.versions.find((version) => version.id === id)
+  if (!target || target.id === getCurrentVersion(message).id) return message
+  const {
+    key,
+    from,
+    versions,
+    selectedVersionId: _selected,
+    ...state
+  } = message
+  const current = getCurrentVersion(message)
+  return {
+    key,
+    from,
+    versions: versions.map((version) =>
+      version.id === current.id ? { ...version, state } : version
+    ),
+    selectedVersionId: id,
+    ...(target.state ?? { status: 'complete', createdAt: message.createdAt }),
+  }
+}
+
+export function discardFailedReply(message: Message): Message {
+  if (message.versions.length <= 1) return message
+  const current = getCurrentVersion(message)
+  const previous = message.versions.filter(
+    (version) => version.id !== current.id
+  )
+  const last = previous.at(-1)
+  if (!last) return message
+  const restored = selectMessageVersion(message, last.id)
+  return { ...restored, versions: previous }
 }
 
 /**

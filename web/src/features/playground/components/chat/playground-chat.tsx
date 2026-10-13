@@ -20,6 +20,13 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
+  Branch,
+  BranchSelector,
+  BranchPrevious,
+  BranchNext,
+  BranchPage,
+} from '@/components/ai-elements/branch'
+import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
@@ -35,6 +42,7 @@ import {
   getPreviousUserMessage,
   isErrorMessage,
 } from '../../lib'
+import { getCurrentVersion } from '../../lib/message/message-utils'
 import type {
   Message as MessageType,
   PlaygroundMessageLayoutMode,
@@ -49,6 +57,7 @@ const MAX_RENDERED_HISTORY_MESSAGES = 24
 
 interface PlaygroundChatProps {
   messages: MessageType[]
+  onSelectVersion?: (message: MessageType, id: string) => void
   onCopyMessage?: (message: MessageType) => void
   onRegenerateMessage?: (message: MessageType) => void
   onEditMessage?: (message: MessageType) => void
@@ -65,6 +74,7 @@ interface PlaygroundChatProps {
 
 export function PlaygroundChat({
   messages,
+  onSelectVersion,
   onCopyMessage,
   onRegenerateMessage,
   onEditMessage,
@@ -76,7 +86,7 @@ export function PlaygroundChat({
   onSaveEdit,
   onCancelEdit,
   onSaveEditAndSubmit,
-  messageLayoutMode = 'alternating',
+  messageLayoutMode = 'left',
 }: PlaygroundChatProps) {
   const { t } = useTranslation()
   const [editText, setEditText] = useState('')
@@ -149,18 +159,48 @@ export function PlaygroundChat({
             <PlaygroundMessageContent
               alignment={alignment}
               actions={
-                <MessageActions
-                  message={message}
-                  onCopy={onCopyMessage}
-                  onRegenerate={onRegenerateMessage}
-                  onToggleSource={handleToggleMessageSource}
-                  onEdit={onEditMessage}
-                  onDelete={onDeleteMessage}
-                  isSourceVisible={isSourceVisible}
-                  isGenerating={isGenerating}
-                  alwaysVisible={alwaysShowActions}
-                  className='mt-1.5'
-                />
+                <>
+                  {message.versions.length > 1 && onSelectVersion && (
+                    <Branch
+                      className='w-auto'
+                      branch={message.versions.findIndex(
+                        (version) =>
+                          version.id === getCurrentVersion(message).id
+                      )}
+                      branchCount={message.versions.length}
+                      onBranchChange={(index) =>
+                        onSelectVersion(message, message.versions[index].id)
+                      }
+                    >
+                      <BranchSelector
+                        from={message.from}
+                        className='self-start px-0'
+                      >
+                        <BranchPrevious
+                          aria-label={t('Previous reply')}
+                          disabled={isGenerating}
+                        />
+                        <BranchPage />
+                        <BranchNext
+                          aria-label={t('Next reply')}
+                          disabled={isGenerating}
+                        />
+                      </BranchSelector>
+                    </Branch>
+                  )}
+                  <MessageActions
+                    message={message}
+                    onCopy={onCopyMessage}
+                    onRegenerate={onRegenerateMessage}
+                    onToggleSource={handleToggleMessageSource}
+                    onEdit={onEditMessage}
+                    onDelete={onDeleteMessage}
+                    isSourceVisible={isSourceVisible}
+                    isGenerating={isGenerating}
+                    alwaysVisible={alwaysShowActions}
+                    className='mt-1.5'
+                  />
+                </>
               }
               isSourceVisible={isSourceVisible}
               message={message}
