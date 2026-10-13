@@ -24,7 +24,9 @@ import { Button } from '@/components/ui/button'
 import { formatNumber } from '@/lib/format'
 
 import { formatCreemPrice } from '../../lib/format'
+import { getRechargeBrowser } from '../../lib/payment'
 import type { CreemProduct } from '../../types'
+import { PaymentBrowserNotice } from './payment-browser-notice'
 
 interface CreemConfirmDialogProps {
   open: boolean
@@ -42,6 +44,7 @@ export function CreemConfirmDialog({
   processing,
 }: CreemConfirmDialogProps) {
   const { t } = useTranslation()
+  const rechargeBrowser = getRechargeBrowser()
 
   if (!product) return null
 
@@ -52,11 +55,12 @@ export function CreemConfirmDialog({
       title={t('Confirm Creem Purchase')}
       description={t('Review your purchase details before proceeding.')}
       contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-[425px]'
-      footerClassName='grid grid-cols-2 gap-2 sm:flex'
+      footerClassName='grid grid-cols-2 gap-2 sm:flex sm:flex-wrap'
       contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
         <>
+          <PaymentBrowserNotice browser={rechargeBrowser} />
           <Button
             variant='outline'
             onClick={() => onOpenChange(false)}
@@ -64,7 +68,10 @@ export function CreemConfirmDialog({
           >
             {t('Cancel')}
           </Button>
-          <Button onClick={onConfirm} disabled={processing}>
+          <Button
+            onClick={onConfirm}
+            disabled={processing || !!rechargeBrowser}
+          >
             {processing && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {t('Confirm Payment')}
           </Button>
