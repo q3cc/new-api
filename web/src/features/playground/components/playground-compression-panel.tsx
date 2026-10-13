@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Minimize2Icon, Settings2Icon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { ContextUsageIcon } from '@/components/ai-elements/context'
 import { PromptInputButton } from '@/components/ai-elements/prompt-input'
 import { Dialog } from '@/components/dialog'
-import { ModelSelector } from '@/components/model-group-selector'
+import { GroupSelector, ModelSelector } from '@/components/model-group-selector'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -47,6 +47,7 @@ import { formatNumber } from '@/lib/format'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 
 import {
+  getModelCapabilities,
   saveCompressionPreference,
   type CompressionSettings,
   type PlaygroundPreference,
@@ -57,12 +58,14 @@ import type {
   ConversationEntry,
   ConversationWorkspace,
 } from '../lib/conversation-workspace'
+import type { GroupOption } from '../types'
 
 type Props = {
   entry: ConversationEntry
   workspace: ConversationWorkspace
   compression: ReturnType<typeof usePlaygroundCompression>
   disabled: boolean
+  groups: GroupOption[]
 }
 
 export function PlaygroundCompressionPanel(props: Props) {
@@ -91,11 +94,19 @@ export function PlaygroundCompressionPanel(props: Props) {
   const capabilities = props.compression.capabilities.data ?? []
   const selected = document.compressionSettings ?? defaults
   const settings = scope === 'default' ? defaults : selected
+  const settingsGroup = settings?.group || document.config.group
+  const settingsCapabilities = useQuery({
+    queryKey: ['playground-capabilities', owner, settingsGroup],
+    queryFn: ({ signal }) => getModelCapabilities(settingsGroup, signal),
+    staleTime: 30000,
+    enabled: dialog === 'settings',
+    meta: { errorToast: false },
+  })
   const summary = validCompression(document)
-  const selectedModel = capabilities.find(
+  const selectedModel = props.compression.compressionCapabilities.data?.find(
     (item) => item.model === selected?.model && item.text_generation
   )
-  const model = capabilities.find(
+  const model = settingsCapabilities.data?.find(
     (item) => item.model === settings?.model && item.text_generation
   )
   const mutation = useMutation({
@@ -124,7 +135,7 @@ export function PlaygroundCompressionPanel(props: Props) {
       document: { ...row.document, compressionSettings: value },
     }))
   }
-  const models = capabilities
+  const models = (settingsCapabilities.data ?? [])
     .filter((item) => item.text_generation)
     .map((item) => ({ value: item.model, label: item.model }))
   const { usage, budget, busy } = props.compression
@@ -243,7 +254,11 @@ export function PlaygroundCompressionPanel(props: Props) {
               onClick={() => {
                 setOpen(false)
                 if (selectedModel) {
-                  void props.workspace.compress(props.entry.key, selectedModel)
+                  void props.workspace.compress(
+                    props.entry.key,
+                    selectedModel,
+                    props.compression.compressionGroup
+                  )
                 }
               }}
             >
@@ -287,6 +302,7 @@ export function PlaygroundCompressionPanel(props: Props) {
                         compressionAttempt: undefined,
                         compressionSettings: {
                           model: selected?.model ?? '',
+                          group: selected?.group,
                           automatic: false,
                         },
                       },
@@ -320,13 +336,35 @@ export function PlaygroundCompressionPanel(props: Props) {
           </TabsList>
         </Tabs>
         <div className='space-y-2'>
+          <Label>{t('Compression group')}</Label>
+          <GroupSelector
+            showLabel
+            selectedGroup={settings?.group ?? ''}
+            groups={[
+              { value: '', label: t('Current conversation group') },
+              ...props.groups,
+            ]}
+            disabled={!settings || mutation.isPending || props.disabled}
+            onGroupChange={(group) =>
+              updateSettings({ group, model: '', automatic: false })
+            }
+            className='w-full justify-between'
+          />
+        </div>
+        <div className='space-y-2'>
           <Label>{t('Compression model')}</Label>
           <ModelSelector
+            showLabel
             selectedModel={settings?.model ?? ''}
             models={models}
-            disabled={!settings || mutation.isPending || props.disabled}
+            disabled={
+              !settings ||
+              settingsCapabilities.isFetching ||
+              mutation.isPending ||
+              props.disabled
+            }
             onModelChange={(model) =>
-              updateSettings({ model, automatic: true })
+              updateSettings({ group: settings?.group, model, automatic: true })
             }
             className='w-full justify-between'
           />
@@ -345,7 +383,7 @@ export function PlaygroundCompressionPanel(props: Props) {
             checked={settings?.automatic ?? false}
             disabled={!model || mutation.isPending || props.disabled}
             onCheckedChange={(automatic) =>
-              settings && updateSettings({ model: settings.model, automatic })
+              settings && updateSettings({ ...settings, automatic })
             }
           />
         </div>
@@ -366,9 +404,10 @@ export function PlaygroundCompressionPanel(props: Props) {
             </Button>
             {[...new Set([document.config.model, selected?.model])].map(
               (name) => {
-                const capability = capabilities.find(
-                  (item) => item.model === name
-                )
+                const capability = [
+                  ...capabilities,
+                  ...(props.compression.compressionCapabilities.data ?? []),
+                ].find((item) => item.model === name)
                 if (!name || !capability?.text_generation) return null
                 const ceiling =
                   capability.input_limit || capability.context_window
@@ -444,6 +483,24 @@ export function PlaygroundCompressionPanel(props: Props) {
             )}
           </>
         )}
+        {settingsCapabilities.isError && (
+          <div role='alert' className='text-destructive space-y-2'>
+            <p>
+              {t(
+                getServerErrorMessage(
+                  settingsCapabilities.error,
+                  'Failed to load playground models'
+                )
+              )}
+            </p>
+            <Button
+              variant='outline'
+              onClick={() => void settingsCapabilities.refetch()}
+            >
+              {t('Retry')}
+            </Button>
+          </div>
+        )}
         {mutation.isError && (
           <div role='alert' className='text-destructive space-y-2'>
             <p>
@@ -494,6 +551,7 @@ export function PlaygroundCompressionStatus({
   const error =
     entry.compressionError ??
     compression.preference.error ??
+    compression.compressionCapabilities.error ??
     compression.capabilities.error
   if (!progress && !error) return null
   return (
@@ -525,6 +583,7 @@ export function PlaygroundCompressionStatus({
               onClick={() => {
                 void compression.preference.refetch()
                 void compression.capabilities.refetch()
+                void compression.compressionCapabilities.refetch()
               }}
             >
               {t('Retry')}

@@ -63,6 +63,13 @@ export function usePlaygroundCompression(
   const preference = useQuery(preferenceOptions)
   const capabilities = useQuery(capabilityOptions)
   const document = entry.row.document
+  const settings = document.compressionSettings ?? preference.data
+  const compressionGroup = settings?.group || group
+  const compressionCapabilities = useQuery({
+    ...capabilityOptions,
+    queryKey: ['playground-capabilities', workspace.owner, compressionGroup],
+    queryFn: ({ signal }) => getModelCapabilities(compressionGroup, signal),
+  })
   const busy =
     !!entry.compressionProgress ||
     document.messages.some(
@@ -163,12 +170,24 @@ export function usePlaygroundCompression(
       if (document.compressionAttempt) {
         throw new Error('Retry compression before sending')
       }
-      const model = models.find(
+      const compressionGroup = settings.group || document.config.group
+      const compressionModels = await client.fetchQuery({
+        ...capabilityOptions,
+        queryKey: [
+          'playground-capabilities',
+          workspace.owner,
+          compressionGroup,
+        ],
+        queryFn: ({ signal }) => getModelCapabilities(compressionGroup, signal),
+      })
+      const model = compressionModels.find(
         (model) => model.model === settings.model && model.text_generation
       )
       if (!model) throw new Error('Compression model is not available')
       signal.throwIfAborted()
-      if (!(await workspace.compress(entry.key, model, signal))) {
+      if (
+        !(await workspace.compress(entry.key, model, compressionGroup, signal))
+      ) {
         throw (
           workspace.getSnapshot().entries[entry.key]?.compressionError ??
           new Error('Compression did not complete')
@@ -190,5 +209,14 @@ export function usePlaygroundCompression(
     }
     return result
   }
-  return { preference, capabilities, prepare, usage, budget, busy }
+  return {
+    preference,
+    capabilities,
+    compressionCapabilities,
+    compressionGroup,
+    prepare,
+    usage,
+    budget,
+    busy,
+  }
 }

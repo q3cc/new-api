@@ -26,6 +26,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -72,6 +73,10 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 	settings.POST("/context/estimate", EstimatePlaygroundContext)
 	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "gpt-4o", ChannelId: 1, Enabled: true}).Error)
 	require.NoError(t, model.DB.Create(&model.Ability{Group: "private", Model: "private-model", ChannelId: 2, Enabled: true}).Error)
+	oldGroups := setting.UserUsableGroups2JSONString()
+	t.Cleanup(func() { require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(oldGroups)) })
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","DSS":"DSS"}`))
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "DSS", Model: "gpt-4o-mini", ChannelId: 3, Enabled: true}).Error)
 	prefBody := `{"model":"gpt-4o","automatic":true,"revision":0,"operation_id":"compression-pref-create","user_id":999}`
 	pref := accessTokenRequest(r, http.MethodPut, "/api/playground/settings", userJWT, "", prefBody)
 	require.Equal(t, http.StatusOK, pref.Code, pref.Body.String())
@@ -79,6 +84,14 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 	assert.Contains(t, accessTokenRequest(r, http.MethodGet, "/api/playground/settings", adminJWT, "", "").Body.String(), `"model":""`)
 	assert.Contains(t, accessTokenRequest(r, http.MethodGet, "/api/playground/settings", userJWT, "", "").Body.String(), `"model":"gpt-4o"`)
 	assert.Equal(t, http.StatusConflict, accessTokenRequest(r, http.MethodPut, "/api/playground/settings", userJWT, "", strings.Replace(prefBody, "compression-pref-create", "compression-pref-stale", 1)).Code)
+	crossGroup := `{"model":"gpt-4o-mini","group":"DSS","automatic":true,"revision":1,"operation_id":"compression-group-save"}`
+	for _, invalid := range []string{strings.Replace(crossGroup, "DSS", "private", 1), strings.Replace(crossGroup, "DSS", "default", 1)} {
+		assert.Equal(t, http.StatusForbidden, accessTokenRequest(r, http.MethodPut, "/api/playground/settings", userJWT, "", invalid).Code)
+	}
+	pref = accessTokenRequest(r, http.MethodPut, "/api/playground/settings", userJWT, "", crossGroup)
+	require.Equal(t, http.StatusOK, pref.Code, pref.Body.String())
+	assert.Contains(t, pref.Body.String(), `"group":"DSS"`)
+	assert.Contains(t, accessTokenRequest(r, http.MethodGet, "/api/playground/settings", userJWT, "", "").Body.String(), `"group":"DSS"`)
 	capabilities := accessTokenRequest(r, http.MethodGet, "/api/playground/model-capabilities?group=default", userJWT, "", "")
 	assert.Contains(t, capabilities.Body.String(), `"context_window":128000`)
 	assert.NotContains(t, capabilities.Body.String(), "private-model")

@@ -167,6 +167,7 @@ export function chatMessages(messages: Message[]): ChatCompletionMessage[] {
 type CompressOptions = {
   document: ConversationDocument
   capability: ModelCapability
+  group?: string
   signal: AbortSignal
   onProgress: (completed: number, total: number) => void
 }
@@ -194,7 +195,10 @@ export async function compressContext(
   )
   if (previous) transcript.unshift(previous.summary)
   if (!transcript.length) throw new Error('Not enough messages to compress')
-  const group = document.config.group
+  const group =
+    options.group ||
+    document.compressionSettings?.group ||
+    document.config.group
   const model = capability.model
   const budget = Math.floor(
     inputBudget(
@@ -338,18 +342,19 @@ export async function compressContext(
           document.messages.slice(0, boundary + 1)
         ),
         model,
+        group,
         createdAt: Date.now(),
       }
       const [originalContext, compressedContext] = await Promise.all([
         estimateContext(
           document.config.model,
-          group,
+          document.config.group,
           chatMessages(contextMessages(document)),
           signal
         ),
         estimateContext(
           document.config.model,
-          group,
+          document.config.group,
           chatMessages(contextMessages({ ...document, compression })),
           signal
         ),

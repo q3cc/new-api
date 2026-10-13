@@ -318,6 +318,7 @@ function ConversationView(props: ViewProps) {
               entry={props.entry}
               workspace={props.workspace}
               compression={props.compression}
+              groups={groups}
               disabled={props.generating || !!error}
             />
           }

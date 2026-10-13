@@ -39,7 +39,7 @@ import { afterEach, assert, beforeEach, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
-import type { ModelCapability } from '../compression-api'
+import type { ModelCapability, PlaygroundPreference } from '../compression-api'
 import * as conversationsApi from '../conversations-api'
 import {
   conversationSearchSchema,
@@ -56,6 +56,8 @@ let failSave: boolean
 let failDelete: boolean
 let completions: { text: string; finish: (content?: string) => void }[]
 let modelCapabilities: ModelCapability[]
+let groupCapabilities: Record<string, ModelCapability[]>
+let preference: PlaygroundPreference
 
 function row(id: number, title: string): SavedConversation {
   const document = emptyConversationDocument()
@@ -74,6 +76,8 @@ beforeEach(() => {
   ])
   completions = []
   modelCapabilities = []
+  groupCapabilities = {}
+  preference = { model: '', automatic: false, revision: 0 }
   failSave = failDelete = false
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -85,12 +89,17 @@ beforeEach(() => {
       return {
         data: {
           success: true,
-          data: { model: '', automatic: false, revision: 0 },
+          data: preference,
         },
       }
     }
     if (url === '/api/playground/model-capabilities') {
-      return { data: { success: true, data: modelCapabilities } }
+      return {
+        data: {
+          success: true,
+          data: groupCapabilities[config?.params.group] ?? modelCapabilities,
+        },
+      }
     }
     if (url === '/api/user/self/groups') {
       return {
@@ -128,6 +137,13 @@ beforeEach(() => {
   })
   vi.spyOn(api, 'put').mockImplementation(async (url, body) => {
     if (failSave) throw new Error('Save unavailable')
+    if (url === '/api/playground/settings') {
+      preference = {
+        ...(body as PlaygroundPreference),
+        revision: preference.revision + 1,
+      }
+      return { data: { success: true, data: preference } }
+    }
     const write = JSON.parse(body as string) as ConversationWrite
     const id = Number(url?.split('/').at(-1))
     const previous = records.get(id) ?? row(id, '')
@@ -296,61 +312,136 @@ it('opens context actions on a touch long press without closing on release and s
   expect(completions).toHaveLength(0)
 })
 
-it('automatically saves a shorter summary before sending with the chat model and preserves all original replies', async () => {
-  modelCapabilities = [
+it('selects an independent compression group and saves the default model without changing the chat group', async () => {
+  groupCapabilities.DSS = [
     {
-      model: 'test-model',
-      context_window: 5000,
-      input_limit: 0,
-      output_limit: 0,
-      text_generation: true,
-      compression_warning: false,
-    },
-    {
-      model: 'other-model',
+      model: 'gpt-4o-mini',
       context_window: 128000,
       input_limit: 0,
-      output_limit: 0,
+      output_limit: 16384,
       text_generation: true,
       compression_warning: false,
     },
   ]
-  const first = records.get(1)
-  assert(first)
-  first.document.compressionSettings = { model: 'other-model', automatic: true }
-  first.document.messages = Array.from({ length: 8 }, (_, index) => ({
-    key: `history-${index}`,
-    from: index % 2 ? 'assistant' : 'user',
-    status: 'complete',
-    versions: [{ id: `original-${index}`, content: String(index).repeat(100) }],
-  }))
-  const original = structuredClone(first.document.messages)
   renderPlayground()
-  await screen.findByDisplayValue('draft Alpha')
-  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
-    target: { value: 'Continue' },
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Model context usage' })
+  )
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Compression settings' })
+  )
+  const dialog = await screen.findByRole('dialog', {
+    name: 'Compression settings',
   })
-  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
-  await waitFor(() => expect(completions).toHaveLength(1))
-  const calls = () =>
-    vi
-      .mocked(api.post)
-      .mock.calls.filter(([url]) => url === '/pg/chat/completions')
-  expect(calls()[0][1]).toMatchObject({
-    model: 'other-model',
-    max_tokens: 4096,
-    stream: false,
+  fireEvent.click(within(dialog).getByRole('tab', { name: 'Default settings' }))
+  fireEvent.click(
+    within(dialog).getByRole('combobox', { name: 'Current conversation group' })
+  )
+  fireEvent.click(await screen.findByRole('option', { name: /^DSS/ }))
+  await waitFor(() =>
+    expect(preference).toMatchObject({
+      group: 'DSS',
+      model: '',
+      automatic: false,
+    })
+  )
+  const picker = within(dialog).getByRole('combobox', { name: 'Model' })
+  await waitFor(() => expect(picker).toBeEnabled())
+  fireEvent.click(picker)
+  fireEvent.click(await screen.findByRole('option', { name: 'gpt-4o-mini' }))
+  await waitFor(() =>
+    expect(preference).toMatchObject({
+      group: 'DSS',
+      model: 'gpt-4o-mini',
+      automatic: true,
+    })
+  )
+  expect(records.get(1)?.document.config).toMatchObject({
+    model: 'test-model',
+    group: 'default',
   })
-  expect(records.get(1)?.document.compressionAttempt).toBe('requested')
-  await act(async () => completions[0].finish('Summary'))
-  await waitFor(() => expect(completions).toHaveLength(2))
-  expect(records.get(1)?.document.compression?.summary).toBe('Summary')
-  expect(calls()[1][1]).toMatchObject({ model: 'test-model' })
-  expect(calls()[1][1]).not.toHaveProperty('max_tokens')
-  await act(async () => completions[1].finish('Continued reply'))
-  await screen.findByText('Continued reply')
-  expect(records.get(1)?.document.messages.slice(0, 8)).toEqual(original)
+  fireEvent.click(
+    within(dialog).getByRole('tab', { name: 'This conversation' })
+  )
+  expect(within(dialog).getByRole('combobox', { name: 'DSS' })).toBeVisible()
 })
+
+it.each(['conversation', 'default', 'legacy'])(
+  'compresses using the %s group setting and keeps chat requests in their own group',
+  async (scope) => {
+    modelCapabilities = [
+      {
+        model: 'test-model',
+        context_window: 5000,
+        input_limit: 0,
+        output_limit: 0,
+        text_generation: true,
+        compression_warning: false,
+      },
+      {
+        model: 'other-model',
+        context_window: 128000,
+        input_limit: 0,
+        output_limit: 0,
+        text_generation: true,
+        compression_warning: false,
+      },
+    ]
+    const first = records.get(1)
+    assert(first)
+    const settings = {
+      model: 'other-model',
+      group: scope === 'legacy' ? undefined : 'DSS',
+      automatic: true,
+    }
+    if (scope === 'default') preference = { ...settings, revision: 1 }
+    else first.document.compressionSettings = settings
+    if (scope !== 'legacy') {
+      groupCapabilities = {
+        default: [modelCapabilities[0]],
+        DSS: [modelCapabilities[1]],
+      }
+    }
+    first.document.messages = Array.from({ length: 8 }, (_, index) => ({
+      key: `history-${index}`,
+      from: index % 2 ? 'assistant' : 'user',
+      status: 'complete',
+      versions: [
+        { id: `original-${index}`, content: String(index).repeat(100) },
+      ],
+    }))
+    const original = structuredClone(first.document.messages)
+    renderPlayground()
+    await screen.findByDisplayValue('draft Alpha')
+    fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+      target: { value: 'Continue' },
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+    await waitFor(() => expect(completions).toHaveLength(1))
+    const calls = () =>
+      vi
+        .mocked(api.post)
+        .mock.calls.filter(([url]) => url === '/pg/chat/completions')
+    expect(calls()[0][1]).toMatchObject({
+      model: 'other-model',
+      group: scope === 'legacy' ? 'default' : 'DSS',
+      max_tokens: 4096,
+      stream: false,
+    })
+    expect(records.get(1)?.document.compressionAttempt).toBe('requested')
+    await act(async () => completions[0].finish('Summary'))
+    await waitFor(() => expect(completions).toHaveLength(2))
+    expect(records.get(1)?.document.compression?.summary).toBe('Summary')
+    expect(calls()[1][1]).toMatchObject({
+      model: 'test-model',
+      group: 'default',
+    })
+    expect(calls()[1][1]).not.toHaveProperty('max_tokens')
+    await act(async () => completions[1].finish('Continued reply'))
+    await screen.findByText('Continued reply')
+    expect(records.get(1)?.document.messages.slice(0, 8)).toEqual(original)
+  }
+)
 
 it('switches saved reply versions and keeps messages left aligned', async () => {
   const first = records.get(1)

@@ -59,7 +59,20 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 			for _, upgrade := range []bool{false, true} {
 				t.Run(fmt.Sprintf("upgrade=%v", upgrade), func(t *testing.T) {
 					require.NoError(t, db.Migrator().DropTable(&PlaygroundPreference{}, &PlaygroundUploadChunk{}, &PlaygroundImport{}, &PlaygroundConversation{}, &Option{}))
+					// A release upgrade starts with fresh connections, without cached plans
+					// for the schema removed by the previous test case.
+					sqlDB.SetMaxIdleConns(0)
+					sqlDB.SetMaxIdleConns(2)
 					if upgrade {
+						legacyPreference := struct {
+							UserId        int    `gorm:"primaryKey;autoIncrement:false"`
+							Model         string `gorm:"size:255;not null"`
+							Automatic     bool   `gorm:"not null"`
+							Revision      int64  `gorm:"not null"`
+							LastOperation string `gorm:"size:64;not null"`
+						}{UserId: 903, Model: "gpt-4o", Automatic: true, Revision: 3, LastOperation: "legacy-preference-01"}
+						require.NoError(t, db.Table("playground_preferences").AutoMigrate(&legacyPreference))
+						require.NoError(t, db.Table("playground_preferences").Create(&legacyPreference).Error)
 						require.NoError(t, db.AutoMigrate(&PlaygroundConversation{}, &PlaygroundImport{}))
 						_, err := CreatePlaygroundConversation(903, playgroundTestWrite(t, "migration-survivor-01", "existing conversation"))
 						require.NoError(t, err)
@@ -67,9 +80,17 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 						require.NoError(t, db.Create(&Option{Key: "PlaygroundMigrationSentinel", Value: "unchanged"}).Error)
 					}
 					for range 2 {
+						sqlDB.SetMaxIdleConns(0)
+						sqlDB.SetMaxIdleConns(2)
 						require.NoError(t, db.AutoMigrate(&PlaygroundPreference{}, &PlaygroundConversation{}, &PlaygroundImport{}, &PlaygroundUploadChunk{}))
 					}
 					if upgrade {
+						preference, err := GetPlaygroundPreference(903)
+						require.NoError(t, err)
+						assert.Equal(t, "gpt-4o", preference.Model)
+						assert.True(t, preference.Automatic)
+						assert.EqualValues(t, 3, preference.Revision)
+						assert.Empty(t, preference.CompressionGroup)
 						var preserved PlaygroundConversation
 						require.NoError(t, db.Where("user_id = ?", 903).First(&preserved).Error)
 						assert.Contains(t, string(preserved.Content), "existing conversation")
@@ -92,13 +113,18 @@ func testPlaygroundCompression(t *testing.T) {
 	empty, err := GetPlaygroundPreference(110)
 	require.NoError(t, err)
 	assert.Zero(t, empty.Revision)
-	write := PlaygroundPreferenceWrite{PlaygroundCompressionSettings: PlaygroundCompressionSettings{Model: "gpt-4o", Automatic: true}, OperationId: "preference-create-01"}
+	write := PlaygroundPreferenceWrite{PlaygroundCompressionSettings: PlaygroundCompressionSettings{Model: "gpt-4o", Group: "DSS", Automatic: true}, OperationId: "preference-create-01"}
 	saved, err := SavePlaygroundPreference(110, write)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, saved.Revision)
+	assert.Equal(t, "DSS", saved.CompressionGroup)
 	repeated, err := SavePlaygroundPreference(110, write)
 	require.NoError(t, err)
 	assert.Equal(t, saved, repeated)
+	changedGroup := write
+	changedGroup.Group = "default"
+	_, err = SavePlaygroundPreference(110, changedGroup)
+	assert.ErrorIs(t, err, ErrPlaygroundConflict)
 	other, err := GetPlaygroundPreference(111)
 	require.NoError(t, err)
 	assert.Empty(t, other.Model)
@@ -127,7 +153,7 @@ func testPlaygroundCompression(t *testing.T) {
 	documentWrite := playgroundTestWrite(t, "compressed-create-01", "original conversation must survive")
 	var document map[string]any
 	require.NoError(t, common.Unmarshal(documentWrite.Document, &document))
-	document["compressionSettings"] = PlaygroundCompressionSettings{Model: "gpt-4o", Automatic: true}
+	document["compressionSettings"] = PlaygroundCompressionSettings{Model: "gpt-4o", Group: "DSS", Automatic: true}
 	document["contextLimits"] = map[string]int{"gpt-4o": 32000}
 	document["compression"] = PlaygroundCompression{Summary: "summary", Boundary: "user-1", SourceHash: strings.Repeat("a", 64), Model: "gpt-4o", CreatedAt: 1}
 	documentWrite.Document, err = common.Marshal(document)
@@ -136,6 +162,7 @@ func testPlaygroundCompression(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(row.Document), "original conversation must survive")
 	assert.Contains(t, string(row.Document), `"summary":"summary"`)
+	assert.Contains(t, string(row.Document), `"group":"DSS"`)
 	document["contextLimits"] = map[string]int{"gpt-4o": 128001}
 	documentWrite.Document, err = common.Marshal(document)
 	require.NoError(t, err)
