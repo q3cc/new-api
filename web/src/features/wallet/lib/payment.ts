@@ -30,6 +30,18 @@ import type { PaymentMethod, PresetAmount, TopupInfo } from '../types'
 // Payment Processing Functions
 // ============================================================================
 
+export type RechargeBrowser = 'WeChat' | 'Alipay' | 'QQ'
+
+export function getRechargeBrowser(
+  userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
+): RechargeBrowser | null {
+  if (/MicroMessenger/i.test(userAgent)) return 'WeChat'
+  if (/AlipayClient/i.test(userAgent)) return 'Alipay'
+  // MQQBrowser alone also identifies the standalone QQ browser.
+  if (/\bQQ\//i.test(userAgent)) return 'QQ'
+  return null
+}
+
 /**
  * Payment endpoints answer errors as {"message": "error", "data": text}. When
  * the response also carries a message_key, this is its translation; callers

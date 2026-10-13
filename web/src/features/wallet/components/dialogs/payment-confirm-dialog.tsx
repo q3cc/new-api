@@ -34,7 +34,9 @@ import { formatLocalCurrencyAmount } from '@/lib/currency'
 
 import { DEFAULT_DISCOUNT_RATE } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
+import { getRechargeBrowser } from '../../lib/payment'
 import type { PaymentMethod } from '../../types'
+import { PaymentBrowserNotice } from './payment-browser-notice'
 
 interface PaymentConfirmDialogProps {
   open: boolean
@@ -62,6 +64,7 @@ export function PaymentConfirmDialog({
   usdExchangeRate = 1,
 }: PaymentConfirmDialogProps) {
   const { t } = useTranslation()
+  const rechargeBrowser = getRechargeBrowser()
   const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
   const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
   const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0
@@ -141,11 +144,15 @@ export function PaymentConfirmDialog({
           </div>
         </div>
 
-        <AlertDialogFooter className='grid grid-cols-2 gap-2 sm:flex'>
+        <AlertDialogFooter className='grid grid-cols-2 gap-2 sm:flex sm:flex-wrap'>
+          <PaymentBrowserNotice browser={rechargeBrowser} />
           <AlertDialogCancel disabled={processing}>
             {t('Cancel')}
           </AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm} disabled={processing}>
+          <AlertDialogAction
+            onClick={onConfirm}
+            disabled={processing || !!rechargeBrowser}
+          >
             {processing && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {t('Confirm Payment')}
           </AlertDialogAction>
