@@ -50,12 +50,12 @@ func SavePlaygroundSettings(c *gin.Context) {
 	if !decodePlaygroundWrite(c, &write) {
 		return
 	}
-	if write.Model != "" {
-		models, ok := playgroundModels(c, "")
+	if write.Model != "" || write.Group != "" {
+		models, ok := playgroundModels(c, write.Group)
 		if !ok {
 			return
 		}
-		if !slices.Contains(models, write.Model) {
+		if write.Model != "" && !slices.Contains(models, write.Model) {
 			common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("Model is not available"))
 			return
 		}

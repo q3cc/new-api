@@ -25,6 +25,7 @@ import type { ChatCompletionMessage } from './types'
 
 export const compressionSettingsSchema = z.object({
   model: z.string(),
+  group: z.string().optional(),
   automatic: z.boolean(),
 })
 export const compressionSchema = z.object({
@@ -32,6 +33,7 @@ export const compressionSchema = z.object({
   boundary: z.string().min(1),
   sourceHash: z.string().length(64),
   model: z.string(),
+  group: z.string().optional(),
   createdAt: z.number().int().positive(),
 })
 export type CompressionSettings = z.infer<typeof compressionSettingsSchema>

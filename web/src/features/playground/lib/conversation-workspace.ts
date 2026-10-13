@@ -375,6 +375,7 @@ export class ConversationWorkspace {
   async compress(
     key: string,
     capability: ModelCapability,
+    group?: string,
     signal?: AbortSignal
   ): Promise<boolean> {
     const entry = this.snapshot.entries[key]
@@ -404,6 +405,7 @@ export class ConversationWorkspace {
       const compression = await compressContext({
         document,
         capability,
+        group,
         signal: AbortSignal.any([
           controller.signal,
           this.controller.signal,

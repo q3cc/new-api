@@ -170,6 +170,12 @@ it('preserves originals, system instructions, image messages and invalidates edi
 it('splits long Unicode text and merges summaries without modifying generation parameters', async () => {
   const document = transcript()
   document.contextLimits = { 'gpt-4o': 6500 }
+  document.config.model = 'gpt-4o-mini'
+  document.compressionSettings = {
+    model: 'gpt-4o',
+    group: 'DSS',
+    automatic: true,
+  }
   document.config.max_tokens = 1200
   document.messages[0].versions[0].content = '😀中文'.repeat(8000)
   const progress = vi.fn()
@@ -187,7 +193,7 @@ it('splits long Unicode text and merges summaries without modifying generation p
   for (const [request] of vi.mocked(api.sendChatCompletion).mock.calls) {
     expect(request).toMatchObject({
       model: 'gpt-4o',
-      group: 'default',
+      group: 'DSS',
       max_tokens: 4096,
       stream: false,
     })
@@ -199,6 +205,17 @@ it('splits long Unicode text and merges summaries without modifying generation p
     }
   }
   expect(document.config.max_tokens).not.toBe(4096)
+  const estimates = vi.mocked(compressionApi.estimateContext).mock.calls
+  expect(
+    estimates
+      .filter(([model]) => model === 'gpt-4o')
+      .every(([, group]) => group === 'DSS')
+  ).toBe(true)
+  expect(estimates.slice(-2).map(([model, group]) => [model, group])).toEqual([
+    ['gpt-4o-mini', 'default'],
+    ['gpt-4o-mini', 'default'],
+  ])
+  expect(summary.group).toBe('DSS')
 })
 
 it.each(['', 'length', 'expansion', 'error'])(

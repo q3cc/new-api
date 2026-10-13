@@ -48,15 +48,17 @@ func GetPlaygroundModelCapability(name string) PlaygroundModelCapability {
 
 type PlaygroundCompressionSettings struct {
 	Model     string `json:"model"`
+	Group     string `json:"group,omitempty"`
 	Automatic bool   `json:"automatic"`
 }
 
 type PlaygroundPreference struct {
-	UserId        int    `json:"-" gorm:"primaryKey;autoIncrement:false"`
-	Model         string `json:"model" gorm:"size:255;not null"`
-	Automatic     bool   `json:"automatic" gorm:"not null"`
-	Revision      int64  `json:"revision" gorm:"not null"`
-	LastOperation string `json:"-" gorm:"size:64;not null"`
+	UserId           int    `json:"-" gorm:"primaryKey;autoIncrement:false"`
+	Model            string `json:"model" gorm:"size:255;not null"`
+	CompressionGroup string `json:"group" gorm:"size:64"`
+	Automatic        bool   `json:"automatic" gorm:"not null"`
+	Revision         int64  `json:"revision" gorm:"not null"`
+	LastOperation    string `json:"-" gorm:"size:64;not null"`
 }
 
 type PlaygroundPreferenceWrite struct {
@@ -68,6 +70,9 @@ type PlaygroundPreferenceWrite struct {
 var ErrPlaygroundSettingsInvalid = errors.New("Invalid compression settings")
 
 func (s PlaygroundCompressionSettings) Validate() error {
+	if len(s.Group) > 64 || strings.TrimSpace(s.Group) != s.Group {
+		return ErrPlaygroundSettingsInvalid
+	}
 	if s.Model == "" && !s.Automatic {
 		return nil
 	}
@@ -95,7 +100,7 @@ func SavePlaygroundPreference(userId int, write PlaygroundPreferenceWrite) (*Pla
 		return nil, err
 	}
 	err := playgroundDB().Model(&row).Where("user_id = ? AND revision = ? AND last_operation <> ?", userId, write.Revision, write.OperationId).Updates(map[string]any{
-		"model": write.Model, "automatic": write.Automatic, "revision": write.Revision + 1, "last_operation": write.OperationId,
+		"model": write.Model, "compression_group": write.Group, "automatic": write.Automatic, "revision": write.Revision + 1, "last_operation": write.OperationId,
 	}).Error
 	if err != nil {
 		return nil, err
@@ -104,7 +109,7 @@ func SavePlaygroundPreference(userId int, write PlaygroundPreferenceWrite) (*Pla
 	if err != nil {
 		return nil, err
 	}
-	if stored.LastOperation != write.OperationId || stored.Model != write.Model || stored.Automatic != write.Automatic {
+	if stored.LastOperation != write.OperationId || stored.Model != write.Model || stored.CompressionGroup != write.Group || stored.Automatic != write.Automatic {
 		return nil, ErrPlaygroundConflict
 	}
 	return stored, nil
@@ -115,5 +120,6 @@ type PlaygroundCompression struct {
 	Boundary   string `json:"boundary"`
 	SourceHash string `json:"sourceHash"`
 	Model      string `json:"model"`
+	Group      string `json:"group,omitempty"`
 	CreatedAt  int64  `json:"createdAt"`
 }

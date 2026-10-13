@@ -89,6 +89,7 @@ interface ModelSelectorProps {
   onModelChange: (value: string) => void
   className?: string
   disabled?: boolean
+  showLabel?: boolean
 }
 
 interface GroupSelectorProps {
@@ -97,6 +98,7 @@ interface GroupSelectorProps {
   onGroupChange: (value: string) => void
   className?: string
   disabled?: boolean
+  showLabel?: boolean
 }
 
 const ModelTriggerButton = React.forwardRef<
@@ -105,33 +107,45 @@ const ModelTriggerButton = React.forwardRef<
     currentLabel: string
     triggerClassName?: string
     isDisabled?: boolean
+    showLabel?: boolean
   }
->(({ currentLabel, triggerClassName, isDisabled, ...props }, ref) => (
-  <Button
-    ref={ref}
-    variant='outline'
-    role='combobox'
-    size='sm'
-    disabled={isDisabled}
-    className={cn(
-      'flex h-8 items-center gap-2 border px-3 font-medium',
-      'justify-center p-0 sm:w-auto sm:justify-start sm:px-3',
-      'w-8',
-      'bg-background text-foreground',
-      'hover:bg-accent transition-colors',
-      'focus:!ring-0 focus:!outline-none',
-      'shadow-none',
-      triggerClassName
-    )}
-    {...props}
-  >
-    <CpuIcon className='text-muted-foreground block size-4 sm:hidden' />
-    <span className='text-muted-foreground sm:text-foreground hidden truncate text-xs sm:block'>
-      {currentLabel}
-    </span>
-    <ChevronsUpDown className='text-muted-foreground hidden h-4 w-4 opacity-50 sm:block' />
-  </Button>
-))
+>(
+  (
+    { currentLabel, triggerClassName, isDisabled, showLabel, ...props },
+    ref
+  ) => (
+    <Button
+      ref={ref}
+      variant='outline'
+      role='combobox'
+      aria-label={currentLabel}
+      size='sm'
+      disabled={isDisabled}
+      className={cn(
+        'flex h-8 items-center gap-2 border px-3 font-medium',
+        'justify-center p-0 sm:w-auto sm:justify-start sm:px-3',
+        'w-8',
+        'bg-background text-foreground',
+        'hover:bg-accent transition-colors',
+        'focus:!ring-0 focus:!outline-none',
+        'shadow-none',
+        triggerClassName
+      )}
+      {...props}
+    >
+      <CpuIcon className='text-muted-foreground block size-4 sm:hidden' />
+      <span
+        className={cn(
+          'text-muted-foreground sm:text-foreground truncate text-xs',
+          !showLabel && 'hidden sm:block'
+        )}
+      >
+        {currentLabel}
+      </span>
+      <ChevronsUpDown className='text-muted-foreground hidden h-4 w-4 opacity-50 sm:block' />
+    </Button>
+  )
+)
 
 ModelTriggerButton.displayName = 'ModelTriggerButton'
 
@@ -141,33 +155,45 @@ const GroupTriggerButton = React.forwardRef<
     currentLabel: string
     triggerClassName?: string
     isDisabled?: boolean
+    showLabel?: boolean
   }
->(({ currentLabel, triggerClassName, isDisabled, ...props }, ref) => (
-  <Button
-    ref={ref}
-    variant='outline'
-    role='combobox'
-    size='sm'
-    disabled={isDisabled}
-    className={cn(
-      'flex h-8 items-center gap-2 border px-3 font-medium',
-      'justify-center p-0 sm:w-auto sm:justify-start sm:px-3',
-      'w-8',
-      'bg-background text-foreground',
-      'hover:bg-accent transition-colors',
-      'focus:!ring-0 focus:!outline-none',
-      'shadow-none',
-      triggerClassName
-    )}
-    {...props}
-  >
-    <LayersIcon className='text-muted-foreground block size-4 sm:hidden' />
-    <span className='text-muted-foreground sm:text-foreground hidden truncate text-xs sm:block'>
-      {currentLabel}
-    </span>
-    <ChevronsUpDown className='text-muted-foreground hidden h-4 w-4 opacity-50 sm:block' />
-  </Button>
-))
+>(
+  (
+    { currentLabel, triggerClassName, isDisabled, showLabel, ...props },
+    ref
+  ) => (
+    <Button
+      ref={ref}
+      variant='outline'
+      role='combobox'
+      aria-label={currentLabel}
+      size='sm'
+      disabled={isDisabled}
+      className={cn(
+        'flex h-8 items-center gap-2 border px-3 font-medium',
+        'justify-center p-0 sm:w-auto sm:justify-start sm:px-3',
+        'w-8',
+        'bg-background text-foreground',
+        'hover:bg-accent transition-colors',
+        'focus:!ring-0 focus:!outline-none',
+        'shadow-none',
+        triggerClassName
+      )}
+      {...props}
+    >
+      <LayersIcon className='text-muted-foreground block size-4 sm:hidden' />
+      <span
+        className={cn(
+          'text-muted-foreground sm:text-foreground truncate text-xs',
+          !showLabel && 'hidden sm:block'
+        )}
+      >
+        {currentLabel}
+      </span>
+      <ChevronsUpDown className='text-muted-foreground hidden h-4 w-4 opacity-50 sm:block' />
+    </Button>
+  )
+)
 
 GroupTriggerButton.displayName = 'GroupTriggerButton'
 
@@ -176,7 +202,14 @@ GroupTriggerButton.displayName = 'GroupTriggerButton'
  * Styled following Scira's form-component design patterns
  */
 export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
-  ({ selectedModel, models, onModelChange, className, disabled = false }) => {
+  ({
+    selectedModel,
+    models,
+    onModelChange,
+    className,
+    disabled = false,
+    showLabel = false,
+  }) => {
     const { t } = useTranslation()
     const [open, setOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
@@ -322,6 +355,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
         <DrawerTrigger asChild>
           <ModelTriggerButton
             currentLabel={currentModel?.label || t('Model')}
+            showLabel={showLabel}
             triggerClassName={className}
             isDisabled={disabled}
             aria-expanded={open}
@@ -344,6 +378,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
           render={
             <ModelTriggerButton
               currentLabel={currentModel?.label || t('Model')}
+              showLabel={showLabel}
               triggerClassName={className}
               isDisabled={disabled}
               aria-expanded={open}
@@ -371,7 +406,14 @@ ModelSelector.displayName = 'ModelSelector'
  * Styled following Scira's form-component design patterns
  */
 export const GroupSelector: React.FC<GroupSelectorProps> = React.memo(
-  ({ selectedGroup, groups, onGroupChange, className, disabled = false }) => {
+  ({
+    selectedGroup,
+    groups,
+    onGroupChange,
+    className,
+    disabled = false,
+    showLabel = false,
+  }) => {
     const { t } = useTranslation()
     const [open, setOpen] = useState(false)
     const isMobile = useIsMobile()
@@ -464,6 +506,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = React.memo(
         <DrawerTrigger asChild>
           <GroupTriggerButton
             currentLabel={currentGroup?.label || t('Group')}
+            showLabel={showLabel}
             triggerClassName={className}
             isDisabled={disabled}
             aria-expanded={open}
@@ -520,6 +563,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = React.memo(
           render={
             <GroupTriggerButton
               currentLabel={currentGroup?.label || t('Group')}
+              showLabel={showLabel}
               triggerClassName={className}
               isDisabled={disabled}
               aria-expanded={open}
