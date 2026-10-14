@@ -110,6 +110,8 @@ export const ConversationScrollButton = ({
       <Button
         className={cn(
           'absolute bottom-4 left-[50%] translate-x-[-50%]',
+          // Keep the jump-to-latest control reachable under a finger.
+          'pointer-coarse:size-11 touch-manipulation',
           className
         )}
         onClick={handleScrollToBottom}

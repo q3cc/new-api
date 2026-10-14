@@ -289,14 +289,17 @@ it('opens context actions on a touch long press without closing on release and s
   expect(ring).toHaveAccessibleDescription('Context size unavailable')
   vi.useFakeTimers()
   try {
-    fireEvent.pointerDown(ring, { pointerType: 'touch' })
-    fireEvent.pointerMove(ring, { pointerType: 'touch' })
-    await act(async () => vi.advanceTimersByTime(450))
-    expect(
-      screen.queryByRole('button', { name: 'Compression settings' })
-    ).not.toBeInTheDocument()
-    fireEvent.pointerUp(ring, { pointerType: 'touch' })
-    fireEvent.pointerDown(ring, { pointerType: 'touch' })
+    fireEvent.pointerDown(ring, {
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'touch',
+    })
+    // A resting finger still jitters, so a small drift keeps the press alive.
+    fireEvent.pointerMove(ring, {
+      clientX: 14,
+      clientY: 12,
+      pointerType: 'touch',
+    })
     await act(async () => vi.advanceTimersByTime(450))
     expect(
       screen.getByRole('button', { name: 'Compression settings' })
@@ -306,6 +309,33 @@ it('opens context actions on a touch long press without closing on release and s
     expect(
       screen.getByRole('button', { name: 'Compression settings' })
     ).toBeVisible()
+  } finally {
+    vi.useRealTimers()
+  }
+  expect(completions).toHaveLength(0)
+})
+
+it('cancels the touch long press when the finger drags the message list instead of pressing', async () => {
+  renderPlayground()
+  const ring = await screen.findByRole('button', {
+    name: 'Model context usage',
+  })
+  vi.useFakeTimers()
+  try {
+    fireEvent.pointerDown(ring, {
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'touch',
+    })
+    fireEvent.pointerMove(ring, {
+      clientX: 10,
+      clientY: 96,
+      pointerType: 'touch',
+    })
+    await act(async () => vi.advanceTimersByTime(450))
+    expect(
+      screen.queryByRole('button', { name: 'Compression settings' })
+    ).not.toBeInTheDocument()
   } finally {
     vi.useRealTimers()
   }

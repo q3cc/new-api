@@ -956,7 +956,12 @@ export const PromptInputButton = ({
 
   return (
     <InputGroupButton
-      className={cn(className)}
+      // A finger needs a larger target than a cursor, and `touch-manipulation`
+      // removes the double-tap-zoom wait on the composer controls.
+      className={cn(
+        'touch-manipulation pointer-coarse:min-h-10 pointer-coarse:min-w-10',
+        className
+      )}
       size={newSize}
       type='button'
       variant={variant}

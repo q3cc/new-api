@@ -257,12 +257,13 @@ export function PlaygroundChat({
       {/* Remove outer padding; apply padding to inner centered container to align with input */}
       <ConversationContent
         className='p-0'
-        scrollClassName='overflow-x-hidden overflow-y-auto overscroll-y-contain touch-pan-y'
+        scrollClassName='overflow-x-hidden overflow-y-auto overscroll-y-contain'
       >
         <div className='mx-auto w-full max-w-4xl px-4 py-4'>
           {visibleMessageOffset > 0 && (
             <Button
               variant='outline'
+              className='touch-manipulation pointer-coarse:min-h-11'
               onClick={() =>
                 setHistoryLimit(
                   (count) => count + MAX_RENDERED_HISTORY_MESSAGES

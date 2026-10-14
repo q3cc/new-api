@@ -76,6 +76,7 @@ export function PlaygroundCompressionPanel(props: Props) {
   const [limitError, setLimitError] = useState(false)
   const [open, setOpen] = useState(false)
   const longPress = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const longPressOrigin = useRef({ x: 0, y: 0 })
   const suppressClick = useRef(false)
   const cancelLongPress = () => clearTimeout(longPress.current)
   const controller = useRef<AbortController | null>(null)
@@ -186,13 +187,27 @@ export function PlaygroundCompressionPanel(props: Props) {
                       suppressClick.current = false
                       if (event.pointerType === 'mouse') return
                       cancelLongPress()
+                      longPressOrigin.current = {
+                        x: event.clientX,
+                        y: event.clientY,
+                      }
                       longPress.current = setTimeout(() => {
                         suppressClick.current = true
                         setOpen(true)
                       }, 450)
                     }}
                     onPointerUp={cancelLongPress}
-                    onPointerMove={cancelLongPress}
+                    onPointerMove={(event) => {
+                      // A resting finger still drifts a little, so only a real
+                      // drag hands the gesture back to the message scroller.
+                      if (
+                        Math.abs(event.clientX - longPressOrigin.current.x) >
+                          10 ||
+                        Math.abs(event.clientY - longPressOrigin.current.y) > 10
+                      ) {
+                        cancelLongPress()
+                      }
+                    }}
                     onPointerCancel={cancelLongPress}
                     onContextMenu={(event) => event.preventDefault()}
                     onClick={(event) => {
@@ -246,6 +261,7 @@ export function PlaygroundCompressionPanel(props: Props) {
             <Button
               size='sm'
               variant='outline'
+              className='touch-manipulation pointer-coarse:min-h-11'
               disabled={
                 props.disabled ||
                 !selectedModel ||
@@ -268,6 +284,7 @@ export function PlaygroundCompressionPanel(props: Props) {
             <Button
               size='icon'
               variant='ghost'
+              className='touch-manipulation pointer-coarse:size-10'
               aria-label={t('Compression settings')}
               disabled={props.disabled}
               onClick={() => {
@@ -282,6 +299,7 @@ export function PlaygroundCompressionPanel(props: Props) {
                 <Button
                   size='sm'
                   variant='ghost'
+                  className='touch-manipulation pointer-coarse:min-h-11'
                   onClick={() => {
                     setOpen(false)
                     setDialog('summary')
@@ -292,6 +310,7 @@ export function PlaygroundCompressionPanel(props: Props) {
                 <Button
                   size='sm'
                   variant='ghost'
+                  className='touch-manipulation pointer-coarse:min-h-11'
                   disabled={props.disabled}
                   onClick={() =>
                     props.workspace.update(props.entry.key, (row) => ({

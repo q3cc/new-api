@@ -154,7 +154,7 @@ export function PlaygroundMessageContent({
               showToolbar
               title={t('Raw response')}
             >
-              <CodeBlockCopyButton />
+              <CodeBlockCopyButton className='touch-manipulation pointer-coarse:size-11' />
             </CodeBlock>
           ) : (
             <MessageContent
