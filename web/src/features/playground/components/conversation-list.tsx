@@ -50,26 +50,30 @@ export function ConversationList(props: Props) {
   const { t } = useTranslation()
   return (
     <div className='flex h-full min-h-0 flex-col gap-3 p-3'>
-      <Button onClick={props.onNew}>
+      <Button
+        className='touch-manipulation pointer-coarse:min-h-11'
+        onClick={props.onNew}
+      >
         <PlusIcon aria-hidden='true' />
         {t('New conversation')}
       </Button>
       <Input
         aria-label={t('Search conversations')}
+        className='pointer-coarse:min-h-11'
         placeholder={t('Search conversations')}
         value={props.keyword}
         onChange={(event) => props.onSearch(event.target.value)}
       />
       <nav
         aria-label={t('Conversations')}
-        className='min-h-0 flex-1 space-y-1 overflow-y-auto'
+        className='min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain'
       >
         {props.entries
           .filter((entry) => !entry.row.id)
           .map((entry) => (
             <Button
               key={entry.key}
-              className='w-full justify-start truncate'
+              className='w-full touch-manipulation justify-start truncate pointer-coarse:min-h-11'
               variant={entry.key === props.activeKey ? 'secondary' : 'ghost'}
               onClick={() => props.onSelectPending(entry.key)}
             >
@@ -98,7 +102,7 @@ export function ConversationList(props: Props) {
           return (
             <Button
               key={item.id}
-              className='h-auto min-h-9 w-full justify-start overflow-hidden py-2 text-start'
+              className='h-auto min-h-9 w-full touch-manipulation justify-start overflow-hidden py-2 text-start pointer-coarse:min-h-11'
               variant={item.id === props.activeId ? 'secondary' : 'ghost'}
               aria-current={item.id === props.activeId ? 'page' : undefined}
               onClick={() => props.onSelect(item.id)}
@@ -123,6 +127,7 @@ export function ConversationList(props: Props) {
           <Button
             variant='outline'
             size='sm'
+            className='touch-manipulation pointer-coarse:min-h-11'
             disabled={props.page === 1}
             onClick={() => props.onPage(props.page - 1)}
           >
@@ -131,6 +136,7 @@ export function ConversationList(props: Props) {
           <Button
             variant='outline'
             size='sm'
+            className='touch-manipulation pointer-coarse:min-h-11'
             disabled={props.page * 30 >= props.total}
             onClick={() => props.onPage(props.page + 1)}
           >

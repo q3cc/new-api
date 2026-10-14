@@ -98,7 +98,7 @@ function PlaygroundParameterContent({
       className={cn(
         'grid gap-3',
         PLAYGROUND_PARAMETER_PANEL_SCROLL_CLASS,
-        compact ? 'px-4 pb-4' : 'p-1'
+        compact ? 'px-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))]' : 'p-1'
       )}
     >
       {PLAYGROUND_PARAMETER_CONTROLS.map((control) => {
@@ -226,7 +226,7 @@ export function PlaygroundParameterPanel(props: PlaygroundParameterPanelProps) {
           </TooltipContent>
         </Tooltip>
         <SheetContent
-          className='max-h-[85vh] overflow-hidden rounded-t-xl'
+          className='max-h-[85dvh] overflow-hidden rounded-t-xl'
           side='bottom'
         >
           <SheetHeader>

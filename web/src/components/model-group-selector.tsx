@@ -129,6 +129,7 @@ const ModelTriggerButton = React.forwardRef<
         'hover:bg-accent transition-colors',
         'focus:!ring-0 focus:!outline-none',
         'shadow-none',
+        'touch-manipulation pointer-coarse:min-h-10 pointer-coarse:min-w-10',
         triggerClassName
       )}
       {...props}
@@ -177,6 +178,7 @@ const GroupTriggerButton = React.forwardRef<
         'hover:bg-accent transition-colors',
         'focus:!ring-0 focus:!outline-none',
         'shadow-none',
+        'touch-manipulation pointer-coarse:min-h-10 pointer-coarse:min-w-10',
         triggerClassName
       )}
       {...props}
@@ -319,7 +321,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
                         'mb-0.5 flex items-center justify-between rounded-lg px-2 py-1.5 text-xs',
                         'transition-all duration-200',
                         'hover:bg-accent',
-                        'data-[selected=true]:bg-accent'
+                        'data-[selected=true]:bg-accent',
+                        // Touch rows need a comfortable tap height and no
+                        // double-tap-zoom wait on the sheet's list.
+                        isMobile && 'min-h-11 touch-manipulation'
                       )}
                     >
                       <div className='flex min-w-0 flex-1 items-center gap-1'>
@@ -361,7 +366,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
             aria-expanded={open}
           />
         </DrawerTrigger>
-        <DrawerContent className='flex max-h-[80vh] min-h-[60vh] flex-col'>
+        <DrawerContent className='flex max-h-[80dvh] min-h-[60dvh] flex-col pb-[env(safe-area-inset-bottom)]'>
           <DrawerHeader className='flex-shrink-0 pb-4'>
             <DrawerTitle className='flex items-center gap-2 text-left text-lg font-medium'>
               {t('Select Model')}
@@ -512,11 +517,11 @@ export const GroupSelector: React.FC<GroupSelectorProps> = React.memo(
             aria-expanded={open}
           />
         </DrawerTrigger>
-        <DrawerContent className='max-h-[80vh]'>
+        <DrawerContent className='max-h-[80dvh] pb-[env(safe-area-inset-bottom)]'>
           <DrawerHeader className='pb-4 text-left'>
             <DrawerTitle>{t('Choose Group')}</DrawerTitle>
           </DrawerHeader>
-          <div className='max-h-[calc(80vh-100px)] overflow-y-auto px-4 pb-6'>
+          <div className='max-h-[calc(80dvh-100px)] overflow-y-auto overscroll-contain px-4 pb-6'>
             <div className='space-y-2'>
               {groups.map((group) => (
                 <Button

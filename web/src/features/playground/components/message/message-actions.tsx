@@ -185,7 +185,7 @@ export function MessageActions({
             render={
               <Button
                 aria-label={t('Open menu')}
-                className='data-popup-open:bg-muted text-muted-foreground hover:text-foreground size-11'
+                className='data-popup-open:bg-muted text-muted-foreground hover:text-foreground size-11 touch-manipulation'
                 size='icon'
                 variant='ghost'
               />

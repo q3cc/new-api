@@ -43,7 +43,10 @@ export function getMessageActionState(message: Message): MessageActionState {
 export function getMessageActionsVisibilityClass(
   alwaysVisible: boolean
 ): string {
+  // The icon row is only rendered from `md` up. A touch device at that width
+  // cannot hover it open, so reveal it by pointer capability; a fine pointer
+  // keeps the calmer hover reveal.
   return alwaysVisible
     ? 'opacity-100'
-    : 'opacity-0 group-hover:opacity-100 max-md:opacity-100'
+    : 'opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100'
 }

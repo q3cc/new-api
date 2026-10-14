@@ -251,7 +251,10 @@ function PlaygroundWorkspace(props: { owner: number }) {
       )}
       {isMobile && (
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetContent side='left'>
+          <SheetContent
+            side='left'
+            className='pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]'
+          >
             <SheetHeader>
               <SheetTitle>{t('Conversations')}</SheetTitle>
             </SheetHeader>
@@ -264,6 +267,7 @@ function PlaygroundWorkspace(props: { owner: number }) {
           <Button
             variant='ghost'
             size='icon'
+            className='touch-manipulation pointer-coarse:size-10'
             aria-label={t('Conversations')}
             aria-expanded={isMobile ? mobileOpen : expanded}
             onClick={() =>
@@ -290,6 +294,7 @@ function PlaygroundWorkspace(props: { owner: number }) {
                     <Button
                       variant='ghost'
                       size='icon'
+                      className='touch-manipulation pointer-coarse:size-10'
                       aria-label={
                         current.titleGenerating
                           ? t('Generating title...')
@@ -321,6 +326,7 @@ function PlaygroundWorkspace(props: { owner: number }) {
               <Button
                 variant='ghost'
                 size='icon'
+                className='touch-manipulation pointer-coarse:size-10'
                 aria-label={t('Rename conversation')}
                 onClick={() => setDialog('rename')}
               >
@@ -329,6 +335,7 @@ function PlaygroundWorkspace(props: { owner: number }) {
               <Button
                 variant='ghost'
                 size='icon'
+                className='touch-manipulation pointer-coarse:size-10'
                 aria-label={t('Delete conversation')}
                 onClick={() => setDialog('delete')}
               >

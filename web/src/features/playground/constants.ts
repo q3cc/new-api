@@ -83,9 +83,12 @@ export const ERROR_MESSAGES = {
 } as const
 
 // Message action button styles
+// `touch-manipulation` drops the double-tap-zoom wait, and the coarse-pointer
+// size keeps the icon targets comfortable where a finger is the input device.
 export const MESSAGE_ACTION_BUTTON_STYLES = {
-  BASE: 'size-7 text-muted-foreground hover:text-foreground',
-  DELETE: 'size-7 text-muted-foreground hover:text-destructive',
+  BASE: 'size-7 pointer-coarse:size-10 touch-manipulation text-muted-foreground hover:text-foreground',
+  DELETE:
+    'size-7 pointer-coarse:size-10 touch-manipulation text-muted-foreground hover:text-destructive',
   ICON: 'size-4',
 } as const
 

@@ -106,6 +106,7 @@ export function PlaygroundMessageEditor({
       {showSaveAndSubmit && (
         <Button
           aria-label={t('Save & Submit')}
+          className='touch-manipulation pointer-coarse:size-10'
           disabled={!canSave}
           onClick={() => onSaveEditAndSubmit?.(editText)}
           size='icon-sm'
@@ -117,6 +118,7 @@ export function PlaygroundMessageEditor({
 
       <Button
         aria-label={t('Save')}
+        className='touch-manipulation pointer-coarse:size-10'
         disabled={!canSave}
         onClick={() => onSaveEdit?.(editText)}
         size='icon-sm'
@@ -129,6 +131,7 @@ export function PlaygroundMessageEditor({
       {hasChanged && (
         <Button
           aria-label={t('Reset')}
+          className='touch-manipulation pointer-coarse:size-10'
           onClick={() => onEditTextChange(originalText)}
           size='icon-sm'
           type='button'
@@ -140,6 +143,7 @@ export function PlaygroundMessageEditor({
 
       <Button
         aria-label={t('Cancel')}
+        className='touch-manipulation pointer-coarse:size-10'
         onClick={handleCancel}
         size='icon-sm'
         type='button'
