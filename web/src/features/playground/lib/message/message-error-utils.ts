@@ -24,7 +24,18 @@ export const MODEL_PRICING_SETTINGS_PATH =
   '/system-settings/billing/model-pricing'
 
 const MODEL_PRICE_ERROR_CODE = 'model_price_error'
+// Providers report an over-long request under different codes, and all of them
+// mean the same thing for the user: compressing the context is the way out.
+export const CONTEXT_LENGTH_ERROR_CODES = new Set([
+  'context_length_exceeded',
+  'maximum_context_length',
+  'context_window_exceeded',
+])
 export const FALLBACK_ERROR_CONTENT = 'An unknown error occurred'
+
+export function isContextLengthError(errorCode?: string | null): boolean {
+  return !!errorCode && CONTEXT_LENGTH_ERROR_CODES.has(errorCode)
+}
 
 export function normalizeMessageErrorCode(code: unknown): string | undefined {
   if (typeof code === 'string') return code || undefined

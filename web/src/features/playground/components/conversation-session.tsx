@@ -29,6 +29,7 @@ import {
   usePlaygroundOptions,
 } from '../hooks'
 import { usePlaygroundCompression } from '../hooks/use-playground-compression'
+import { shouldCompress } from '../lib/context-compression'
 import {
   interruptedDocument,
   type ConversationEntry,
@@ -249,6 +250,17 @@ function ConversationView(props: ViewProps) {
   const error = props.entry.error
   const conflict =
     isAxiosError(error) && [404, 409].includes(error.response?.status ?? 0)
+  const compressionModel = props.compression.compressionModel
+  // The shortcut only appears when compressing can actually free up context.
+  const compressFromError =
+    compressionModel && shouldCompress(document, 1, 1)
+      ? () =>
+          void props.workspace.compress(
+            props.entry.key,
+            compressionModel,
+            props.compression.compressionGroup
+          )
+      : undefined
   return (
     <div className='flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'>
       <PlaygroundCompressionStatus
@@ -309,6 +321,7 @@ function ConversationView(props: ViewProps) {
           onSaveEditAndSubmit={(text) =>
             props.conversation.applyEdit(text, true)
           }
+          onCompress={compressFromError}
         />
       </div>
       <div className='mx-auto w-full max-w-4xl shrink-0 pb-[env(safe-area-inset-bottom)]'>

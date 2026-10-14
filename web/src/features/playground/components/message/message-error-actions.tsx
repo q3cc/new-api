@@ -16,8 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Edit, RefreshCw, Trash2 } from 'lucide-react'
+import { Edit, Minimize2Icon, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
 
 import { MessageActionButton } from './message-action-button'
 
@@ -26,6 +28,7 @@ type MessageErrorActionsProps = {
   onDelete?: () => void
   onEditPrompt?: () => void
   onRetry?: () => void
+  onCompress?: () => void
 }
 
 export function MessageErrorActions({
@@ -33,15 +36,29 @@ export function MessageErrorActions({
   onDelete,
   onEditPrompt,
   onRetry,
+  onCompress,
 }: MessageErrorActionsProps) {
   const { t } = useTranslation()
 
-  if (!onRetry && !onEditPrompt && !onDelete) {
+  if (!onRetry && !onEditPrompt && !onDelete && !onCompress) {
     return null
   }
 
   return (
     <div className='flex flex-wrap items-center gap-0.5 pt-2'>
+      {onCompress && (
+        <Button
+          className='touch-manipulation pointer-coarse:min-h-11'
+          disabled={disabled}
+          onClick={onCompress}
+          size='sm'
+          variant='outline'
+        >
+          <Minimize2Icon aria-hidden='true' />
+          {t('Compress context to continue')}
+        </Button>
+      )}
+
       {onRetry && (
         <MessageActionButton
           disabled={disabled}

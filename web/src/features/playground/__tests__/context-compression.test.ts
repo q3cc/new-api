@@ -31,6 +31,7 @@ import {
   contextMessages,
   inputBudget,
   shouldCompress,
+  SUMMARY_OUTPUT_TOKENS,
   validCompression,
 } from '../lib/context-compression'
 import { createRegeneratedMessages } from '../lib/message/conversation-message-utils'
@@ -40,7 +41,7 @@ import {
   getMessageContent,
   selectMessageVersion,
 } from '../lib/message/message-utils'
-import type { Message } from '../types'
+import type { ChatCompletionResponse, Message } from '../types'
 
 const capability: compressionApi.ModelCapability = {
   model: 'gpt-4o',
@@ -69,6 +70,30 @@ function transcript() {
     })
   )
   return document
+}
+
+function completion(content: string): ChatCompletionResponse {
+  return {
+    id: '',
+    object: '',
+    created: 1,
+    model: 'gpt-4o',
+    choices: [
+      {
+        index: 0,
+        finish_reason: 'stop',
+        message: { role: 'assistant', content },
+      },
+    ],
+  }
+}
+
+// The classification call is the only one that does not ask for a full summary.
+function summaryRequest() {
+  return vi
+    .mocked(api.sendChatCompletion)
+    .mock.calls.map(([request]) => request)
+    .find((request) => request.max_tokens === SUMMARY_OUTPUT_TOKENS)
 }
 beforeEach(() => {
   vi.spyOn(compressionApi, 'estimateContext').mockImplementation(
@@ -186,11 +211,13 @@ it('splits long Unicode text and merges summaries without modifying generation p
     onProgress: progress,
   })
   expect(summary.summary).toBe('Facts and unfinished tasks.')
-  expect(api.sendChatCompletion).toHaveBeenCalledTimes(
-    progress.mock.calls.at(-1)?.[0]
-  )
-  expect(vi.mocked(api.sendChatCompletion).mock.calls.length).toBeGreaterThan(2)
-  for (const [request] of vi.mocked(api.sendChatCompletion).mock.calls) {
+  const summaryCalls = vi
+    .mocked(api.sendChatCompletion)
+    .mock.calls.map(([request]) => request)
+    .filter((request) => request.max_tokens === SUMMARY_OUTPUT_TOKENS)
+  expect(summaryCalls).toHaveLength(progress.mock.calls.at(-1)?.[0])
+  expect(summaryCalls.length).toBeGreaterThan(2)
+  for (const request of summaryCalls) {
     expect(request).toMatchObject({
       model: 'gpt-4o',
       group: 'DSS',
@@ -257,9 +284,89 @@ it.each(['', 'length', 'expansion', 'error'])(
       })
     ).rejects.toThrow()
     expect(document).toEqual(original)
-    expect(api.sendChatCompletion).toHaveBeenCalledTimes(1)
+    // One scene classification plus the summary request that was rejected.
+    expect(api.sendChatCompletion).toHaveBeenCalledTimes(2)
   }
 )
+
+it.each([
+  { scene: 'work', keeps: 'file names' },
+  { scene: 'story', keeps: 'character names' },
+  { scene: 'chat', keeps: 'user preferences' },
+])(
+  'asks for the $scene outline when the conversation is classified as $scene',
+  async ({ scene, keeps }) => {
+    vi.mocked(api.sendChatCompletion).mockImplementation(async (request) =>
+      completion(
+        request.max_tokens === SUMMARY_OUTPUT_TOKENS
+          ? 'Facts and unfinished tasks.'
+          : scene
+      )
+    )
+    await compressContext({
+      document: transcript(),
+      capability,
+      signal: new AbortController().signal,
+      onProgress: vi.fn(),
+    })
+    const prompt = String(summaryRequest()?.messages[0].content)
+    expect(prompt).toContain(keeps)
+    // The summary arrives as handed-over state, not as the assistant's words.
+    expect(prompt).toContain('## Context handoff')
+  }
+)
+
+it('falls back to the work outline when the classification reply names no scene', async () => {
+  vi.mocked(api.sendChatCompletion).mockImplementation(async (request) =>
+    completion(
+      request.max_tokens === SUMMARY_OUTPUT_TOKENS
+        ? 'Facts and unfinished tasks.'
+        : 'A mix of everything, honestly.'
+    )
+  )
+  await compressContext({
+    document: transcript(),
+    capability,
+    signal: new AbortController().signal,
+    onProgress: vi.fn(),
+  })
+  expect(String(summaryRequest()?.messages[0].content)).toContain('file names')
+})
+
+it('still compresses with the work outline when the classification request fails', async () => {
+  vi.mocked(api.sendChatCompletion).mockImplementation(async (request) => {
+    if (request.max_tokens !== SUMMARY_OUTPUT_TOKENS) throw new Error('503')
+    return completion('Facts and unfinished tasks.')
+  })
+  const compression = await compressContext({
+    document: transcript(),
+    capability,
+    signal: new AbortController().signal,
+    onProgress: vi.fn(),
+  })
+  expect(compression.summary).toBe('Facts and unfinished tasks.')
+  expect(String(summaryRequest()?.messages[0].content)).toContain('file names')
+})
+
+it('stops instead of summarizing when the classification is aborted', async () => {
+  const controller = new AbortController()
+  vi.mocked(api.sendChatCompletion).mockImplementation(async (request) => {
+    if (request.max_tokens === SUMMARY_OUTPUT_TOKENS) {
+      return completion('Facts and unfinished tasks.')
+    }
+    controller.abort()
+    throw new Error('Aborted')
+  })
+  await expect(
+    compressContext({
+      document: transcript(),
+      capability,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+    })
+  ).rejects.toThrow()
+  expect(summaryRequest()).toBeUndefined()
+})
 
 it('aborts before a paid request and avoids re-compressing the same boundary', async () => {
   const document = transcript()

@@ -25,10 +25,26 @@ import {
   getConversation,
   writeConversation,
 } from '../conversations-api'
+import { isContextLengthError } from '../lib/message/message-error-utils'
 import { parseRequestErrorDetails } from '../lib/streaming/request-error-utils'
 import { parseStreamErrorDetails } from '../lib/streaming/stream-utils'
 
 afterEach(() => vi.restoreAllMocks())
+
+it.each([
+  { code: 'context_length_exceeded', expected: true },
+  { code: 'maximum_context_length', expected: true },
+  { code: 'context_window_exceeded', expected: true },
+  { code: '402', expected: false },
+  { code: 'invalid_request_error', expected: false },
+  { code: undefined, expected: false },
+  { code: null, expected: false },
+])(
+  'treats the upstream error code $code as an over-long request: $expected',
+  ({ code, expected }) => {
+    expect(isContextLengthError(code)).toBe(expected)
+  }
+)
 
 it.each([
   { code: 402, expected: '402' },

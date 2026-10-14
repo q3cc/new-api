@@ -104,9 +104,7 @@ export function PlaygroundCompressionPanel(props: Props) {
     meta: { errorToast: false },
   })
   const summary = validCompression(document)
-  const selectedModel = props.compression.compressionCapabilities.data?.find(
-    (item) => item.model === selected?.model && item.text_generation
-  )
+  const selectedModel = props.compression.compressionModel
   const model = settingsCapabilities.data?.find(
     (item) => item.model === settings?.model && item.text_generation
   )

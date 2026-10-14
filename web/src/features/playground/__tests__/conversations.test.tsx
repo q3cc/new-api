@@ -55,6 +55,7 @@ let client: QueryClient
 let failSave: boolean
 let failDelete: boolean
 let completions: { text: string; finish: (content?: string) => void }[]
+let completionError: { code?: string; message: string } | null
 let modelCapabilities: ModelCapability[]
 let groupCapabilities: Record<string, ModelCapability[]>
 let preference: PlaygroundPreference
@@ -75,6 +76,7 @@ beforeEach(() => {
     [2, row(2, 'Beta')],
   ])
   completions = []
+  completionError = null
   modelCapabilities = []
   groupCapabilities = {}
   preference = { model: '', automatic: false, revision: 0 }
@@ -171,6 +173,19 @@ beforeEach(() => {
       }
     }
     if (url === '/pg/chat/completions') {
+      if (completionError) {
+        throw {
+          message: completionError.message,
+          response: {
+            data: {
+              error: {
+                code: completionError.code,
+                message: completionError.message,
+              },
+            },
+          },
+        }
+      }
       const payload = body as { messages: { role: string; content: string }[] }
       const text = payload.messages.at(-1)?.content ?? ''
       return await new Promise((resolve) =>
@@ -452,22 +467,31 @@ it.each(['conversation', 'default', 'legacy'])(
       vi
         .mocked(api.post)
         .mock.calls.filter(([url]) => url === '/pg/chat/completions')
+    // The scene classification is the first request and already uses the
+    // compression model, so a separate group never leaks into the chat request.
     expect(calls()[0][1]).toMatchObject({
+      model: 'other-model',
+      group: scope === 'legacy' ? 'default' : 'DSS',
+      stream: false,
+    })
+    expect(records.get(1)?.document.compressionAttempt).toBe('requested')
+    await act(async () => completions[0].finish('work'))
+    await waitFor(() => expect(completions).toHaveLength(2))
+    expect(calls()[1][1]).toMatchObject({
       model: 'other-model',
       group: scope === 'legacy' ? 'default' : 'DSS',
       max_tokens: 4096,
       stream: false,
     })
-    expect(records.get(1)?.document.compressionAttempt).toBe('requested')
-    await act(async () => completions[0].finish('Summary'))
-    await waitFor(() => expect(completions).toHaveLength(2))
+    await act(async () => completions[1].finish('Summary'))
+    await waitFor(() => expect(completions).toHaveLength(3))
     expect(records.get(1)?.document.compression?.summary).toBe('Summary')
-    expect(calls()[1][1]).toMatchObject({
+    expect(calls()[2][1]).toMatchObject({
       model: 'test-model',
       group: 'default',
     })
-    expect(calls()[1][1]).not.toHaveProperty('max_tokens')
-    await act(async () => completions[1].finish('Continued reply'))
+    expect(calls()[2][1]).not.toHaveProperty('max_tokens')
+    await act(async () => completions[2].finish('Continued reply'))
     await screen.findByText('Continued reply')
     expect(records.get(1)?.document.messages.slice(0, 8)).toEqual(original)
   }
@@ -747,6 +771,53 @@ it('generates a title after the first new reply and keeps the title response out
     expect(records.get(1)?.document.titleGeneration).toBe('generated')
   )
   expect(records.get(1)?.document.messages).toHaveLength(2)
+})
+
+it('compresses the context straight from the error when the upstream rejects it as too long', async () => {
+  modelCapabilities = [
+    {
+      model: 'test-model',
+      context_window: 128000,
+      input_limit: 0,
+      output_limit: 0,
+      text_generation: true,
+      compression_warning: false,
+    },
+  ]
+  preference = { model: 'test-model', automatic: false, revision: 0 }
+  const first = records.get(1)
+  assert(first)
+  first.document.messages = Array.from({ length: 8 }, (_, index) => ({
+    key: `history-${index}`,
+    from: index % 2 ? 'assistant' : 'user',
+    status: 'complete',
+    versions: [{ id: `original-${index}`, content: String(index).repeat(100) }],
+  }))
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  completionError = {
+    code: 'context_length_exceeded',
+    message: 'Input is too long',
+  }
+  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+    target: { value: 'Continue' },
+  })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+  const shortcut = await screen.findByRole('button', {
+    name: 'Compress context to continue',
+  })
+  expect(completions).toHaveLength(0)
+  completionError = null
+  fireEvent.click(shortcut)
+  await waitFor(() => expect(completions).toHaveLength(1))
+  await act(async () => completions[0].finish('work'))
+  await waitFor(() => expect(completions).toHaveLength(2))
+  await act(async () => completions[1].finish('Summary of the earlier work'))
+  await waitFor(() =>
+    expect(records.get(1)?.document.compression?.summary).toBe(
+      'Summary of the earlier work'
+    )
+  )
 })
 
 it('offers retry for an interrupted title without automatically requesting it again', async () => {
