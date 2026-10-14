@@ -1338,6 +1338,7 @@
     "Compliance confirmed successfully": "コンプライアンス確認が完了しました",
     "Composition failed": "構図の生成に失敗しました",
     "Compress context": "コンテキストを圧縮",
+    "Compress context to continue": "コンテキストを圧縮して続行",
     "Compressed context is still too large": "圧縮後もコンテキスト上限を超えています",
     "Compressing...": "圧縮中…",
     "Compression did not complete": "圧縮が完了しませんでした",

@@ -40,6 +40,7 @@ import {
   getEditingMessageContent,
   getMessageAlignment,
   getPreviousUserMessage,
+  isContextLengthError,
   isErrorMessage,
 } from '../../lib'
 import { getCurrentVersion } from '../../lib/message/message-utils'
@@ -69,6 +70,7 @@ interface PlaygroundChatProps {
   onSaveEdit?: (newContent: string) => void
   onCancelEdit?: (open: boolean) => void
   onSaveEditAndSubmit?: (newContent: string) => void
+  onCompress?: () => void
   messageLayoutMode?: PlaygroundMessageLayoutMode
 }
 
@@ -86,6 +88,7 @@ export function PlaygroundChat({
   onSaveEdit,
   onCancelEdit,
   onSaveEditAndSubmit,
+  onCompress,
   messageLayoutMode = 'left',
 }: PlaygroundChatProps) {
   const { t } = useTranslation()
@@ -208,6 +211,11 @@ export function PlaygroundChat({
                 isError ? (
                   <MessageErrorActions
                     disabled={isGenerating}
+                    onCompress={
+                      isContextLengthError(message.errorCode)
+                        ? onCompress
+                        : undefined
+                    }
                     onRetry={
                       onRegenerateMessage
                         ? () => onRegenerateMessage(message)

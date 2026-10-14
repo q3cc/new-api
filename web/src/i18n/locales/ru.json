@@ -1338,6 +1338,7 @@
     "Compliance confirmed successfully": "Соответствие успешно подтверждено",
     "Composition failed": "Не удалось выполнить композицию",
     "Compress context": "Сжать контекст",
+    "Compress context to continue": "Сжать контекст, чтобы продолжить",
     "Compressed context is still too large": "Сжатый контекст всё ещё превышает лимит",
     "Compressing...": "Сжатие…",
     "Compression did not complete": "Сжатие не завершено",

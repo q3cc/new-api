@@ -1338,6 +1338,7 @@
     "Compliance confirmed successfully": "Conformité confirmée avec succès",
     "Composition failed": "Échec de la composition",
     "Compress context": "Compresser le contexte",
+    "Compress context to continue": "Compresser le contexte pour continuer",
     "Compressed context is still too large": "Le contexte compressé dépasse encore la limite",
     "Compressing...": "Compression…",
     "Compression did not complete": "Compression inachevée",

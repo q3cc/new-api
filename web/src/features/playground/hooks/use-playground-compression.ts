@@ -95,6 +95,9 @@ export function usePlaygroundCompression(
   const capability = capabilities.data?.find(
     (item) => item.model === document.config.model
   )
+  const compressionModel = compressionCapabilities.data?.find(
+    (item) => item.model === settings?.model && item.text_generation
+  )
   const budget = capability?.text_generation
     ? inputBudget(
         capability,
@@ -213,6 +216,7 @@ export function usePlaygroundCompression(
     preference,
     capabilities,
     compressionCapabilities,
+    compressionModel,
     compressionGroup,
     prepare,
     usage,
