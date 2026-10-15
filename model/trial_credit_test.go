@@ -100,8 +100,8 @@ func TestTrialCreditAccounting(t *testing.T) {
 			require.NoError(t, db.First(&preserved, user.Id).Error)
 			assert.Equal(t, 10000, preserved.Quota)
 			require.NoError(t, UpdateTrialCreditConfig(TrialCreditConfig{Enabled: true, Group: "default", Affiliate: true, AffiliateDays: 7}))
-			// QuotaPerUnit=1000 and USDExchangeRate=1 above put the default 0.5 USD
-			// waiver threshold at 500 quota units.
+			// QuotaPerUnit=1000, USDExchangeRate=1 and the default USD display put
+			// the default 0.5 waiver at 500 quota units.
 			for _, tc := range []struct {
 				key                       string
 				name                      string
@@ -144,10 +144,10 @@ func TestTrialCreditAccounting(t *testing.T) {
 			}
 			t.Run("an explicit zero threshold disables waiving", func(t *testing.T) {
 				cfg := GetTrialCreditConfig()
-				cfg.WaiveThresholdUSD = new(float64)
+				cfg.WaiveThreshold = new(float64)
 				require.NoError(t, UpdateTrialCreditConfig(cfg))
 				defer func() {
-					cfg.WaiveThresholdUSD = nil
+					cfg.WaiveThreshold = nil
 					require.NoError(t, UpdateTrialCreditConfig(cfg))
 				}()
 				u := User{Username: "trial-no-waive", Quota: 1000, AffCode: "trial-no-waive"}
@@ -166,10 +166,10 @@ func TestTrialCreditAccounting(t *testing.T) {
 			t.Run("a configured threshold scales with the frozen unit", func(t *testing.T) {
 				cfg := GetTrialCreditConfig()
 				threshold := 2.0
-				cfg.WaiveThresholdUSD = &threshold
+				cfg.WaiveThreshold = &threshold
 				require.NoError(t, UpdateTrialCreditConfig(cfg))
 				defer func() {
-					cfg.WaiveThresholdUSD = nil
+					cfg.WaiveThreshold = nil
 					require.NoError(t, UpdateTrialCreditConfig(cfg))
 				}()
 				u := User{Username: "trial-wide-waive", Quota: 1000, AffCode: "trial-wide-waive"}
@@ -183,6 +183,88 @@ func TestTrialCreditAccounting(t *testing.T) {
 				assert.Equal(t, 500, r.Waived)
 				require.NoError(t, db.First(&u, u.Id).Error)
 				assert.Zero(t, u.Quota)
+			})
+			t.Run("the waiver is read in the site display currency", func(t *testing.T) {
+				general := operation_setting.GetGeneralSetting()
+				oldType, oldCustomRate := general.QuotaDisplayType, general.CustomCurrencyExchangeRate
+				oldRate := operation_setting.USDExchangeRate
+				t.Cleanup(func() {
+					general.QuotaDisplayType, general.CustomCurrencyExchangeRate = oldType, oldCustomRate
+					operation_setting.USDExchangeRate = oldRate
+				})
+				defer func() {
+					cfg := GetTrialCreditConfig()
+					cfg.WaiveThreshold = nil
+					require.NoError(t, UpdateTrialCreditConfig(cfg))
+				}()
+				// QuotaPerUnit is 1000, so 0.5 of each currency maps to a known quota
+				// amount, and a wallet of 1000 leaves the listed shortfall uncovered.
+				for _, tc := range []struct {
+					key                 string
+					display             string
+					rate, customRate    float64
+					debt                int
+					wantCharge, wantWai int
+				}{
+					// 0.5 USD is 500 quota units, so a 200 shortfall is below it.
+					{"usd", operation_setting.QuotaDisplayTypeUSD, 1, 1, 1200, 1000, 200},
+					// 0.5 CNY at 2 CNY/USD is 0.25 USD, i.e. 250 quota units.
+					{"cny-waived", operation_setting.QuotaDisplayTypeCNY, 2, 1, 1200, 1000, 200},
+					{"cny-charged", operation_setting.QuotaDisplayTypeCNY, 2, 1, 1300, 1300, 0},
+					// A custom currency converts through its own rate: 0.5 at 0.25 per
+					// USD is 2 USD, i.e. 2000 quota units.
+					{"custom", operation_setting.QuotaDisplayTypeCustom, 1, 0.25, 1200, 1000, 200},
+					// Tokens display is not a currency, so the amount already counts in
+					// quota units and 0.5 never covers a whole unit.
+					{"tokens", operation_setting.QuotaDisplayTypeTokens, 1, 1, 1200, 1200, 0},
+				} {
+					t.Run(tc.key, func(t *testing.T) {
+						general.QuotaDisplayType = tc.display
+						general.CustomCurrencyExchangeRate = tc.customRate
+						operation_setting.USDExchangeRate = tc.rate
+						cfg := GetTrialCreditConfig()
+						threshold := 0.5
+						cfg.WaiveThreshold = &threshold
+						require.NoError(t, UpdateTrialCreditConfig(cfg))
+						u := User{Username: "trial-cur-" + tc.key, Quota: 1000, AffCode: "trial-cur-" + tc.key}
+						require.NoError(t, db.Create(&u).Error)
+						require.NoError(t, GrantTrialCredit(u.Id, 2000, 0, "cur-"+tc.key, "admin", 1))
+						require.NoError(t, ReserveTrialCredit("cur-"+tc.key, u.Id, "default", 2000))
+						r, err := FinalizeTrialCredit("cur-"+tc.key, 2000+tc.debt, false)
+						require.NoError(t, err)
+						assert.Equal(t, tc.wantCharge, r.WalletCharged)
+						assert.Equal(t, tc.wantWai, r.Waived)
+					})
+				}
+			})
+			t.Run("a display currency change does not alter a reserved threshold", func(t *testing.T) {
+				general := operation_setting.GetGeneralSetting()
+				oldType := general.QuotaDisplayType
+				t.Cleanup(func() { general.QuotaDisplayType = oldType })
+				cfg := GetTrialCreditConfig()
+				threshold := 0.5
+				cfg.WaiveThreshold = &threshold
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				defer func() {
+					cfg.WaiveThreshold = nil
+					require.NoError(t, UpdateTrialCreditConfig(cfg))
+				}()
+				// Reserve while the site displays USD: 0.5 USD is 500 quota units.
+				general.QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
+				u := User{Username: "trial-cur-freeze", Quota: 1000, AffCode: "trial-cur-freeze"}
+				require.NoError(t, db.Create(&u).Error)
+				require.NoError(t, GrantTrialCredit(u.Id, 2000, 0, "cur-freeze", "admin", 1))
+				require.NoError(t, ReserveTrialCredit("cur-freeze", u.Id, "default", 2000))
+				var reserved TrialCreditReservation
+				require.NoError(t, db.Where("request_id = ?", "cur-freeze").First(&reserved).Error)
+				assert.Equal(t, 500, reserved.WaiveQuota)
+				// Tokens display would read 0.5 as half a quota unit and charge the
+				// whole shortfall, but the reservation froze its own threshold.
+				general.QuotaDisplayType = operation_setting.QuotaDisplayTypeTokens
+				r, err := FinalizeTrialCredit("cur-freeze", 3200, false)
+				require.NoError(t, err)
+				assert.Equal(t, 1000, r.WalletCharged)
+				assert.Equal(t, 200, r.Waived)
 			})
 			t.Run("expiry and refund", func(t *testing.T) {
 				require.NoError(t, GrantTrialCredit(user.Id, 100, 0, "permanent", "admin", 1))
@@ -241,8 +323,8 @@ func TestTrialCreditAccounting(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, 2000, balance)
 				require.NoError(t, ReserveTrialCredit("frozen-rate", u.Id, "default", 2000))
-				// The reservation froze QuotaPerUnit=1000, so this request's waiver
-				// threshold stays 500 quota units even after the live unit changes.
+				// The reservation froze QuotaPerUnit=1000, so its 0.5 threshold stays
+				// 500 quota units even after the live unit changes.
 				common.QuotaPerUnit = 100
 				r, err := FinalizeTrialCredit("frozen-rate", 3200, false)
 				require.NoError(t, err)
@@ -503,6 +585,42 @@ func TestTrialCreditAccounting(t *testing.T) {
 					}
 				}
 				assert.Equal(t, 1, found)
+			})
+			t.Run("a reservation without a frozen threshold charges the full remainder", func(t *testing.T) {
+				// The threshold column is additive, so a reservation written before it
+				// existed reads back as zero rather than as a missing value.
+				assert.True(t, db.Migrator().HasColumn(&TrialCreditReservation{}, "waive_quota"))
+				require.NoError(t, MigrateTrialCredit())
+				require.NoError(t, MigrateTrialCredit())
+
+				// The default 0.5 threshold waives a 400 shortfall, so the same
+				// settlement on a row with no frozen threshold must charge it in full
+				// instead of silently forgiving it.
+				cfg := GetTrialCreditConfig()
+				cfg.WaiveThreshold = nil
+				require.NoError(t, UpdateTrialCreditConfig(cfg))
+				for _, tc := range []struct {
+					key                string
+					zeroThreshold      bool
+					wantCharge, wantWa int
+				}{
+					{"default-threshold", false, 600, 400},
+					{"no-threshold", true, 1000, 0},
+				} {
+					t.Run(tc.key, func(t *testing.T) {
+						u := User{Username: "legacy-" + tc.key, Quota: 600, AffCode: "legacy-" + tc.key}
+						require.NoError(t, db.Create(&u).Error)
+						require.NoError(t, GrantTrialCredit(u.Id, 2000, 0, tc.key, "admin", 1, cfg.Types[0].Id))
+						require.NoError(t, ReserveTrialCredit(tc.key, u.Id, "default", 2000))
+						if tc.zeroThreshold {
+							require.NoError(t, db.Model(&TrialCreditReservation{}).Where("request_id = ?", tc.key).Update("waive_quota", 0).Error)
+						}
+						r, err := FinalizeTrialCredit(tc.key, 3000, false)
+						require.NoError(t, err)
+						assert.Equal(t, tc.wantCharge, r.WalletCharged)
+						assert.Equal(t, tc.wantWa, r.Waived)
+					})
+				}
 			})
 			require.NoError(t, MigrateTrialCredit())
 		})

@@ -24,7 +24,7 @@ export const trialConfigSchema = z.object({
   affiliate: z.boolean(),
   affiliate_days: z.number().int().min(0).max(36500),
   affiliate_type_id: z.number().int().min(0),
-  waive_threshold_usd: z
+  waive_threshold: z
     .number()
     .min(0)
     .max(100)

@@ -38,6 +38,7 @@ import { Switch } from '@/components/ui/switch'
 import { SettingsForm } from '@/features/system-settings/components/settings-form-layout'
 import { SettingsPageFormActions } from '@/features/system-settings/components/settings-page-context'
 import { SettingsSection } from '@/features/system-settings/components/settings-section'
+import { getCurrencyLabel } from '@/lib/currency'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { getTrialConfig, saveTrialConfig, type TrialConfig } from './api'
@@ -163,10 +164,14 @@ function TrialCreditSettingsForm(props: {
           />
           <FormField
             control={form.control}
-            name='waive_threshold_usd'
+            name='waive_threshold'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Waive shortfall below (USD)')}</FormLabel>
+                <FormLabel>
+                  {t('Waive shortfall below ({{currency}})', {
+                    currency: getCurrencyLabel(),
+                  })}
+                </FormLabel>
                 <FormControl>
                   <Input
                     type='number'
@@ -189,7 +194,7 @@ function TrialCreditSettingsForm(props: {
                 </FormControl>
                 <FormDescription>
                   {t(
-                    'When trial credit runs out, a wallet shortfall below this amount is waived instead of carried as a negative balance. Leave empty for the default; enter 0 to always charge the full amount.'
+                    'When trial credit runs out, a wallet shortfall below this amount is waived instead of carried as a negative balance. The amount is in the current display currency. Leave empty for the default; enter 0 to always charge the full amount.'
                   )}
                 </FormDescription>
                 <FormMessage />

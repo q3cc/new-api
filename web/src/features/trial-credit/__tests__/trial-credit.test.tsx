@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { SettingsPageProvider } from '@/features/system-settings/components/settings-page-context'
 import { api } from '@/lib/api'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { TrialBalanceCard } from '../balance-card'
 import { TrialGrantDialog } from '../grant-dialog'
@@ -203,11 +204,57 @@ describe('trial credit', () => {
             affiliate: true,
             affiliate_days: 7,
             affiliate_type_id: 1,
-            waive_threshold_usd: 1.5,
+            waive_threshold: 1.5,
           })
         )
       )
     } finally {
+      actions.remove()
+    }
+  })
+  test('names the waiver threshold in the site display currency', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          enabled: true,
+          group: 'trial',
+          affiliate: false,
+          affiliate_days: 0,
+        },
+      },
+    })
+    const actions = document.createElement('div')
+    document.body.append(actions)
+    try {
+      for (const [display, label] of [
+        ['USD', 'Waive shortfall below (USD)'],
+        ['CNY', 'Waive shortfall below (CNY)'],
+        ['CUSTOM', 'Waive shortfall below (€)'],
+        ['TOKENS', 'Waive shortfall below (Tokens)'],
+      ] as const) {
+        useSystemConfigStore.getState().setConfig({
+          currency: {
+            ...useSystemConfigStore.getState().config.currency,
+            quotaDisplayType: display,
+            customCurrencySymbol: '€',
+          },
+        })
+        const view = mount(
+          <SettingsPageProvider actionsContainer={actions}>
+            <TrialCreditSettings groups={['trial', 'default']} />
+          </SettingsPageProvider>
+        )
+        expect(
+          await screen.findByRole('spinbutton', { name: label })
+        ).toBeInTheDocument()
+        view.unmount()
+      }
+    } finally {
+      useSystemConfigStore.setState(
+        useSystemConfigStore.getInitialState(),
+        true
+      )
       actions.remove()
     }
   })

@@ -27,29 +27,53 @@ type TrialCreditConfig struct {
 	AffiliateDays   int               `json:"affiliate_days"`
 	AffiliateTypeId int               `json:"affiliate_type_id"`
 	Types           []TrialCreditType `json:"types"`
-	// WaiveThresholdUSD is the wallet shortfall below which the unpaid remainder
-	// of a trial request is waived instead of carried as a negative balance.
-	// Nil means the default; an explicit 0 disables waiving.
-	WaiveThresholdUSD *float64 `json:"waive_threshold_usd,omitempty"`
+	// WaiveThreshold is the wallet shortfall below which the unpaid remainder of
+	// a trial request is waived instead of carried as a negative balance. It is
+	// expressed in the site's current display currency (see
+	// operation_setting.QuotaDisplayType). Nil means the default; an explicit 0
+	// disables waiving.
+	WaiveThreshold *float64 `json:"waive_threshold,omitempty"`
 }
 
-// DefaultWaiveThresholdUSD waives a remainder smaller than half a dollar, so a
-// wallet emptied by a trial request is not left with a token debt.
-const DefaultWaiveThresholdUSD = 0.5
+// DefaultWaiveThreshold waives a remainder smaller than half a display-currency
+// unit, so a wallet emptied by a trial request is not left with a token debt.
+const DefaultWaiveThreshold = 0.5
 
-// maxWaiveThresholdUSD bounds the configured waiver. A larger value would let a
+// maxWaiveThreshold bounds the configured waiver. A larger value would let a
 // single request silently forgive a substantial balance.
-const maxWaiveThresholdUSD = 100
+const maxWaiveThreshold = 100
 
-func (cfg TrialCreditConfig) waiveThresholdQuota(quotaUnit float64) float64 {
-	usd := DefaultWaiveThresholdUSD
-	if cfg.WaiveThresholdUSD != nil {
-		usd = *cfg.WaiveThresholdUSD
+// waiveThresholdQuota converts the configured waiver into quota units using the
+// currency and unit in force when the request reserved its trial credit, so a
+// later settings change cannot alter an in-flight request. quotaUnit is quota
+// units per USD and usdToCny is the CNY rate per USD.
+func (cfg TrialCreditConfig) waiveThresholdQuota(quotaUnit, usdToCny float64) int {
+	amount := DefaultWaiveThreshold
+	if cfg.WaiveThreshold != nil {
+		amount = *cfg.WaiveThreshold
 	}
-	if usd <= 0 || quotaUnit <= 0 {
+	if amount <= 0 || quotaUnit <= 0 {
 		return 0
 	}
-	return usd * quotaUnit
+	// Tokens display is not a currency, so the configured amount already counts
+	// in quota units.
+	if !operation_setting.IsCurrencyDisplay() {
+		return clampWaiveQuota(amount)
+	}
+	rate := operation_setting.GetUsdToCurrencyRate(usdToCny)
+	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return 0
+	}
+	return clampWaiveQuota(amount / rate * quotaUnit)
+}
+
+// clampWaiveQuota keeps the frozen threshold inside the single-request quota
+// range so an extreme currency configuration cannot overflow it.
+func clampWaiveQuota(value float64) int {
+	if math.IsNaN(value) || value <= 0 {
+		return 0
+	}
+	return int(min(math.Round(value), math.MaxInt32))
 }
 
 type TrialCreditGrant struct {
@@ -81,8 +105,12 @@ type TrialCreditReservation struct {
 	Waived        int     `json:"waived" gorm:"type:bigint"`
 	CNYRate       float64 `json:"cny_rate"`
 	QuotaUnit     float64 `json:"quota_unit"`
-	Status        string  `json:"status" gorm:"size:16;index"`
-	CreatedAt     int64   `json:"created_at"`
+	// WaiveQuota is the waiver threshold in quota units, frozen when the request
+	// reserved its trial credit. Rows created before this field existed keep 0,
+	// which charges the full remainder.
+	WaiveQuota int    `json:"waive_quota" gorm:"type:bigint;default:0"`
+	Status     string `json:"status" gorm:"size:16;index"`
+	CreatedAt  int64  `json:"created_at"`
 }
 
 type TrialCreditAllocation struct {
@@ -251,7 +279,7 @@ func ReserveTrialCredit(requestId string, userId int, group string, target int) 
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) || common.QuotaPerUnit <= 0 || math.IsNaN(common.QuotaPerUnit) || math.IsInf(common.QuotaPerUnit, 0) {
 				return errors.New("汇率无效")
 			}
-			r = TrialCreditReservation{RequestId: requestId, UserId: userId, GroupName: group, Status: "reserved", CNYRate: rate, QuotaUnit: common.QuotaPerUnit, CreatedAt: time.Now().Unix()}
+			r = TrialCreditReservation{RequestId: requestId, UserId: userId, GroupName: group, Status: "reserved", CNYRate: rate, QuotaUnit: common.QuotaPerUnit, WaiveQuota: cfg.waiveThresholdQuota(common.QuotaPerUnit, rate), CreatedAt: time.Now().Unix()}
 			if err = tx.Create(&r).Error; err != nil {
 				return err
 			}
@@ -374,12 +402,7 @@ func FinalizeTrialCredit(requestId string, actual int, refund bool) (*TrialCredi
 	var r TrialCreditReservation
 	cacheStale := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		option, err := trialPolicyLock(tx)
-		if err != nil {
-			return err
-		}
-		var cfg TrialCreditConfig
-		if err = parseTrialConfig(option.Value, &cfg); err != nil {
+		if _, err := trialPolicyLock(tx); err != nil {
 			return err
 		}
 		if err := tx.Where("request_id = ?", requestId).First(&r).Error; err != nil {
@@ -412,23 +435,23 @@ func FinalizeTrialCredit(requestId string, actual int, refund bool) (*TrialCredi
 		r.TrialCharged = min(available, actual)
 		// Whatever trial credit could not cover is charged to the wallet exactly
 		// like ordinary balance, so a large remainder becomes a real negative
-		// balance the user settles by topping up. A remainder below the configured
-		// threshold is waived instead, so a wallet emptied by a trial request is
-		// not left with a token debt. An empty or already-negative wallet covers
-		// nothing, so only a charge that is actually due is ever applied.
+		// balance the user settles by topping up. A remainder below the threshold
+		// frozen at reservation time is waived instead, so a wallet emptied by a
+		// trial request is not left with a token debt. An empty or already-negative
+		// wallet covers nothing, so only a charge that is actually due is applied.
 		debt := actual - r.TrialCharged
 		charge := 0
 		if debt > 0 {
 			covered := min(debt, max(user.Quota, 0))
 			uncovered := debt - covered
-			if uncovered == 0 || float64(uncovered) >= cfg.waiveThresholdQuota(r.QuotaUnit) {
+			if uncovered == 0 || uncovered >= r.WaiveQuota {
 				charge = debt
 			} else {
 				charge = covered
 			}
 		}
 		if charge > 0 {
-			if err = tx.Model(&user).UpdateColumn("quota", gorm.Expr("quota - ?", charge)).Error; err != nil {
+			if err := tx.Model(&user).UpdateColumn("quota", gorm.Expr("quota - ?", charge)).Error; err != nil {
 				return err
 			}
 			r.WalletCharged = charge
