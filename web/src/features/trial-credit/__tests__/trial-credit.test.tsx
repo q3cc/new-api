@@ -184,8 +184,15 @@ describe('trial credit', () => {
           name: 'AFF rewards as trial credit',
         })
       )
-      await userEvent.clear(screen.getByRole('spinbutton'))
-      await userEvent.type(screen.getByRole('spinbutton'), '7')
+      const validity = screen.getByRole('spinbutton', {
+        name: 'Validity (days, 0 = never expires)',
+      })
+      await userEvent.clear(validity)
+      await userEvent.type(validity, '7')
+      const threshold = screen.getByRole('spinbutton', {
+        name: 'Waive shortfall below (USD)',
+      })
+      await userEvent.type(threshold, '1.5')
       await userEvent.click(screen.getByRole('button', { name: 'Save' }))
       await waitFor(() =>
         expect(put).toHaveBeenCalledWith(
@@ -196,6 +203,7 @@ describe('trial credit', () => {
             affiliate: true,
             affiliate_days: 7,
             affiliate_type_id: 1,
+            waive_threshold_usd: 1.5,
           })
         )
       )

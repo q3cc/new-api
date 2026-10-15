@@ -7072,6 +7072,8 @@
     "v{{installed}} is installed but this source does not list it. Installing replaces it with v{{target}}.": "La version v{{installed}} est installée mais absente de cette source. L’installation la remplacera par v{{target}}.",
     "Validity": "Validité",
     "Validity (days, 0 = never expires)": "Validité en jours (0 = illimitée)",
+    "Exonérer un déficit inférieur à (USD)": "Exonérer un déficit inférieur à (USD)",
+    "Lorsque le crédit d'essai est épuisé, un déficit de portefeuille inférieur à ce montant est exonéré au lieu d'être reporté en solde négatif. Laissez vide pour la valeur par défaut ; saisissez 0 pour toujours facturer le montant total.": "Lorsque le crédit d'essai est épuisé, un déficit de portefeuille inférieur à ce montant est exonéré au lieu d'être reporté en solde négatif. Laissez vide pour la valeur par défaut ; saisissez 0 pour toujours facturer le montant total.",
     "Validity Period": "Période de validité",
     "Value": "Valeur",
     "Value (supports JSON or plain text)": "Valeur (JSON ou texte brut)",

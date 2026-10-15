@@ -144,7 +144,11 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	}
 
 	billingChannelId := task.GetBillingChannelId()
-	model.UpdateUserUsedQuota(task.UserId, -quota)
+	// A trial-funded task never added to the wallet's consumed quota, so the
+	// refund must not subtract from it either.
+	if trial == nil {
+		model.UpdateUserUsedQuota(task.UserId, -quota)
+	}
 	model.UpdateChannelUsedQuota(billingChannelId, -quota)
 	other := model.NewLogOther()
 	other.SetPublic("task_id", task.MjId)

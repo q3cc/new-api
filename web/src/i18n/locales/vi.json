@@ -7072,6 +7072,8 @@
     "v{{installed}} is installed but this source does not list it. Installing replaces it with v{{target}}.": "Đang cài v{{installed}} nhưng nguồn này không liệt kê phiên bản đó. Việc cài đặt sẽ thay thế nó bằng v{{target}}.",
     "Validity": "Hiệu lực",
     "Validity (days, 0 = never expires)": "Số ngày hiệu lực (0 = không hết hạn)",
+    "Miễn khoản thiếu hụt dưới (USD)": "Miễn khoản thiếu hụt dưới (USD)",
+    "Khi tín dụng dùng thử hết, khoản thiếu hụt ví dưới mức này sẽ được miễn thay vì ghi thành số dư âm. Để trống để dùng giá trị mặc định; nhập 0 để luôn trừ toàn bộ.": "Khi tín dụng dùng thử hết, khoản thiếu hụt ví dưới mức này sẽ được miễn thay vì ghi thành số dư âm. Để trống để dùng giá trị mặc định; nhập 0 để luôn trừ toàn bộ.",
     "Validity Period": "Thời hạn hiệu lực",
     "Value": "Giá trị",
     "Value (supports JSON or plain text)": "Giá trị (hỗ trợ JSON hoặc văn bản thuần)",

@@ -68,6 +68,27 @@ func AppendTrialBillingInfo(other *model.LogOther, requestId string) {
 	other.SetPublic("trial_quota_waived", r.Waived)
 }
 
+// RecordUserUsage accumulates a request's quota and request count. Trial credit
+// is a separate allowance, not wallet balance, so a trial-funded request counts
+// as a request but adds nothing to the wallet's consumed quota.
+func RecordUserUsage(info *relaycommon.RelayInfo, quota int) {
+	if info.BillingSource == BillingSourceTrial {
+		model.UpdateUserRequestCount(info.UserId)
+		return
+	}
+	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, quota)
+}
+
+// AdjustTaskUserUsage applies a settled delta to the accumulated usage of a
+// persisted task. It mirrors RecordUserUsage so a trial-funded task never moves
+// the wallet's consumed quota, at submit, settle, or refund.
+func AdjustTaskUserUsage(task *model.Task, delta int) {
+	if task.PrivateData.BillingSource == BillingSourceTrial {
+		return
+	}
+	model.UpdateUserUsedQuota(task.UserId, delta)
+}
+
 // trialFundingBalance keeps ordinary group access independent of trial grants.
 // Wallet/subscription fallback is permitted only by the user's ordinary access,
 // never by an expired, exhausted or disabled trial-only entitlement.
