@@ -27,6 +27,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Separator } from '@/components/ui/separator'
+import { openPaymentWindow } from '@/features/wallet/lib'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { formatQuota } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -107,11 +108,16 @@ export function SubscriptionPurchaseDialog(props: Props) {
     (props.purchaseCount || 0) >= (props.purchaseLimit || 0)
 
   const handlePayStripe = async () => {
+    // Reserve the gateway tab while the click's user activation is still live;
+    // a popup requested after the order request resolves would be blocked.
+    const paymentWindow = openPaymentWindow()
+    let started = false
     setPaying(true)
     try {
       const res = await paySubscriptionStripe({ plan_id: plan.id })
       if (res.message === 'success' && res.data?.pay_link) {
-        window.open(res.data.pay_link, '_blank')
+        paymentWindow.navigate(res.data.pay_link)
+        started = true
         toast.success(t('Payment page opened'))
         props.onOpenChange(false)
       } else {
@@ -120,16 +126,20 @@ export function SubscriptionPurchaseDialog(props: Props) {
     } catch (error) {
       handleServerError(error, t('Payment request failed'))
     } finally {
+      if (!started) paymentWindow.discard()
       setPaying(false)
     }
   }
 
   const handlePayCreem = async () => {
+    const paymentWindow = openPaymentWindow()
+    let started = false
     setPaying(true)
     try {
       const res = await paySubscriptionCreem({ plan_id: plan.id })
       if (res.message === 'success' && res.data?.checkout_url) {
-        window.open(res.data.checkout_url, '_blank')
+        paymentWindow.navigate(res.data.checkout_url)
+        started = true
         toast.success(t('Payment page opened'))
         props.onOpenChange(false)
       } else {
@@ -138,6 +148,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
     } catch (error) {
       handleServerError(error, t('Payment request failed'))
     } finally {
+      if (!started) paymentWindow.discard()
       setPaying(false)
     }
   }
@@ -161,15 +172,13 @@ export function SubscriptionPurchaseDialog(props: Props) {
     }
   }
 
-  const isSafari =
-    typeof navigator !== 'undefined' &&
-    /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
-
   const handlePayEpay = async () => {
     if (!selectedEpayMethod) {
       toast.error(t('Please select a payment method'))
       return
     }
+    const paymentWindow = openPaymentWindow()
+    let started = false
     setPaying(true)
     try {
       const res = await paySubscriptionEpay({
@@ -177,22 +186,8 @@ export function SubscriptionPurchaseDialog(props: Props) {
         payment_method: selectedEpayMethod,
       })
       if (res.message === 'success' && res.url) {
-        const form = document.createElement('form')
-        form.action = res.url
-        form.method = 'POST'
-        if (!isSafari) {
-          form.target = '_blank'
-        }
-        Object.entries(res.data || {}).forEach(([key, value]) => {
-          const input = document.createElement('input')
-          input.type = 'hidden'
-          input.name = key
-          input.value = String(value)
-          form.appendChild(input)
-        })
-        document.body.appendChild(form)
-        form.submit()
-        document.body.removeChild(form)
+        paymentWindow.submit(res.url, res.data || {})
+        started = true
         toast.success(t('Payment initiated'))
         props.onOpenChange(false)
       } else {
@@ -201,6 +196,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
     } catch (error) {
       handleServerError(error, t('Payment request failed'))
     } finally {
+      if (!started) paymentWindow.discard()
       setPaying(false)
     }
   }

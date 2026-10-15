@@ -23,7 +23,7 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { requestWaffoPayment, isApiSuccess } from '../api'
-import { getPaymentErrorTranslation } from '../lib'
+import { getPaymentErrorTranslation, openPaymentWindow } from '../lib'
 
 function getPaymentUrl(data: unknown): string | null {
   if (!data || typeof data !== 'object') {
@@ -56,6 +56,10 @@ export function useWaffoPayment() {
 
   const processWaffoPayment = useCallback(
     async (topupAmount: number, payMethodIndex?: number) => {
+      // Reserve the gateway tab while the click's user activation is still live;
+      // a popup requested after the order request resolves would be blocked.
+      const paymentWindow = openPaymentWindow()
+      let started = false
       setProcessing(true)
 
       try {
@@ -68,7 +72,8 @@ export function useWaffoPayment() {
           const paymentUrl = getPaymentUrl(response.data)
 
           if (paymentUrl) {
-            window.open(paymentUrl, '_blank')
+            paymentWindow.navigate(paymentUrl)
+            started = true
             toast.success(i18next.t('Redirecting to payment page...'))
             return true
           }
@@ -84,6 +89,7 @@ export function useWaffoPayment() {
         handleServerError(error, i18next.t('Payment request failed'))
         return false
       } finally {
+        if (!started) paymentWindow.discard()
         setProcessing(false)
       }
     },

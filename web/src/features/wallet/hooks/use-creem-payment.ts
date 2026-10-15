@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { requestCreemPayment, isApiSuccess } from '../api'
+import { openPaymentWindow } from '../lib'
 
 /**
  * Hook for handling Creem payment processing
@@ -31,6 +32,10 @@ export function useCreemPayment() {
   const [processing, setProcessing] = useState(false)
 
   const processCreemPayment = useCallback(async (productId: string) => {
+    // Reserve the checkout tab while the click's user activation is still live;
+    // a popup requested after the order request resolves would be blocked.
+    const paymentWindow = openPaymentWindow()
+    let started = false
     setProcessing(true)
     try {
       const response = await requestCreemPayment({
@@ -39,7 +44,8 @@ export function useCreemPayment() {
       })
 
       if (isApiSuccess(response) && response.data?.checkout_url) {
-        window.open(response.data.checkout_url, '_blank')
+        paymentWindow.navigate(response.data.checkout_url)
+        started = true
         toast.success(i18next.t('Redirecting to Creem checkout...'))
         return true
       }
@@ -50,6 +56,7 @@ export function useCreemPayment() {
       handleServerError(_error, i18next.t('Payment request failed'))
       return false
     } finally {
+      if (!started) paymentWindow.discard()
       setProcessing(false)
     }
   }, [])

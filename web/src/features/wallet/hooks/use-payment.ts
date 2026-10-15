@@ -35,7 +35,7 @@ import {
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
-  submitPaymentForm,
+  openPaymentWindow,
 } from '../lib'
 import type { AmountRequest, AmountResponse } from '../types'
 
@@ -110,6 +110,10 @@ export function usePayment() {
   // Process payment
   const processPayment = useCallback(
     async (topupAmount: number, paymentType: string) => {
+      // Reserve the gateway tab while the click's user activation is still live;
+      // a popup requested after the order request resolves would be blocked.
+      const paymentWindow = openPaymentWindow()
+      let started = false
       try {
         setProcessing(true)
 
@@ -133,7 +137,8 @@ export function usePayment() {
 
         // Handle Stripe payment
         if (isStripe && response.data?.pay_link) {
-          window.open(response.data.pay_link as string, '_blank')
+          paymentWindow.navigate(response.data.pay_link as string)
+          started = true
           toast.success(i18next.t('Redirecting to payment page...'))
           return true
         }
@@ -142,7 +147,8 @@ export function usePayment() {
         if (!isStripe && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
-            submitPaymentForm(url, response.data)
+            paymentWindow.submit(url, response.data)
+            started = true
             toast.success(i18next.t('Redirecting to payment page...'))
             return true
           }
@@ -153,6 +159,7 @@ export function usePayment() {
         handleServerError(error, i18next.t('Payment request failed'))
         return false
       } finally {
+        if (!started) paymentWindow.discard()
         setProcessing(false)
       }
     },
