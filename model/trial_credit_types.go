@@ -73,9 +73,9 @@ func validateTrialConfig(cfg TrialCreditConfig) error {
 	if cfg.AffiliateDays < 0 || cfg.AffiliateDays > 36500 || len(cfg.Types) > 100 {
 		return errors.New("体验金参数无效")
 	}
-	if cfg.WaiveThresholdUSD != nil {
-		threshold := *cfg.WaiveThresholdUSD
-		if math.IsNaN(threshold) || math.IsInf(threshold, 0) || threshold < 0 || threshold > maxWaiveThresholdUSD {
+	if cfg.WaiveThreshold != nil {
+		threshold := *cfg.WaiveThreshold
+		if math.IsNaN(threshold) || math.IsInf(threshold, 0) || threshold < 0 || threshold > maxWaiveThreshold {
 			return errors.New("体验金免除门槛无效")
 		}
 	}
