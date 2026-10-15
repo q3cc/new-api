@@ -59,43 +59,61 @@ export function getPaymentErrorTranslation(
 }
 
 /**
- * Check if browser is Safari
+ * Reserve a tab for a gateway page, then drive it once the order exists.
+ *
+ * A gateway URL only becomes known after the order request resolves, but by then
+ * the click's user activation has expired, so asking for a new tab at that point
+ * is treated as a popup and silently blocked — the order is created and the user
+ * is never sent anywhere. Opening the tab up front, while the activation is
+ * still live, keeps the submission inside an already-open window where no popup
+ * blocker applies.
  */
-function isSafariBrowser(): boolean {
-  return (
-    navigator.userAgent.includes('Safari') &&
-    !navigator.userAgent.includes('Chrome')
-  )
+export interface PaymentWindow {
+  /** POST the gateway form into the reserved tab. */
+  submit: (url: string, params: Record<string, unknown>) => void
+  /** Point the reserved tab at a gateway URL, for GET-based flows. */
+  navigate: (url: string) => void
+  /** Close the reserved tab when the payment never started. */
+  discard: () => void
 }
 
-/**
- * Submit payment form (for non-Stripe payments)
- */
-export function submitPaymentForm(
-  url: string,
-  params: Record<string, unknown>
-): void {
-  const form = document.createElement('form')
-  form.action = url
-  form.method = 'POST'
+const PAYMENT_WINDOW_NAME = 'new-api-payment'
 
-  // Don't open in new tab for Safari
-  if (!isSafariBrowser()) {
-    form.target = '_blank'
+export function openPaymentWindow(): PaymentWindow {
+  // Without this, a later target=_blank form submit is blocked instead.
+  const popup = window.open('', PAYMENT_WINDOW_NAME)
+
+  return {
+    submit(url, params) {
+      const form = document.createElement('form')
+      form.action = url
+      form.method = 'POST'
+      // The reserved tab already exists, so this creates no new window. When the
+      // browser refused to open one, submit in this tab instead so the payment
+      // is never silently lost.
+      form.target = popup && !popup.closed ? PAYMENT_WINDOW_NAME : '_self'
+      Object.entries(params).forEach(([key, value]) => {
+        const input = document.createElement('input')
+        input.type = 'hidden'
+        input.name = key
+        input.value = String(value)
+        form.appendChild(input)
+      })
+      document.body.appendChild(form)
+      form.submit()
+      form.remove()
+    },
+    navigate(url) {
+      if (popup && !popup.closed) {
+        popup.location.href = url
+        return
+      }
+      window.location.href = url
+    },
+    discard() {
+      if (popup && !popup.closed) popup.close()
+    },
   }
-
-  // Add form parameters
-  Object.entries(params).forEach(([key, value]) => {
-    const input = document.createElement('input')
-    input.type = 'hidden'
-    input.name = key
-    input.value = String(value)
-    form.appendChild(input)
-  })
-
-  document.body.appendChild(form)
-  form.submit()
-  document.body.removeChild(form)
 }
 
 /**
