@@ -7072,6 +7072,8 @@
     "v{{installed}} is installed but this source does not list it. Installing replaces it with v{{target}}.": "目前已安裝 v{{installed}}，但該來源未列出此版本。安裝將會以 v{{target}} 取代它。",
     "Validity": "有效期",
     "Validity (days, 0 = never expires)": "有效天數（0 為永久）",
+    "免除欠費上限（美元）": "免除欠費上限（美元）",
+    "體驗金用盡後，錢包欠費低於該金額時免除，不再記為負餘額。留空使用預設值；填 0 表示一律按全額扣費。": "體驗金用盡後，錢包欠費低於該金額時免除，不再記為負餘額。留空使用預設值；填 0 表示一律按全額扣費。",
     "Validity Period": "有效期",
     "Value": "值",
     "Value (supports JSON or plain text)": "值（支援 JSON 或普通文字）",

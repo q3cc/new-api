@@ -31,6 +31,8 @@ export interface TrialConfig {
   group: string
   affiliate: boolean
   affiliate_days: number
+  /** Wallet shortfall in USD waived instead of carried; omit for the default. */
+  waive_threshold_usd?: number | null
 }
 export interface TrialGrant {
   type_id: number

@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -71,6 +72,12 @@ func (cfg TrialCreditConfig) grantKind(typeIds ...int) (TrialCreditType, error) 
 func validateTrialConfig(cfg TrialCreditConfig) error {
 	if cfg.AffiliateDays < 0 || cfg.AffiliateDays > 36500 || len(cfg.Types) > 100 {
 		return errors.New("体验金参数无效")
+	}
+	if cfg.WaiveThresholdUSD != nil {
+		threshold := *cfg.WaiveThresholdUSD
+		if math.IsNaN(threshold) || math.IsInf(threshold, 0) || threshold < 0 || threshold > maxWaiveThresholdUSD {
+			return errors.New("体验金免除门槛无效")
+		}
 	}
 	ids := map[int]bool{}
 	for _, kind := range cfg.Types {

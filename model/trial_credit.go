@@ -12,7 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
-	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -28,6 +27,29 @@ type TrialCreditConfig struct {
 	AffiliateDays   int               `json:"affiliate_days"`
 	AffiliateTypeId int               `json:"affiliate_type_id"`
 	Types           []TrialCreditType `json:"types"`
+	// WaiveThresholdUSD is the wallet shortfall below which the unpaid remainder
+	// of a trial request is waived instead of carried as a negative balance.
+	// Nil means the default; an explicit 0 disables waiving.
+	WaiveThresholdUSD *float64 `json:"waive_threshold_usd,omitempty"`
+}
+
+// DefaultWaiveThresholdUSD waives a remainder smaller than half a dollar, so a
+// wallet emptied by a trial request is not left with a token debt.
+const DefaultWaiveThresholdUSD = 0.5
+
+// maxWaiveThresholdUSD bounds the configured waiver. A larger value would let a
+// single request silently forgive a substantial balance.
+const maxWaiveThresholdUSD = 100
+
+func (cfg TrialCreditConfig) waiveThresholdQuota(quotaUnit float64) float64 {
+	usd := DefaultWaiveThresholdUSD
+	if cfg.WaiveThresholdUSD != nil {
+		usd = *cfg.WaiveThresholdUSD
+	}
+	if usd <= 0 || quotaUnit <= 0 {
+		return 0
+	}
+	return usd * quotaUnit
 }
 
 type TrialCreditGrant struct {
@@ -350,9 +372,14 @@ func FinalizeTrialCredit(requestId string, actual int, refund bool) (*TrialCredi
 		return nil, errors.New("体验金费用无效")
 	}
 	var r TrialCreditReservation
-	cacheReserved := 0
+	cacheStale := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if _, err := trialPolicyLock(tx); err != nil {
+		option, err := trialPolicyLock(tx)
+		if err != nil {
+			return err
+		}
+		var cfg TrialCreditConfig
+		if err = parseTrialConfig(option.Value, &cfg); err != nil {
 			return err
 		}
 		if err := tx.Where("request_id = ?", requestId).First(&r).Error; err != nil {
@@ -383,35 +410,29 @@ func FinalizeTrialCredit(requestId string, actual int, refund bool) (*TrialCredi
 		}
 		r.Actual = actual
 		r.TrialCharged = min(available, actual)
+		// Whatever trial credit could not cover is charged to the wallet exactly
+		// like ordinary balance, so a large remainder becomes a real negative
+		// balance the user settles by topping up. A remainder below the configured
+		// threshold is waived instead, so a wallet emptied by a trial request is
+		// not left with a token debt. An empty or already-negative wallet covers
+		// nothing, so only a charge that is actually due is ever applied.
 		debt := actual - r.TrialCharged
-		excess := decimal.Max(decimal.Zero, decimal.NewFromInt(int64(debt)).Sub(decimal.NewFromFloat(r.QuotaUnit).Div(decimal.NewFromFloat(r.CNYRate))))
-		charge, err := common.WalletQuotaFromDecimalStrict(excess.Mul(decimal.NewFromFloat(0.2)))
-		if err != nil {
-			return err
-		}
-		charge = max(0, charge)
-		if charge > 0 && user.Quota >= charge && common.RedisEnabled {
-			result, cacheErr := cacheTryReserveUserQuota(user.Id, int64(charge))
-			if cacheErr == nil && result == cacheQuotaMiss {
-				cacheErr = populateUserCache(user)
-				if cacheErr == nil {
-					result, cacheErr = cacheTryReserveUserQuota(user.Id, int64(charge))
-				}
-			}
-			if cacheErr != nil {
-				return cacheErr
-			}
-			if result != cacheQuotaOK {
-				charge = 0
+		charge := 0
+		if debt > 0 {
+			covered := min(debt, max(user.Quota, 0))
+			uncovered := debt - covered
+			if uncovered == 0 || float64(uncovered) >= cfg.waiveThresholdQuota(r.QuotaUnit) {
+				charge = debt
 			} else {
-				cacheReserved = charge
+				charge = covered
 			}
 		}
-		if charge > 0 && user.Quota >= charge {
+		if charge > 0 {
 			if err = tx.Model(&user).UpdateColumn("quota", gorm.Expr("quota - ?", charge)).Error; err != nil {
 				return err
 			}
 			r.WalletCharged = charge
+			cacheStale = common.RedisEnabled
 		}
 		r.Waived = debt - r.WalletCharged
 		r.Status = "settled"
@@ -424,12 +445,19 @@ func FinalizeTrialCredit(requestId string, actual int, refund bool) (*TrialCredi
 		r.Applied = true
 		return nil
 	})
-	if err != nil && cacheReserved > 0 {
-		if _, cacheErr := cacheApplyUserQuotaDelta(r.UserId, int64(cacheReserved)); cacheErr != nil {
-			common.SysError(cacheErr.Error())
+	if err != nil {
+		return &r, err
+	}
+	// The charge may exceed the cached balance, so the cache is dropped after the
+	// commit and the next read rehydrates it from the authoritative database.
+	// Applying a delta instead could leave a stale cache disagreeing with the
+	// committed balance.
+	if cacheStale {
+		if cacheErr := invalidateUserCache(r.UserId); cacheErr != nil {
+			common.SysLog(common.LogText("failed to invalidate the user quota cache after a trial wallet charge: %s", cacheErr.Error()))
 		}
 	}
-	return &r, err
+	return &r, nil
 }
 
 func AwardTrialAffiliate(inviterId, inviteeId int) (bool, error) {

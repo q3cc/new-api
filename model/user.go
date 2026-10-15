@@ -1478,6 +1478,17 @@ func UpdateUserUsedQuota(id int, quota int) {
 	}
 }
 
+// UpdateUserRequestCount counts a request without touching consumed quota. A
+// request funded by trial credit is not wallet spending, so it must not move
+// the wallet's used_quota.
+func UpdateUserRequestCount(id int) {
+	if common.BatchUpdateEnabled {
+		addNewRecord(BatchUpdateTypeRequestCount, id, 1)
+		return
+	}
+	updateUserUsedQuotaAndRequestCount(id, 0, 1)
+}
+
 func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
 	err := DB.Model(&User{}).Where("id = ?", id).Updates(
 		map[string]any{

@@ -7072,6 +7072,8 @@
     "v{{installed}} is installed but this source does not list it. Installing replaces it with v{{target}}.": "v{{installed}} がインストールされていますが、このソースには掲載されていません。インストールすると v{{target}} に置き換わります。",
     "Validity": "有効期間",
     "Validity (days, 0 = never expires)": "有効日数（0は無期限）",
+    "免除する不足額の上限（USD）": "免除する不足額の上限（USD）",
+    "体験金を使い切った後、この金額未満のウォレット不足額は免除され、マイナス残高として繰り越されません。空欄で既定値、0 で常に全額を課金します。": "体験金を使い切った後、この金額未満のウォレット不足額は免除され、マイナス残高として繰り越されません。空欄で既定値、0 で常に全額を課金します。",
     "Validity Period": "有効期間",
     "Value": "値",
     "Value (supports JSON or plain text)": "値（JSONまたはプレーンテキスト対応）",

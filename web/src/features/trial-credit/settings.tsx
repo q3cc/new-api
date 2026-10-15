@@ -26,6 +26,7 @@ import { LoadingState } from '@/components/loading-state'
 import { Combobox } from '@/components/ui/combobox'
 import {
   Form,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -156,6 +157,41 @@ function TrialCreditSettingsForm(props: {
                     onChange={(e) => field.onChange(Number(e.target.value))}
                   />
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='waive_threshold_usd'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Waive shortfall below (USD)')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={0}
+                    max={100}
+                    step='any'
+                    placeholder='0.5'
+                    value={field.value ?? ''}
+                    onChange={(event) =>
+                      field.onChange(
+                        event.target.value === ''
+                          ? null
+                          : Number(event.target.value)
+                      )
+                    }
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'When trial credit runs out, a wallet shortfall below this amount is waived instead of carried as a negative balance. Leave empty for the default; enter 0 to always charge the full amount.'
+                  )}
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}

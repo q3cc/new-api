@@ -7072,6 +7072,8 @@
     "v{{installed}} is installed but this source does not list it. Installing replaces it with v{{target}}.": "v{{installed}} is installed but this source does not list it. Installing replaces it with v{{target}}.",
     "Validity": "Validity",
     "Validity (days, 0 = never expires)": "Validity (days, 0 = never expires)",
+    "Waive shortfall below (USD)": "Waive shortfall below (USD)",
+    "When trial credit runs out, a wallet shortfall below this amount is waived instead of carried as a negative balance. Leave empty for the default; enter 0 to always charge the full amount.": "When trial credit runs out, a wallet shortfall below this amount is waived instead of carried as a negative balance. Leave empty for the default; enter 0 to always charge the full amount.",
     "Validity Period": "Validity Period",
     "Value": "Value",
     "Value (supports JSON or plain text)": "Value (supports JSON or plain text)",
