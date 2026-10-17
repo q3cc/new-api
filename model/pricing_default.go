@@ -157,3 +157,65 @@ func getDefaultVendorIcon(vendorName string) string {
 	}
 	return ""
 }
+
+// defaultModelTokenLimits provides catalog display metadata, not request limits
+// or playground compression budgets. Only exact documented names and explicit
+// aliases are recognized. Unknown/undocumented limits remain absent in JSON.
+// Provider documentation checked 2026-10-16.
+func defaultModelTokenLimits(name string) (context, output int) {
+	switch strings.ToLower(name) {
+	// https://platform.claude.com/docs/en/models/opus-5-5/overview
+	// https://platform.claude.com/docs/en/models/opus-4-6/overview
+	case "claude-opus-5-5", "claude-opus-4-6", "claude-opus-4-6-thinking":
+		return 1000000, 128000
+	// https://api-docs.deepseek.com/api/list-models/
+	// The retired v4-flash alias currently resolves to V4.1-Flash.
+	case "deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-pro":
+		return 1048576, 393216
+	// https://huggingface.co/deepseek-ai/DeepSeek-V3.1/raw/main/config.json
+	// https://huggingface.co/deepseek-ai/DeepSeek-V3.2/raw/main/config.json
+	// Native model capacity; individual hosted APIs may impose smaller limits.
+	case "deepseek-v3.1", "deepseek.v3.1", "deepseek-v3.2", "deepseek.v3.2":
+		return 163840, 0
+	// https://huggingface.co/google/gemma-4-31B-it/raw/main/config.json
+	case "gemma-4-31b", "google.gemma-4-31b":
+		return 262144, 0
+	// https://ai.google.dev/gemini-api/docs/tokens
+	// Gemini 3/2.5 have separate input/output budgets; show the input limit.
+	case "gemini-3.1-pro", "gemini-3.1-pro-preview", "gemini-3.8-flash", "gemini-2.5-pro", "gemini-2.5-flash":
+		return 1048576, 65536
+	// https://ai.google.dev/gemini-api/docs/models/gemini-4-argon
+	// Long decode can use the entire shared window; ordinary synchronous output
+	// is capped at 65,536. Do not present that default as the maximum.
+	case "gemini-4-argon":
+		return 1048576, 1048576
+	// https://docs.x.ai/developers/models/grok-4.3
+	case "grok-4.3", "grok-4.3-latest", "xai.grok-4.3":
+		return 1000000, 0
+	// https://docs.x.ai/developers/models/grok-4.6
+	// No separate text output limit is published.
+	case "grok-4.6", "xai.grok-4.6":
+		return 500000, 0
+	// https://platform.kimi.ai/docs/models
+	case "kimi-k3":
+		return 1000000, 0
+	// https://huggingface.co/moonshotai/Kimi-K2.6/raw/main/config.json
+	case "kimi-k2.6":
+		return 262144, 0
+	// https://docs.z.ai/guides/llm/glm-5.3
+	// https://docs.z.ai/guides/vlm/glm-5.3-flash
+	case "glm-5.3", "glm-5.3-flash":
+		return 1000000, 128000
+	// https://developers.openai.com/api/docs/models/gpt-4o
+	// https://developers.openai.com/api/docs/models/gpt-4o-mini
+	case "gpt-4o", "gpt-4o-mini":
+		return 128000, 16384
+	// https://developers.openai.com/api/docs/models/gpt-4.1
+	case "gpt-4.1":
+		return 1047576, 32768
+	// https://developers.openai.com/api/docs/models/gpt-5
+	case "gpt-5":
+		return 400000, 128000
+	}
+	return 0, 0
+}

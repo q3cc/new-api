@@ -92,19 +92,22 @@ type TrialCreditGrant struct {
 }
 
 type TrialCreditReservation struct {
-	LegacyTaskId  int     `json:"-" gorm:"index"`
-	Applied       bool    `json:"-" gorm:"-"`
-	Id            int     `json:"id" gorm:"primaryKey"`
-	RequestId     string  `json:"request_id" gorm:"size:128;uniqueIndex"`
-	UserId        int     `json:"user_id" gorm:"index"`
-	GroupName     string  `json:"group" gorm:"size:64"`
-	Reserved      int     `json:"reserved" gorm:"type:bigint"`
-	Actual        int     `json:"actual" gorm:"type:bigint"`
-	TrialCharged  int     `json:"trial_charged" gorm:"type:bigint"`
-	WalletCharged int     `json:"wallet_charged" gorm:"type:bigint"`
-	Waived        int     `json:"waived" gorm:"type:bigint"`
-	CNYRate       float64 `json:"cny_rate"`
-	QuotaUnit     float64 `json:"quota_unit"`
+	LegacyTaskId int    `json:"-" gorm:"index"`
+	Applied      bool   `json:"-" gorm:"-"`
+	Id           int    `json:"id" gorm:"primaryKey"`
+	RequestId    string `json:"request_id" gorm:"size:128;uniqueIndex"`
+	UserId       int    `json:"user_id" gorm:"index"`
+	GroupName    string `json:"group" gorm:"size:64"`
+	// Reserved is the total held quota; WalletReserved is its wallet-funded part.
+	// Existing reservations are entirely trial-funded and migrate with zero here.
+	Reserved       int     `json:"reserved" gorm:"type:bigint"`
+	WalletReserved int     `json:"-" gorm:"type:bigint;default:0"`
+	Actual         int     `json:"actual" gorm:"type:bigint"`
+	TrialCharged   int     `json:"trial_charged" gorm:"type:bigint"`
+	WalletCharged  int     `json:"wallet_charged" gorm:"type:bigint"`
+	Waived         int     `json:"waived" gorm:"type:bigint"`
+	CNYRate        float64 `json:"cny_rate"`
+	QuotaUnit      float64 `json:"quota_unit"`
 	// WaiveQuota is the waiver threshold in quota units, frozen when the request
 	// reserved its trial credit. Rows created before this field existed keep 0,
 	// which charges the full remainder.
@@ -229,7 +232,7 @@ func grantTrialCreditTx(tx *gorm.DB, userId, quota int, expiresAt int64, key, so
 		return err
 	}
 	var reserved int
-	if err = tx.Model(&TrialCreditReservation{}).Where("user_id = ? AND status = ?", userId, "reserved").Select("COALESCE(SUM(reserved), 0)").Scan(&reserved).Error; err != nil {
+	if err = tx.Model(&TrialCreditReservation{}).Where("user_id = ? AND status = ?", userId, "reserved").Select("COALESCE(SUM(reserved - wallet_reserved), 0)").Scan(&reserved).Error; err != nil {
 		return err
 	}
 	if reserved > common.MaxWalletQuota-balance || quota > common.MaxWalletQuota-balance-reserved {
@@ -249,7 +252,8 @@ func ReserveTrialCredit(requestId string, userId int, group string, target int) 
 	if requestId == "" || len(requestId) > 128 || target < 0 || target > math.MaxInt32 {
 		return errors.New("体验请求参数无效")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	cacheStale := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		option, err := trialPolicyLock(tx)
 		if err != nil {
 			return err
@@ -297,12 +301,34 @@ func ReserveTrialCredit(requestId string, userId int, group string, target int) 
 		if err != nil {
 			return err
 		}
-		if used != needed {
+		wallet := needed - used
+		if wallet > max(user.Quota, 0) {
 			return ErrTrialInsufficient
 		}
+		if wallet > 0 {
+			if err := tx.Model(&user).UpdateColumn("quota", gorm.Expr("quota - ?", wallet)).Error; err != nil {
+				return err
+			}
+			cacheStale = true
+		}
+		r.WalletReserved += wallet
 		r.Reserved = target
 		return tx.Save(&r).Error
 	})
+	if err == nil && cacheStale {
+		invalidateTrialWalletCache(userId)
+	}
+	return err
+}
+
+// Trial transactions update the authoritative wallet directly. Drop the cached
+// balance only after commit, including when a reservation is returned.
+func invalidateTrialWalletCache(userId int) {
+	if common.RedisEnabled {
+		if err := invalidateUserCache(userId); err != nil {
+			common.SysError(fmt.Sprintf("failed to invalidate user quota cache after trial wallet update: %s", err))
+		}
+	}
 }
 
 func allocateTrialCredit(tx *gorm.DB, r *TrialCreditReservation, amount int) (int, error) {
@@ -375,23 +401,39 @@ func releaseTrialCredit(tx *gorm.DB, r *TrialCreditReservation, amount int) erro
 
 // Resize only releases a failed supplementary reserve; it never settles debt.
 func ReleaseTrialCreditReserve(requestId string, target int) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+	var r TrialCreditReservation
+	walletReturn := 0
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		if _, err := trialPolicyLock(tx); err != nil {
 			return err
 		}
-		var r TrialCreditReservation
 		if err := tx.Where("request_id = ?", requestId).First(&r).Error; err != nil {
 			return err
 		}
 		if r.Status != "reserved" || target < 0 || target > r.Reserved {
 			return errors.New("体验金预留无效")
 		}
-		if err := releaseTrialCredit(tx, &r, r.Reserved-target); err != nil {
+		var user User
+		if err := lockForUpdate(tx).First(&user, r.UserId).Error; err != nil {
 			return err
 		}
+		walletReturn = min(r.WalletReserved, r.Reserved-target)
+		if err := releaseTrialCredit(tx, &r, r.Reserved-target-walletReturn); err != nil {
+			return err
+		}
+		if walletReturn > 0 {
+			if err := tx.Model(&user).UpdateColumn("quota", gorm.Expr("quota + ?", walletReturn)).Error; err != nil {
+				return err
+			}
+		}
+		r.WalletReserved -= walletReturn
 		r.Reserved = target
 		return tx.Save(&r).Error
 	})
+	if err == nil && walletReturn > 0 {
+		invalidateTrialWalletCache(r.UserId)
+	}
+	return err
 }
 
 // Finalize uses an absolute charge, not a delta, so a callback retry is harmless.
@@ -418,7 +460,7 @@ func FinalizeTrialCredit(requestId string, actual int, refund bool) (*TrialCredi
 		if refund {
 			actual = 0
 		}
-		available := r.Reserved
+		available := r.Reserved - r.WalletReserved
 		if actual > available {
 			n, err := allocateTrialCredit(tx, &r, actual-available)
 			if err != nil {
@@ -442,7 +484,7 @@ func FinalizeTrialCredit(requestId string, actual int, refund bool) (*TrialCredi
 		debt := actual - r.TrialCharged
 		charge := 0
 		if debt > 0 {
-			covered := min(debt, max(user.Quota, 0))
+			covered := min(debt, r.WalletReserved+max(user.Quota, 0))
 			uncovered := debt - covered
 			if uncovered == 0 || uncovered >= r.WaiveQuota {
 				charge = debt
@@ -450,13 +492,14 @@ func FinalizeTrialCredit(requestId string, actual int, refund bool) (*TrialCredi
 				charge = covered
 			}
 		}
-		if charge > 0 {
-			if err := tx.Model(&user).UpdateColumn("quota", gorm.Expr("quota - ?", charge)).Error; err != nil {
+		walletDelta := charge - r.WalletReserved
+		if walletDelta != 0 {
+			if err := tx.Model(&user).UpdateColumn("quota", gorm.Expr("quota - ?", walletDelta)).Error; err != nil {
 				return err
 			}
-			r.WalletCharged = charge
-			cacheStale = common.RedisEnabled
+			cacheStale = true
 		}
+		r.WalletCharged = charge
 		r.Waived = debt - r.WalletCharged
 		r.Status = "settled"
 		if refund {
@@ -471,14 +514,8 @@ func FinalizeTrialCredit(requestId string, actual int, refund bool) (*TrialCredi
 	if err != nil {
 		return &r, err
 	}
-	// The charge may exceed the cached balance, so the cache is dropped after the
-	// commit and the next read rehydrates it from the authoritative database.
-	// Applying a delta instead could leave a stale cache disagreeing with the
-	// committed balance.
 	if cacheStale {
-		if cacheErr := invalidateUserCache(r.UserId); cacheErr != nil {
-			common.SysLog(common.LogText("failed to invalidate the user quota cache after a trial wallet charge: %s", cacheErr.Error()))
-		}
+		invalidateTrialWalletCache(r.UserId)
 	}
 	return &r, nil
 }

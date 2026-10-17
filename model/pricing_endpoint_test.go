@@ -292,3 +292,47 @@ func TestCacheUpdateChannelSyncsAdvancedCustomConfig(t *testing.T) {
 
 	assert.Nil(t, channel2advancedCustomConfig[401])
 }
+
+func TestPricingIncludesDocumentedTokenLimits(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+	insertPricingEndpointChannel(t, 990, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
+	cases := []struct {
+		name            string
+		context, output int
+	}{
+		{"claude-opus-5-5", 1000000, 128000},
+		{"deepseek-v4.1-flash", 1048576, 393216},
+		{"gemini-3.1-pro", 1048576, 65536},
+		{"gemini-4-argon", 1048576, 1048576},
+		{"grok-4.6", 500000, 0}, {"glm-5.3-flash", 1000000, 128000},
+		{"kimi-k2.6", 262144, 0},
+		{"gemma-4-31b", 262144, 0}, {"deepseek-v3.2", 163840, 0}, {"kimi-k3", 1000000, 0},
+		{"gpt-4.1", 1047576, 32768}, {"gpt-4o", 128000, 16384},
+		{"gpt-5", 400000, 128000},
+		{"gpt-image-2.5", 0, 0}, {"unknown", 0, 0}, {"custom-gpt-4o", 0, 0},
+	}
+	for _, tc := range cases {
+		insertPricingEndpointAbility(t, 990, tc.name)
+	}
+	InitChannelCache()
+	byName := make(map[string]Pricing)
+	for _, pricing := range GetPricing() {
+		byName[pricing.ModelName] = pricing
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pricing, exists := byName[tc.name]
+			require.True(t, exists)
+			assert.Equal(t, tc.context, pricing.ContextLength)
+			assert.Equal(t, tc.output, pricing.MaxOutputTokens)
+			encoded, err := common.Marshal(pricing)
+			require.NoError(t, err)
+			if tc.context == 0 {
+				assert.NotContains(t, string(encoded), `"context_length"`)
+			}
+			if tc.output == 0 {
+				assert.NotContains(t, string(encoded), `"max_output_tokens"`)
+			}
+		})
+	}
+}

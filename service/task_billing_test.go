@@ -1939,7 +1939,7 @@ func TestTrialBillingSessionIsolationAndTaskSettlement(t *testing.T) {
 		assert.Contains(t, GetUserUsableGroups("default", u.Id), "default")
 		assert.NotContains(t, GetUserAutoGroup("default"), "vip")
 		assert.Contains(t, GetUserAutoGroup("default"), "default")
-		for group, want := range map[string]int{"vip": 100, "default": 300} {
+		for group, want := range map[string]int{"vip": 600, "default": 800} {
 			available, err := RequestAvailableQuota(&relaycommon.RelayInfo{UserId: u.Id, UsingGroup: group})
 			require.NoError(t, err)
 			assert.Equal(t, want, available)

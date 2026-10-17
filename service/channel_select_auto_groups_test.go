@@ -324,7 +324,7 @@ func TestTrialGroupFundingCompatibility(t *testing.T) {
 					}
 					wantSource, wantAvailable, wantWallet := "wallet", 1000, 900
 					if state == "active" || state == "issuance-disabled" {
-						wantSource, wantAvailable, wantWallet = BillingSourceTrial, 200, 1000
+						wantSource, wantAvailable, wantWallet = BillingSourceTrial, 1200, 1000
 					}
 					if state == "subscription" {
 						wantSource, wantWallet = BillingSourceSubscription, 1000
@@ -344,9 +344,18 @@ func TestTrialGroupFundingCompatibility(t *testing.T) {
 					if state == "active" {
 						oversized := *info
 						oversized.RequestId = "oversized-trial"
-						_, apiErr := NewBillingSession(ctx, &oversized, 201)
+						_, apiErr := NewBillingSession(ctx, &oversized, 1201)
 						require.NotNil(t, apiErr)
-						assert.Equal(t, 403, apiErr.StatusCode, "failed trial reserve must not fall back to wallet")
+						assert.Equal(t, 403, apiErr.StatusCode, "insufficient combined balance must not admit the request")
+						mixed := *info
+						mixed.RequestId = "mixed-trial-wallet"
+						combined, apiErr := NewBillingSession(ctx, &mixed, 250)
+						require.Nil(t, apiErr)
+						assert.Equal(t, BillingSourceTrial, mixed.BillingSource)
+						wallet, err := model.GetUserQuota(user.Id, true)
+						require.NoError(t, err)
+						assert.Equal(t, 950, wallet)
+						require.NoError(t, combined.Settle(0))
 					}
 					session, apiErr := NewBillingSession(ctx, info, 100)
 					require.Nil(t, apiErr)

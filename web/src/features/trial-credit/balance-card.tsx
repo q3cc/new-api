@@ -53,23 +53,6 @@ export function TrialBalanceCard() {
           <TrialGrantUsage key={grant.id} grant={grant} />
         ))}
         {data.grants.length === 0 && <div>{t('No records')}</div>}
-        {data.records.map((record) => (
-          <div
-            key={record.id}
-            className='flex flex-wrap gap-3 border-t pt-2 text-sm'
-          >
-            <span>{record.group}</span>
-            <span>
-              {t('Trial credit')}: {formatQuota(record.trial_charged)}
-            </span>
-            <span>
-              {t('Wallet')}: {formatQuota(record.wallet_charged)}
-            </span>
-            <span>
-              {t('Waived')}: {formatQuota(record.waived)}
-            </span>
-          </div>
-        ))}
         <div className='flex gap-2'>
           <Button
             variant='outline'
@@ -80,9 +63,7 @@ export function TrialBalanceCard() {
           </Button>
           <Button
             variant='outline'
-            disabled={
-              page * 10 >= Math.max(data.total, data.records_total ?? 0)
-            }
+            disabled={page * 10 >= data.total}
             onClick={() => setPage((p) => p + 1)}
           >
             {t('Next page')}
