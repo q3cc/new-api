@@ -32,12 +32,36 @@ afterEach(() => {
 })
 
 describe('Response streaming fade', () => {
+  test.each([
+    ['paragraph', '你好', '你好，世界'],
+    ['heading', '## Hello', '## Hello world'],
+    ['list', '- Hello', '- Hello world'],
+    ['strong', '**Hello**', '**Hello world**'],
+  ])(
+    'keeps the running %s fade mounted when a stream appends text',
+    (_, first, next) => {
+      vi.spyOn(performance, 'now').mockReturnValue(1000)
+      const { container, rerender } = render(
+        <Response final={false}>{first}</Response>
+      )
+      const animated = container.querySelector('[data-stream-fade]')
+      expect(animated).not.toBeNull()
+
+      vi.spyOn(performance, 'now').mockReturnValue(1050)
+      rerender(<Response final={false}>{next}</Response>)
+
+      // Replacing the span restarts its CSS animation at opacity zero on every
+      // token, making already visible text blink or disappear during streaming.
+      expect(container.querySelector('[data-stream-fade]')).toBe(animated)
+    }
+  )
+
   test('wraps newly streamed words when final is false', () => {
     const { rerender } = render(<Response final={false}>Hello</Response>)
 
-    expect(document.querySelectorAll('[data-stream-fade]').length).toBeGreaterThan(
-      0
-    )
+    expect(
+      document.querySelectorAll('[data-stream-fade]').length
+    ).toBeGreaterThan(0)
     expect(screen.getByText('Hello')).toBeTruthy()
 
     rerender(<Response final={false}>Hello world</Response>)
@@ -74,9 +98,9 @@ describe('Response streaming fade', () => {
   test('does not re-animate words after markdown restructuring around strong', () => {
     vi.spyOn(performance, 'now').mockReturnValue(1000)
     const { rerender } = render(<Response final={false}>**fin</Response>)
-    expect(document.querySelectorAll('[data-stream-fade]').length).toBeGreaterThan(
-      0
-    )
+    expect(
+      document.querySelectorAll('[data-stream-fade]').length
+    ).toBeGreaterThan(0)
 
     vi.spyOn(performance, 'now').mockReturnValue(
       1000 + FADE_DURATION_MS + FADE_STAGGER_MAX_MS + 1
@@ -104,11 +128,40 @@ describe('Response streaming fade', () => {
     const { rerender } = render(
       <Response final={false}>Streaming text</Response>
     )
-    expect(document.querySelectorAll('[data-stream-fade]').length).toBeGreaterThan(
-      0
-    )
+    expect(
+      document.querySelectorAll('[data-stream-fade]').length
+    ).toBeGreaterThan(0)
 
     rerender(<Response final>Streaming text</Response>)
     expect(document.querySelectorAll('[data-stream-fade]')).toHaveLength(0)
+  })
+
+  test('keeps Chinese, emoji and Markdown text intact across streamed updates and completion', () => {
+    const chunks = [
+      '## 雾港\n\n',
+      '我把右耳贴近门缝。',
+      '**蓝色火光**仍在摇晃。👩🏽‍💻\n\n',
+      '- 线索：`第47页`\n',
+      '- [继续阅读](https://example.com/story)',
+    ]
+    const { container, rerender } = render(<Response final={false} />)
+    let content = ''
+    for (const chunk of chunks) {
+      content += chunk
+      rerender(<Response final={false}>{content}</Response>)
+    }
+    const streamedText = container.textContent
+
+    rerender(<Response final>{content}</Response>)
+
+    expect(container.textContent).toBe(streamedText)
+    expect(screen.getByRole('heading', { name: '雾港' })).toBeTruthy()
+    expect(container.textContent).toContain(
+      '我把右耳贴近门缝。蓝色火光仍在摇晃。👩🏽‍💻'
+    )
+    expect(
+      screen.getByRole('link', { name: '继续阅读' }).getAttribute('href')
+    ).toBe('https://example.com/story')
+    expect(container.querySelectorAll('[data-stream-fade]')).toHaveLength(0)
   })
 })
