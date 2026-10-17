@@ -453,7 +453,10 @@ For commercial licensing, please contact support@quantumnous.com
   )::before {
   content: '';
   position: absolute;
-  inset: 0;
+  /* Absolute children start at the padding box, so the 1px ring must be
+     pulled out by the border width to lie on the border itself; one pixel
+     inside it, the ring and the border read as two separate outlines. */
+  inset: -1px;
   z-index: 1;
   border-radius: inherit;
   padding: 1px;
@@ -507,8 +510,9 @@ For commercial licensing, please contact support@quantumnous.com
 }
 /* An opaque material keeps controls readable when backdrop blur is absent
    or the reader explicitly asks for less transparency. */
-@supports not
-((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
   .cinematic-home
     :is(
       header nav,
@@ -555,7 +559,9 @@ For commercial licensing, please contact support@quantumnous.com
 }
 .home-example {
   min-width: 0;
-  overflow: hidden;
+  /* Clip the scrolling code but leave the border ring visible. */
+  overflow: clip;
+  overflow-clip-margin: 1px;
 }
 .home-example [data-slot='tabs'] {
   gap: 0;
