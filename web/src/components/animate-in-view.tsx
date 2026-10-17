@@ -27,7 +27,7 @@ interface AnimateInViewProps {
   threshold?: number
   animation?: 'fade-up' | 'fade-in' | 'scale-in' | 'fade-left' | 'fade-right'
   once?: boolean
-  as?: 'div' | 'section' | 'li' | 'span'
+  as?: 'div' | 'section' | 'article' | 'li' | 'span'
 }
 
 export function AnimateInView(props: AnimateInViewProps) {

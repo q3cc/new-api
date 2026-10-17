@@ -1,0 +1,1034 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+.cinematic-home {
+  position: relative;
+  isolation: isolate;
+  background: #101922;
+}
+.cinematic-home > .home-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: #101922 center / cover no-repeat;
+  /* The random wallpaper arrives through the glass hook; fade it in once
+     the same picture is ready for both the backdrop and the shader. */
+  opacity: 0;
+  transition: opacity 0.8s ease-out;
+}
+.cinematic-home > .home-backdrop[data-wallpaper] {
+  opacity: 1;
+}
+.cinematic-home > div:last-child {
+  background: transparent;
+}
+.cinematic-home header {
+  --foreground: #f1f5f9;
+  --muted-foreground: #c8d3df;
+  --background: #121e2d;
+  --border: #627080;
+  --muted: #2a394a;
+  --primary: #d5e7fb;
+  --primary-foreground: #13253a;
+  color: var(--foreground);
+}
+.cinematic-home header nav {
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 18px;
+  padding-inline: 18px;
+  transition:
+    background 0.3s,
+    border-color 0.3s,
+    box-shadow 0.3s;
+}
+/* At the top of the page the navigation floats clear over the wallpaper, as
+   on the reference; the glass pill only appears once the page scrolls. */
+/* Doubled class outranks the shared glass material selector below. */
+.cinematic-home.cinematic-home header:not([data-scrolled]) nav {
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  /* Without a pill behind it the text needs lifting off bright wallpapers. */
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 50%),
+    0 0 10px rgb(0 0 0 / 36%);
+}
+.cinematic-home.cinematic-home header:not([data-scrolled]) nav::before,
+.cinematic-home.cinematic-home header:not([data-scrolled]) nav::after {
+  opacity: 0;
+}
+.home-hero {
+  --foreground: #f1f5f9;
+  --muted-foreground: #c8d3df;
+  position: relative;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: end;
+  color: #f1f5f9;
+  background: linear-gradient(
+    180deg,
+    rgb(6 13 23 / 18%),
+    rgb(6 13 23 / 14%) 35%,
+    rgb(6 13 23 / 60%)
+  );
+}
+/* The globe is drawn behind the copy and centred on it; dragging spins it. */
+.home-orbit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: pan-y;
+}
+.home-orbit[data-dragging] {
+  cursor: grabbing;
+}
+.home-hero-content {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+  /* Equal flexible rows above and below the title put the title itself on
+     the globe's centre whatever the eyebrow and lede measure. */
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: start;
+}
+.home-hero-content > .home-eyebrow {
+  align-self: end;
+}
+.home-eyebrow,
+.home-tagline,
+.home-section-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  line-height: 1.7;
+}
+.home-eyebrow {
+  color: #d6e5f3;
+}
+.home-signal {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a2d8ec;
+  box-shadow: 0 0 14px #8ac8e8;
+}
+.home-title {
+  position: relative;
+  margin: 22px auto 18px;
+  max-width: 100%;
+  font-size: clamp(44px, 5.4vw, 80px);
+  font-weight: 550;
+  line-height: 1.1;
+  letter-spacing: -0.065em;
+  overflow-wrap: anywhere;
+  /* Brushed silver: a fixed specular spot, a shaded opposite side, a
+     directional reflection band, and a static brushed-metal base. */
+  background-image:
+    radial-gradient(
+      ellipse 46% 62% at 50% 34%,
+      rgb(255 255 255 / 100%) 0%,
+      rgb(250 253 255 / 88%) 26%,
+      rgb(226 238 249 / 34%) 58%,
+      rgb(214 230 246 / 0%) 100%
+    ),
+    radial-gradient(
+      ellipse 62% 84% at 50% 66%,
+      rgb(9 18 30 / 62%) 0%,
+      rgb(9 18 30 / 28%) 46%,
+      rgb(9 18 30 / 0%) 78%
+    ),
+    linear-gradient(
+      145deg,
+      rgb(255 255 255 / 0%) 26%,
+      rgb(255 255 255 / 58%) 50%,
+      rgb(255 255 255 / 0%) 74%
+    ),
+    linear-gradient(
+      168deg,
+      #c9d4e0 0%,
+      #7e8ea1 11%,
+      #dfe8f1 22%,
+      #67788c 33%,
+      #b7c5d5 43%,
+      #556577 53%,
+      #d5e0eb 64%,
+      #748699 74%,
+      #e7eef6 85%,
+      #5f7085 100%
+    ),
+    linear-gradient(
+      104deg,
+      rgb(255 255 255 / 0%) 34%,
+      rgb(255 255 255 / 55%) 45%,
+      rgb(255 255 255 / 0%) 56%
+    );
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    220% 100%;
+  background-position:
+    center,
+    center,
+    center,
+    center,
+    130% center;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 -1px 0 rgb(255 255 255 / 34%))
+    drop-shadow(0 2px 1px rgb(6 13 23 / 40%))
+    drop-shadow(0 10px 30px rgb(0 0 0 / 26%));
+}
+.home-tagline {
+  color: #d1dfed;
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+}
+.home-description {
+  color: #dbe4ed;
+  max-width: 400px;
+  margin: 18px auto 0;
+  font-size: 16px;
+  line-height: 1.8;
+  text-wrap: balance;
+}
+.home-hero-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 30px;
+}
+.home-hero-actions [data-slot='button'] {
+  height: 48px;
+  padding-inline: 24px;
+  border-radius: 999px;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.home-hero-actions [data-slot='button']:hover {
+  transform: translateY(-2px);
+}
+.home-hero-actions [data-slot='button']:active {
+  transform: translateY(0) scale(0.98);
+}
+.home-primary {
+  --glass-fill: rgb(235 246 255 / 72%);
+  --glass-rim: rgb(255 255 255 / 92%);
+  --glass-glow: rgb(255 255 255 / 55%);
+  color: #14263c;
+}
+.home-secondary {
+  color: #f1f5f9;
+}
+.home-secondary:hover {
+  color: white;
+}
+.home-scroll {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  margin: 0 auto 28px;
+  font-size: 12px;
+  color: #c6d4e3;
+}
+.home-scroll:hover {
+  color: white;
+}
+.home-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: min(1200px, calc(100% - 48px));
+  margin: 0 auto 30px;
+  border-radius: 24px;
+}
+.home-metrics > div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 7px;
+  padding: 26px 16px;
+  text-align: center;
+}
+.home-metrics > div + div {
+  border-left: 1px solid rgb(255 255 255 / 12%);
+}
+.home-metrics dt {
+  font-size: 12px;
+  color: #c1cfde;
+}
+.home-metrics dd {
+  font-size: 28px;
+  letter-spacing: -0.04em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+/* The wallpaper stays fixed behind the whole page. Copy sits straight on it
+   under a light scrim, lifted by text shadow; detail panels are frosted. */
+.home-body {
+  --foreground: #f1f5f9;
+  --muted-foreground: #c8d3df;
+  --background: #121e2d;
+  --card: #121e2d;
+  --card-foreground: #f1f5f9;
+  --popover: #121e2d;
+  --popover-foreground: #f1f5f9;
+  --border: rgb(255 255 255 / 16%);
+  --input: rgb(255 255 255 / 16%);
+  --muted: #2a394a;
+  --accent: #2a394a;
+  --accent-foreground: #f1f5f9;
+  --primary: #d5e7fb;
+  --primary-foreground: #13253a;
+  --secondary: #243546;
+  --secondary-foreground: #f1f5f9;
+  --ring: #a2d8ec;
+  color-scheme: dark;
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    rgb(6 7 11 / 10%),
+    rgb(6 7 11 / 28%) 34%,
+    rgb(6 7 11 / 40%)
+  );
+  color: var(--foreground);
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 50%),
+    0 0 10px rgb(0 0 0 / 36%);
+}
+.home-section {
+  max-width: 1200px;
+  margin: auto;
+  padding: 100px 24px;
+  scroll-margin-top: 100px;
+}
+.home-section + .home-section {
+  border-top: 1px solid var(--border);
+}
+.home-connect,
+.home-benefits {
+  display: grid;
+  grid-template-columns: 1fr 1.55fr;
+  gap: 70px;
+  align-items: center;
+}
+.home-section-number {
+  color: var(--muted-foreground);
+  justify-content: flex-start;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.home-section h2 {
+  margin: 20px 0;
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 550;
+  line-height: 1.35;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+.home-section h2 span {
+  color: var(--muted-foreground);
+}
+.home-section-intro > [data-slot='button'] {
+  color: var(--foreground);
+}
+.home-section-intro > p {
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--muted-foreground);
+  max-width: 400px;
+}
+/* One optical material across navigation, controls and content. The rim and
+   specular reflection stay independent of the text; no SVG filter blurs it. */
+.cinematic-home {
+  --glass-fill: rgb(247 251 255 / 50%);
+  --glass-rim: rgb(255 255 255 / 90%);
+  --glass-glow: rgb(255 255 255 / 55%);
+  --glass-shadow: rgb(20 42 66 / 20%);
+  --glass-fallback: #eaf0f5;
+}
+.dark .cinematic-home,
+.cinematic-home header,
+.home-hero,
+.home-body {
+  --glass-fill: rgb(16 29 43 / 38%);
+  --glass-rim: rgb(232 246 255 / 62%);
+  --glass-glow: rgb(220 240 255 / 18%);
+  --glass-shadow: rgb(0 0 0 / 34%);
+  --glass-fallback: #233344;
+}
+.cinematic-home
+  :is(
+    header nav,
+    .home-glass,
+    .home-metrics,
+    .home-hero-actions [data-slot='button']
+  ) {
+  --shine-x: 50%;
+  --shine-y: 34%;
+  --shine-angle: 145deg;
+  position: relative;
+  isolation: isolate;
+  border: 1px solid color-mix(in srgb, var(--glass-rim) 50%, transparent);
+  background:
+    linear-gradient(
+      155deg,
+      rgb(255 255 255 / 16%),
+      transparent 42%,
+      rgb(255 255 255 / 6%)
+    ),
+    var(--glass-fill);
+  backdrop-filter: blur(14px) saturate(165%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 1px 0 0 rgb(255 255 255 / 12%),
+    inset 0 -1px 0 rgb(255 255 255 / 15%),
+    inset 0 0 18px rgb(255 255 255 / 7%),
+    0 8px 28px -12px var(--glass-shadow);
+}
+/* The footer is the last frosted band over the fixed wallpaper. */
+.cinematic-home footer {
+  --foreground: #f1f5f9;
+  --muted-foreground: #c8d3df;
+  --border: rgb(255 255 255 / 16%);
+  --muted: #2a394a;
+  color-scheme: dark;
+  color: var(--foreground);
+  background: rgb(8 14 24 / 62%);
+  backdrop-filter: blur(16px) saturate(120%);
+}
+/* Random wallpapers can be bright: detail panels below the hero carry a
+   deeper fill so code and copy stay readable over them. */
+.home-body .home-glass {
+  --glass-fill: rgb(10 18 30 / 64%);
+}
+/* Keep navigation legible over the light content area as well as the hero. */
+.cinematic-home header nav {
+  --glass-fill: rgb(16 29 43 / 78%);
+  --glass-glow: rgb(220 240 255 / 10%);
+}
+.home-glass {
+  border-radius: 22px;
+}
+/* A masked, direction-sensitive highlight makes the curved edge read as
+   thickness rather than a flat white border. It never intercepts input. */
+.cinematic-home
+  :is(
+    header nav,
+    .home-glass,
+    .home-metrics,
+    .home-hero-actions [data-slot='button']
+  )::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--shine-angle) at var(--shine-x) var(--shine-y),
+    transparent 0deg,
+    var(--glass-rim) 65deg,
+    transparent 145deg,
+    transparent 200deg,
+    var(--glass-rim) 265deg,
+    transparent 340deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.cinematic-home
+  :is(
+    header nav,
+    .home-glass,
+    .home-metrics,
+    .home-hero-actions [data-slot='button']
+  )::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      ellipse at var(--shine-x) var(--shine-y),
+      var(--glass-glow),
+      transparent 65%
+    ),
+    linear-gradient(
+      var(--shine-angle),
+      transparent 30%,
+      rgb(255 255 255 / 8%) 49%,
+      transparent 70%
+    );
+  pointer-events: none;
+}
+.home-glass:focus-within {
+  border-color: var(--glass-rim);
+}
+/* An opaque material keeps controls readable when backdrop blur is absent
+   or the reader explicitly asks for less transparency. */
+@supports not
+((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .cinematic-home
+    :is(
+      header nav,
+      .home-glass,
+      .home-metrics,
+      .home-hero-actions [data-slot='button']
+    ) {
+    background: var(--glass-fallback);
+  }
+  .home-primary {
+    --glass-fallback: #eaf2fa;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .cinematic-home
+    :is(
+      header nav,
+      .home-glass,
+      .home-metrics,
+      .home-hero-actions [data-slot='button']
+    ) {
+    background: var(--glass-fallback);
+    backdrop-filter: none;
+  }
+  .home-primary {
+    --glass-fallback: #eaf2fa;
+  }
+  .home-body {
+    background: #101922;
+  }
+}
+.home-endpoint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 28px 0 12px;
+  padding: 8px 10px 8px 16px;
+}
+.home-endpoint code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.home-example {
+  min-width: 0;
+  overflow: hidden;
+}
+.home-example [data-slot='tabs'] {
+  gap: 0;
+}
+.home-example .code-block-scroll {
+  min-height: 325px;
+}
+.home-example-note {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.home-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+.home-section-heading h2 {
+  margin-bottom: 0;
+}
+.home-model-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.home-model {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    transform 0.2s;
+}
+.home-model:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+.home-model-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted-foreground);
+}
+.home-model h3 {
+  font-size: 14px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.home-model p {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 5px;
+}
+.home-catalog-note {
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.home-feature-list {
+  display: grid;
+  gap: 12px;
+}
+/* Frosted panel like the reference's detail cards: dark scrim plus blur. */
+.home-feature-list article {
+  display: flex;
+  gap: 25px;
+  padding: 22px 24px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgb(9 10 16 / 42%), rgb(8 9 14 / 48%));
+  backdrop-filter: blur(12px) saturate(120%);
+}
+.home-feature-index {
+  font-family: var(--font-mono);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  padding-top: 3px;
+}
+.home-feature-list h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 550;
+}
+.home-feature-list p {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--muted-foreground);
+}
+.home-closing {
+  text-align: center;
+  padding-block: 100px 80px;
+}
+.home-closing .home-section-number {
+  justify-content: center;
+}
+.home-closing h2 {
+  margin-bottom: 32px;
+}
+.home-apps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 28px;
+  margin-top: 45px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.home-apps a:hover {
+  color: var(--foreground);
+}
+.home-apps-caption {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.cinematic-home a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 5px;
+}
+@media (max-width: 767px) {
+  .home-hero-content {
+    padding: 16px 24px;
+  }
+  .home-title {
+    font-size: clamp(40px, 12vw, 64px);
+    margin-block: 22px;
+  }
+  .home-tagline {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+  }
+  .home-eyebrow {
+    font-size: 10px;
+    gap: 8px;
+    letter-spacing: 0.05em;
+    flex-wrap: wrap;
+  }
+  .home-description {
+    font-size: 15px;
+  }
+  .home-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: 20px;
+  }
+  .home-metrics > div {
+    padding: 18px 12px;
+  }
+  .home-metrics > div:nth-child(3) {
+    border-left: 0;
+  }
+  .home-metrics > div:nth-child(n + 3) {
+    border-top: 1px solid rgb(225 238 255 / 15%);
+  }
+  .home-metrics dd {
+    font-size: 24px;
+  }
+  .home-section {
+    padding: 64px 24px;
+  }
+  .home-connect,
+  .home-benefits {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px;
+  }
+  .home-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .home-model-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .home-model {
+    padding: 18px;
+  }
+  .home-example .code-block-scroll {
+    min-height: 290px;
+  }
+  .cinematic-home > .home-backdrop {
+    background-position: 62% center;
+  }
+}
+/* ── Motion ── */
+@keyframes home-drift {
+  from {
+    transform: scale(1.04) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.12) translate3d(-1.5%, -1.5%, 0);
+  }
+}
+.cinematic-home > .home-backdrop {
+  animation: home-drift 36s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes home-aura {
+  from {
+    opacity: 0.45;
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  to {
+    opacity: 0.85;
+    transform: translate3d(2%, 2%, 0) scale(1.12);
+  }
+}
+.home-hero {
+  overflow: hidden;
+  /* Start the copy's free space below the fixed navigation so the title,
+     and with it the globe, settle between the navigation and the metrics. */
+  padding-top: 76px;
+}
+.home-hero::before {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    42% 38% at 50% 36%,
+    rgb(130 190 240 / 20%),
+    transparent 70%
+  );
+  animation: home-aura 16s ease-in-out infinite alternate;
+}
+.home-hero-content,
+.home-metrics {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 28px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes home-sheen {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+.home-eyebrow,
+.home-title,
+.home-hero-lede > *,
+.home-scroll {
+  animation: home-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) var(--home-delay, 0s)
+    both;
+}
+.home-eyebrow {
+  --home-delay: 0.08s;
+}
+.home-title {
+  --home-delay: 0.18s;
+}
+.home-hero-lede > :nth-child(1) {
+  --home-delay: 0.34s;
+}
+.home-hero-lede > :nth-child(2) {
+  --home-delay: 0.44s;
+}
+.home-hero-lede > :nth-child(3) {
+  --home-delay: 0.56s;
+}
+.home-scroll {
+  --home-delay: 0.68s;
+}
+.home-title {
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    220% 100%;
+  animation:
+    home-rise 0.95s cubic-bezier(0.16, 1, 0.3, 1) var(--home-delay, 0s) both,
+    home-glint 16s ease-in-out 1.2s infinite alternate;
+}
+@keyframes home-glint {
+  from {
+    background-position:
+      center,
+      center,
+      center,
+      center,
+      150% center;
+  }
+  to {
+    background-position:
+      center,
+      center,
+      center,
+      center,
+      -50% center;
+  }
+}
+
+@keyframes home-ping {
+  0% {
+    box-shadow:
+      0 0 14px #8ac8e8,
+      0 0 0 0 rgb(162 216 236 / 55%);
+  }
+  70%,
+  100% {
+    box-shadow:
+      0 0 14px #8ac8e8,
+      0 0 0 10px rgb(162 216 236 / 0%);
+  }
+}
+.home-signal {
+  animation: home-ping 2.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes home-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(4px);
+  }
+}
+.home-scroll svg {
+  animation: home-bob 2.2s ease-in-out 1.4s infinite;
+}
+
+@keyframes home-metric-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.home-metrics {
+  animation: home-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.82s both;
+}
+.home-metrics > div {
+  animation: home-metric-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.home-metrics > div:nth-child(1) {
+  animation-delay: 1s;
+}
+.home-metrics > div:nth-child(2) {
+  animation-delay: 1.08s;
+}
+.home-metrics > div:nth-child(3) {
+  animation-delay: 1.16s;
+}
+.home-metrics > div:nth-child(4) {
+  animation-delay: 1.24s;
+}
+
+.home-model-mark {
+  transition:
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.35s,
+    border-color 0.35s;
+}
+.home-model:hover .home-model-mark {
+  transform: rotate(-8deg) scale(1.06);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.home-feature-list article {
+  transition: border-color 0.3s;
+}
+.home-feature-list article:hover {
+  border-color: var(--primary);
+}
+.home-feature-list h3 svg {
+  transition: transform 0.3s ease;
+}
+.home-feature-list article:hover h3 svg {
+  transform: translateX(3px);
+}
+
+@keyframes home-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.home-example [data-slot='tabs-content'] {
+  animation: home-panel-in 0.35s ease-out both;
+}
+
+.home-closing h2 {
+  background: linear-gradient(
+    120deg,
+    var(--foreground) 20%,
+    var(--muted-foreground) 50%,
+    var(--foreground) 80%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  /* The body text shadow would show through the clipped, transparent fill. */
+  text-shadow: none;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 45%))
+    drop-shadow(0 0 12px rgb(0 0 0 / 30%));
+  animation: home-sheen 9s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cinematic-home *,
+  .cinematic-home *::before,
+  .cinematic-home *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* WebGL paints only the material. Native text, focus rings and click targets
+   remain above it; unsupported contexts retain the existing CSS material.
+   The canvas covers the border box so the shader's rim lands exactly on the
+   DOM border, which is kept only as a faint anti-aliasing hairline; the DOM
+   highlight, glow, fill and drop shadow are dropped. */
+.home-optical-glass {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+  visibility: hidden;
+}
+.cinematic-home [data-glass-renderer='webgl'][data-glass-renderer] {
+  background: transparent;
+  backdrop-filter: none;
+  border-color: rgb(255 255 255 / 14%);
+  box-shadow: none;
+  /* Near-clear glass needs the text lifted off the wallpaper. */
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 50%),
+    0 0 10px rgb(0 0 0 / 36%);
+}
+.cinematic-home [data-glass-renderer='webgl'] > .home-optical-glass {
+  visibility: visible;
+}
+.cinematic-home [data-glass-renderer='webgl'][data-glass-renderer]::before,
+.cinematic-home [data-glass-renderer='webgl'][data-glass-renderer]::after {
+  opacity: 0;
+}
+.cinematic-home .home-primary[data-glass-renderer='webgl'] {
+  color: #fff;
+  border-color: rgb(255 255 255 / 16%);
+}

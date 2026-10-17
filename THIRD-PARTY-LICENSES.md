@@ -144,8 +144,20 @@ Transitive dependencies should be audited before a final external release.
 | electron | development | npm       | `cross-env`                                           | `7.0.3`                              | MIT                                                |
 | electron | development | npm       | `electron`                                            | `39.8.5`                             | MIT                                                |
 | electron | development | npm       | `electron-builder`                                    | `26.7.0`                             | MIT                                                |
+| web      | production  | vendored  | `liquid-glass-webgl` (shader optical model)           | `0b90f9fc`                           | AGPL-3.0                                           |
 
 ## License Texts
+
+### AGPL-3.0
+
+GNU Affero General Public License v3.0
+
+The vendored `liquid-glass-webgl` optical model (rounded-rect SDF, lens
+refraction, chromatic dispersion and edge highlight in
+`web/src/features/home/lib/glass-shaders.ts`) is licensed under the GNU Affero
+General Public License v3.0, the same license as this project. The full license
+text ships with the frontend bundle at `web/public/licenses/liquid-glass-webgl.txt`
+and is also available in the repository `LICENSE` file.
 
 ### Apache-2.0
 
