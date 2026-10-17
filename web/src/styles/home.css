@@ -441,13 +441,14 @@ For commercial licensing, please contact support@quantumnous.com
 }
 /* The navigation keeps the same quiet rim whether the shader or CSS draws its
    glass: the directional highlight ring and inset bevels that suit the cards
-   read as a second outline on the pill when it crosses the hero content. */
-.cinematic-home.cinematic-home header nav {
+   read as a second outline on the pill when it crosses the hero content.
+   The attribute lifts the selector above the shared material rule. */
+.cinematic-home.cinematic-home header[data-scrolled] nav {
   border-color: rgb(255 255 255 / 14%);
   box-shadow: 0 8px 28px -12px var(--glass-shadow);
 }
-.cinematic-home.cinematic-home header nav::before,
-.cinematic-home.cinematic-home header nav::after {
+.cinematic-home.cinematic-home header[data-scrolled] nav::before,
+.cinematic-home.cinematic-home header[data-scrolled] nav::after {
   opacity: 0;
 }
 .home-glass {
