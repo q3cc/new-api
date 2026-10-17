@@ -474,6 +474,9 @@ it.each(['conversation', 'default', 'legacy'])(
       group: scope === 'legacy' ? 'default' : 'DSS',
       stream: false,
     })
+    expect(
+      screen.getByRole('button', { name: 'Export conversation' })
+    ).toBeDisabled()
     expect(records.get(1)?.document.compressionAttempt).toBe('requested')
     await act(async () => completions[0].finish('work'))
     await waitFor(() => expect(completions).toHaveLength(2))
@@ -589,6 +592,9 @@ it('opens an empty conversation when there is no server history', async () => {
   renderPlayground('')
   const input = await screen.findByPlaceholderText('Ask anything')
   expect(input).toHaveValue('')
+  expect(
+    screen.getByRole('button', { name: 'Export conversation' })
+  ).toBeDisabled()
   fireEvent.change(input, { target: { value: 'first draft' } })
   await waitFor(
     () =>
@@ -609,6 +615,9 @@ it('continues each request after switching and writes replies to their originati
   })
   fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
   await waitFor(() => expect(completions).toHaveLength(1))
+  expect(
+    screen.getByRole('button', { name: 'Export conversation' })
+  ).toBeDisabled()
   expect(records.get(1)?.document.messages[0].versions[0].content).toBe(
     'request A'
   )
@@ -645,6 +654,9 @@ it('does not start a charged request when saving the user message fails', async 
   fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
   await screen.findByRole('alert')
   expect(completions).toHaveLength(0)
+  expect(
+    screen.getByRole('button', { name: 'Export conversation' })
+  ).toBeEnabled()
   expect(screen.getByText('keep this prompt')).toBeInTheDocument()
   failSave = false
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }))

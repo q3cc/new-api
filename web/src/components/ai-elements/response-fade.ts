@@ -51,7 +51,8 @@ export type FadeRun = {
   state: FadeState
   now: number
   count: number
-  newIndex: number
+  /** Next reveal time, shared with earlier chunks so new text cannot overtake it */
+  nextAt: number
   /** Baseline mode: classify everything as already seen */
   suppress: boolean
   additions: Map<number, FadeEntry>
@@ -134,11 +135,16 @@ export function createFadeState(): FadeState {
 }
 
 export function beginRun(state: FadeState, suppress = false): FadeRun {
+  const now = performance.now()
+  let nextAt = now
+  for (const entry of state.active.values()) {
+    nextAt = Math.max(nextAt, entry.at + entry.delay + FADE_STAGGER_MS)
+  }
   return {
     state,
-    now: performance.now(),
+    now,
     count: 0,
-    newIndex: 0,
+    nextAt,
     suppress,
     additions: new Map(),
   }
@@ -199,9 +205,8 @@ export function classifyValue(run: FadeRun, value: string): FadeSegment[] {
     if (start >= state.prevCount) {
       const staged = run.additions.get(start)
       const delay =
-        staged?.delay ??
-        Math.min(run.newIndex * FADE_STAGGER_MS, FADE_STAGGER_MAX_MS)
-      run.newIndex += 1
+        staged?.delay ?? Math.min(run.nextAt - now, FADE_STAGGER_MAX_MS)
+      run.nextAt = now + delay + FADE_STAGGER_MS
       run.additions.set(start, staged ?? { at: now, delay })
       segments.push({ start, value: part, animated: true, delay })
       continue

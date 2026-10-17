@@ -92,6 +92,42 @@ describe('classifyValue', () => {
     expect(Math.max(...delays)).toBe(FADE_STAGGER_MAX_MS)
   })
 
+  test('reveals later chunks after earlier words instead of restarting their delay at zero', () => {
+    const state = createFadeState()
+    const first = beginRun(state)
+    const initial = classifyValue(first, 'one two three ')
+    endRun(first)
+
+    vi.spyOn(performance, 'now').mockReturnValue(1010)
+    const second = beginRun(state)
+    const appended = classifyValue(second, 'one two three four five')
+    endRun(second)
+
+    const earlierStart = first.now + initial[2].delay
+    const laterStart = second.now + appended[3].delay
+    expect(laterStart).toBe(earlierStart + FADE_STAGGER_MS)
+    expect(second.now + appended[4].delay).toBe(laterStart + FADE_STAGGER_MS)
+  })
+
+  test('keeps reveal order across rapid Chinese chunks without growing the latency cap', () => {
+    const state = createFadeState()
+    let previousStart = 1000
+    for (let count = 1; count <= 20; count++) {
+      vi.spyOn(performance, 'now').mockReturnValue(1000 + count * 5)
+      const run = beginRun(state)
+      const segments = classifyValue(run, '你好，'.repeat(count))
+      const added = segments.filter(
+        (segment) => segment.start >= state.prevCount
+      )
+      for (const segment of added) {
+        expect(run.now + segment.delay).toBeGreaterThanOrEqual(previousStart)
+        expect(segment.delay).toBeLessThanOrEqual(FADE_STAGGER_MAX_MS)
+        previousStart = run.now + segment.delay
+      }
+      endRun(run)
+    }
+  })
+
   test('replays identical delay while still inside the animation window', () => {
     const state = createFadeState()
     const first = beginRun(state)
@@ -159,9 +195,7 @@ describe('classifyValue', () => {
     classifyValue(first, 'done ')
     endRun(first)
 
-    vi.spyOn(performance, 'now').mockReturnValue(
-      1000 + FADE_DURATION_MS + 1
-    )
+    vi.spyOn(performance, 'now').mockReturnValue(1000 + FADE_DURATION_MS + 1)
     const second = beginRun(state)
     const segments = classifyValue(second, 'done next')
     endRun(second)

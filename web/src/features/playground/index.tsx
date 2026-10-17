@@ -50,6 +50,7 @@ import { getServerErrorMessage } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { ConversationDialogs } from './components/conversation-dialogs'
+import { ConversationExportMenu } from './components/conversation-export-menu'
 import { ConversationList } from './components/conversation-list'
 import { ConversationSession } from './components/conversation-session'
 import {
@@ -288,6 +289,10 @@ function PlaygroundWorkspace(props: { owner: number }) {
           )}
           {current && (
             <>
+              <ConversationExportMenu
+                conversation={current.row}
+                busy={!!generatingReply || !!current.compressionProgress}
+              />
               <Tooltip>
                 <TooltipTrigger
                   render={

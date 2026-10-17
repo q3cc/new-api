@@ -165,8 +165,9 @@ export function getMarkdownContent(children: ReactNode): string {
 }
 
 export function getNodeKey(node: ParsedNode, index: number): string {
-  const raw = typeof node.raw === 'string' ? node.raw : ''
-  return `${node.type}-${index}-${raw.slice(0, 24)}`
+  // Streamed text grows on each delta. Including it in the key remounts the
+  // entire subtree and restarts fades on words that are already visible.
+  return `${node.type}-${index}`
 }
 
 export function parseResponseContent(
