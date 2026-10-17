@@ -92,11 +92,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			service.RecordRequestPolicyTermination(c, newAPIError)
 			logger.LogError(c, common.LogText("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			upstreamURLs := common.UpstreamAddresses(c)
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
-				helper.WssError(c, ws, newAPIError.ToOpenAIError())
+				helper.WssError(c, ws, newAPIError.ToOpenAIError(upstreamURLs...))
 			default:
-				writeRelayError(c, relayFormat, newAPIError)
+				writeRelayError(c, relayFormat, newAPIError, upstreamURLs...)
 			}
 		}
 	}()
@@ -216,10 +217,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 // A started SSE response must stay SSE, including its terminal error. Before
 // any bytes are sent, return an ordinary non-2xx JSON error instead.
-func writeRelayError(c *gin.Context, relayFormat types.RelayFormat, apiErr *types.NewAPIError) {
-	payload := gin.H{"error": apiErr.ToOpenAIError()}
+func writeRelayError(c *gin.Context, relayFormat types.RelayFormat, apiErr *types.NewAPIError, upstreamURLs ...string) {
+	payload := gin.H{"error": apiErr.ToOpenAIError(upstreamURLs...)}
 	if relayFormat == types.RelayFormatClaude {
-		payload = gin.H{"type": "error", "error": apiErr.ToClaudeError()}
+		payload = gin.H{"type": "error", "error": apiErr.ToClaudeError(upstreamURLs...)}
 	}
 	if c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
 		if relayFormat == types.RelayFormatClaude {
