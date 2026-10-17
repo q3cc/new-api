@@ -439,6 +439,17 @@ For commercial licensing, please contact support@quantumnous.com
   --glass-fill: rgb(16 29 43 / 78%);
   --glass-glow: rgb(220 240 255 / 10%);
 }
+/* The navigation keeps the same quiet rim whether the shader or CSS draws its
+   glass: the directional highlight ring and inset bevels that suit the cards
+   read as a second outline on the pill when it crosses the hero content. */
+.cinematic-home.cinematic-home header nav {
+  border-color: rgb(255 255 255 / 14%);
+  box-shadow: 0 8px 28px -12px var(--glass-shadow);
+}
+.cinematic-home.cinematic-home header nav::before,
+.cinematic-home.cinematic-home header nav::after {
+  opacity: 0;
+}
 .home-glass {
   border-radius: 22px;
 }
@@ -453,10 +464,7 @@ For commercial licensing, please contact support@quantumnous.com
   )::before {
   content: '';
   position: absolute;
-  /* Absolute children start at the padding box, so the 1px ring must be
-     pulled out by the border width to lie on the border itself; one pixel
-     inside it, the ring and the border read as two separate outlines. */
-  inset: -1px;
+  inset: 0;
   z-index: 1;
   border-radius: inherit;
   padding: 1px;
@@ -559,9 +567,7 @@ For commercial licensing, please contact support@quantumnous.com
 }
 .home-example {
   min-width: 0;
-  /* Clip the scrolling code but leave the border ring visible. */
-  overflow: clip;
-  overflow-clip-margin: 1px;
+  overflow: hidden;
 }
 .home-example [data-slot='tabs'] {
   gap: 0;
