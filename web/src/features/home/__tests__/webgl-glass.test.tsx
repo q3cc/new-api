@@ -348,18 +348,29 @@ test('reduced motion stops continuous rendering and reduced transparency restore
   expect(container.querySelector('[data-glass-renderer=webgl]')).not.toBeNull()
 })
 
-test('scrolling beyond the hero pauses WebGL and restores DOM-backed blur on navigation', () => {
+test('scrolling beyond the hero pauses the hero surfaces while the navigation stays shader-drawn', () => {
   const { container } = render(<Fixture />)
   load()
   heroTop = -900
   fireEvent.scroll(window)
   step()
-  expect(container.querySelector('[data-glass-renderer]')).toBeNull()
-  expect(frames.size).toBe(0)
+  expect(container.querySelector('nav')).toHaveAttribute(
+    'data-glass-renderer',
+    'webgl'
+  )
+  expect(container.querySelector('.home-metrics')).not.toHaveAttribute(
+    'data-glass-renderer'
+  )
+  expect(
+    container.querySelectorAll('[data-slot=button][data-glass-renderer]')
+  ).toHaveLength(0)
+  expect(frames.size).toBe(1)
   heroTop = 0
   fireEvent.scroll(window)
   step()
-  expect(container.querySelector('[data-glass-renderer=webgl]')).not.toBeNull()
+  expect(
+    container.querySelectorAll('[data-glass-renderer=webgl]')
+  ).toHaveLength(4)
 })
 
 test('a hidden tab suspends rendering and resumes when visible', () => {
@@ -406,14 +417,15 @@ test('the navigation stays clear at the top of the page and turns to glass once 
   )
 })
 
-test('navigation uses DOM blur when scrolling text behind it instead of painting wallpaper over the text', () => {
+test('the navigation keeps its shader glass while hero text scrolls behind it', () => {
   const { container } = render(<Fixture />)
   load()
   textTop = 20
   fireEvent.scroll(window)
   step()
-  expect(container.querySelector('nav')).not.toHaveAttribute(
-    'data-glass-renderer'
+  expect(container.querySelector('nav')).toHaveAttribute(
+    'data-glass-renderer',
+    'webgl'
   )
   expect(container.querySelector('.home-metrics')).toHaveAttribute(
     'data-glass-renderer',

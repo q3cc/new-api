@@ -72,11 +72,6 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
       frame = 0
       if (disposed || document.hidden) return
       const heroRect = hero.getBoundingClientRect()
-      const contentRects = [
-        ...hero.querySelectorAll<HTMLElement>(
-          '.home-hero-content > *, .home-metrics'
-        ),
-      ].map((element) => element.getBoundingClientRect())
       const imageRect = coverImageRect(
         { width: image.naturalWidth, height: image.naturalHeight },
         backdrop.getBoundingClientRect(),
@@ -87,29 +82,20 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
         const rect = surface.canvas.getBoundingClientRect()
         const header = surface.element.closest('header')
         // The navigation sits clear on the wallpaper at the top of the page
-        // and only turns to glass once the page scrolls.
+        // and only turns to glass once the page scrolls. From then on it is
+        // shader-drawn wherever it is: the wallpaper is fixed behind the whole
+        // page, so the glass has something to refract at every scroll
+        // position. Hero surfaces stop once they scroll out of the hero.
         const atTop = !!header && !header.hasAttribute('data-scrolled')
-        // A shader cannot sample DOM text. Switch the navigation back to native
-        // backdrop-filter once it crosses from wallpaper into the content area.
-        const coversContent =
-          !!header &&
-          contentRects.some(
-            (content) =>
-              rect.left < content.right &&
-              rect.right > content.left &&
-              rect.top < content.bottom &&
-              rect.bottom > content.top
-          )
         const active =
           !!surface.renderer &&
           !atTop &&
-          !coversContent &&
           !transparency.matches &&
           rect.width > 0 &&
           rect.height > 0 &&
           rect.bottom > 0 &&
           rect.top < window.innerHeight &&
-          rect.bottom <= heroRect.bottom
+          (!!header || rect.bottom <= heroRect.bottom)
         if (!active) {
           delete surface.element.dataset.glassRenderer
           continue

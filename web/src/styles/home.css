@@ -434,6 +434,17 @@ For commercial licensing, please contact support@quantumnous.com
 .home-body .home-glass {
   --glass-fill: rgb(10 18 30 / 64%);
 }
+/* Detail panels below the hero take the navigation's quiet rim too: on the
+   fixed wallpaper the bevel ring and inset highlights read as an outline.
+   The doubled class outranks the shared material rule. */
+.cinematic-home .home-body .home-glass.home-glass {
+  border-color: rgb(255 255 255 / 14%);
+  box-shadow: 0 8px 28px -12px var(--glass-shadow);
+}
+.cinematic-home .home-body .home-glass.home-glass::before,
+.cinematic-home .home-body .home-glass.home-glass::after {
+  opacity: 0;
+}
 /* Keep navigation legible over the light content area as well as the hero. */
 .cinematic-home header nav {
   --glass-fill: rgb(16 29 43 / 78%);
