@@ -371,10 +371,11 @@ export function CinematicHome(props: { isAuthenticated: boolean }) {
                   {t('Your next idea starts here.')}
                 </span>
                 <h2 id='start-title'>{t('Make something extraordinary.')}</h2>
-                <div className='flex flex-wrap justify-center gap-3'>
+                <div className='home-hero-actions'>
                   <Button
                     role='link'
                     size='lg'
+                    className='home-primary'
                     render={
                       <Link
                         to={props.isAuthenticated ? '/playground' : '/sign-up'}
@@ -390,6 +391,7 @@ export function CinematicHome(props: { isAuthenticated: boolean }) {
                     role='link'
                     size='lg'
                     variant='outline'
+                    className='home-secondary'
                     render={<Link to='/pricing' />}
                   >
                     {t('View Pricing')}

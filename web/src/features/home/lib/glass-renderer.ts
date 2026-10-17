@@ -115,6 +115,8 @@ export interface GlassFrame {
   imageRect: GlassRect
   heroTop: number
   heroHeight: number
+  /** How much of the hero's dark scrim the shader reproduces itself (0–1). */
+  scrim: number
   radius: number
   /** Direction the rim light comes from, radians, y down. */
   lightAngle: number
@@ -227,7 +229,12 @@ export function createGlassRenderer(
           frame.imageRect.width,
           frame.imageRect.height
         )
-        gl.uniform2f(uniforms.uHero, frame.heroTop, frame.heroHeight)
+        gl.uniform3f(
+          uniforms.uHero,
+          frame.heroTop,
+          frame.heroHeight,
+          frame.scrim
+        )
         gl.uniform1f(uniforms.uDpr, dpr)
         gl.uniform1f(uniforms.uRadius, frame.radius)
         // Near-clear glass: the reference softens the wallpaper by ~2 device px.

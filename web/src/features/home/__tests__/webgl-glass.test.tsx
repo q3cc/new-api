@@ -66,6 +66,7 @@ function glBoundary() {
     uniform1i: vi.fn(),
     uniform1f: vi.fn(),
     uniform2f: vi.fn(),
+    uniform3f: vi.fn(),
     uniform4f: vi.fn(),
     viewport: vi.fn(),
     clear: vi.fn(),
@@ -249,8 +250,20 @@ test('loaded wallpaper enables decorative WebGL without replacing the native lin
   expect(canvases).toHaveLength(4)
   canvases.forEach((canvas) => {
     expect(canvas).toHaveAttribute('aria-hidden', 'true')
-    expect(canvas.parentElement).toHaveAttribute('data-glass-renderer', 'webgl')
   })
+  // The navigation's canvas lies under the page content as a sibling of the
+  // backdrop; the other canvases sit inside their own surface.
+  const navCanvas = container.querySelector<HTMLCanvasElement>(
+    '.home-optical-glass-under'
+  )
+  expect(navCanvas?.style.visibility).toBe('visible')
+  expect(container.querySelector('nav')).toHaveAttribute(
+    'data-glass-renderer',
+    'webgl'
+  )
+  expect(
+    container.querySelectorAll('[data-glass-renderer=webgl] > canvas')
+  ).toHaveLength(3)
   expect(frames.size).toBe(1)
   unmount()
   expect(frames.size).toBe(0)
@@ -327,13 +340,14 @@ test('a shader compile failure releases allocations and retains CSS', () => {
 test('context loss restores CSS immediately and context restoration resumes WebGL', () => {
   const { container } = render(<Fixture />)
   load()
-  const canvas = container.querySelector('canvas')
-  if (!canvas) throw new Error('Missing glass canvas')
+  const canvas = container.querySelector('.home-optical-glass-under')
+  const nav = container.querySelector('nav')
+  if (!canvas || !nav) throw new Error('Missing glass canvas')
   fireEvent(canvas, new Event('webglcontextlost', { cancelable: true }))
-  expect(canvas.parentElement).not.toHaveAttribute('data-glass-renderer')
+  expect(nav).not.toHaveAttribute('data-glass-renderer')
   fireEvent(canvas, new Event('webglcontextrestored'))
   step()
-  expect(canvas.parentElement).toHaveAttribute('data-glass-renderer', 'webgl')
+  expect(nav).toHaveAttribute('data-glass-renderer', 'webgl')
 })
 
 test('reduced motion stops continuous rendering and reduced transparency restores CSS', () => {
@@ -472,4 +486,23 @@ test('a failed wallpaper request falls back to the bundled picture and a non-ima
   await act(async () => {})
   expect(image.src).toMatch(/home-observatory/)
   expect(URL.createObjectURL).not.toHaveBeenCalled()
+})
+
+test('the frosted tier keeps the wallpaper but opens no WebGL surface', () => {
+  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36'
+  )
+  const { container } = render(<Fixture />)
+  load()
+  expect(container.firstElementChild).toHaveAttribute(
+    'data-glass-tier',
+    'frosted'
+  )
+  expect(container.querySelector('.home-backdrop')).toHaveAttribute(
+    'data-wallpaper',
+    'ready'
+  )
+  expect(container.querySelector('canvas')).toBeNull()
+  expect(container.querySelector('[data-glass-renderer]')).toBeNull()
+  expect(frames.size).toBe(0)
 })

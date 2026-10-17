@@ -34,7 +34,7 @@ For commercial licensing, please contact support@quantumnous.com
 .cinematic-home > .home-backdrop[data-wallpaper] {
   opacity: 1;
 }
-.cinematic-home > div:last-child {
+.cinematic-home > div:last-of-type {
   background: transparent;
 }
 .cinematic-home header {
@@ -546,6 +546,31 @@ For commercial licensing, please contact support@quantumnous.com
     --glass-fallback: #eaf2fa;
   }
 }
+/* Frosted tier (Android, Huawei/Honor): only the navigation keeps a backdrop
+   blur; every other glass panel becomes a plain translucent fill, which is
+   all those devices can keep smooth. */
+.cinematic-home[data-glass-tier='frosted']
+  :is(.home-glass, .home-metrics, .home-hero-actions [data-slot='button']) {
+  background: var(--glass-fill);
+  backdrop-filter: none;
+}
+.cinematic-home[data-glass-tier='frosted']
+  :is(
+    .home-glass,
+    .home-metrics,
+    .home-hero-actions [data-slot='button']
+  )::before,
+.cinematic-home[data-glass-tier='frosted']
+  :is(
+    .home-glass,
+    .home-metrics,
+    .home-hero-actions [data-slot='button']
+  )::after {
+  display: none;
+}
+.cinematic-home[data-glass-tier='frosted'] .home-primary {
+  background: #eaf2fa;
+}
 @media (prefers-reduced-transparency: reduce) {
   .cinematic-home
     :is(
@@ -1034,6 +1059,24 @@ For commercial licensing, please contact support@quantumnous.com
   z-index: -1;
   pointer-events: none;
   visibility: hidden;
+}
+/* The navigation's canvas is a fixed layer under the page content, sized to
+   the pill each frame by the hook; the pill itself keeps a light backdrop
+   blur so text and panels scrolling beneath it soften over the refraction. */
+.cinematic-home > .home-optical-glass-under {
+  position: fixed;
+  inset: auto;
+  z-index: -1;
+}
+.cinematic-home header[data-scrolled] nav[data-glass-renderer='webgl'] {
+  background: rgb(16 29 43 / 24%);
+  backdrop-filter: blur(8px) saturate(140%);
+}
+/* Controls inside the glass pill stay solid: no inherited text shadow and
+   no see-through border ring. */
+.cinematic-home header nav [data-slot='button'] {
+  text-shadow: none;
+  background-clip: border-box;
 }
 .cinematic-home [data-glass-renderer='webgl'][data-glass-renderer] {
   background: transparent;

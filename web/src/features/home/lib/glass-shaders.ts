@@ -21,7 +21,7 @@ uniform sampler2D uWallpaper;
 uniform vec2 uSize;
 uniform vec2 uOrigin;
 uniform vec4 uImageRect;
-uniform vec2 uHero;
+uniform vec3 uHero;      // hero top, hero height, scrim strength
 uniform float uDpr;
 uniform float uRadius;
 uniform float uBlur;
@@ -69,7 +69,7 @@ vec3 backdrop(vec2 p) {
   float y = clamp((p.y - uHero.x) / uHero.y, 0.0, 1.0);
   float shade = y < 0.35 ? mix(0.18, 0.14, y / 0.35)
     : mix(0.14, 0.60, (y - 0.35) / 0.65);
-  return mix(color, vec3(6.0, 13.0, 23.0) / 255.0, shade);
+  return mix(color, vec3(6.0, 13.0, 23.0) / 255.0, shade * uHero.z);
 }
 vec3 frosted(vec2 p) {
   // Fixed 3x3 Gaussian kernel: bounded work on WebGL 1 mobile GPUs.

@@ -41,6 +41,9 @@
         var link = document.createElement('link')
         link.rel = 'preload'
         link.as = 'fetch'
+        // A fetch() runs in CORS mode; the preload must too, or the browser
+        // treats them as different requests and downloads the picture twice.
+        link.crossOrigin = 'anonymous'
         link.href = '/api/home/wallpaper'
         document.head.appendChild(link)
       })()
