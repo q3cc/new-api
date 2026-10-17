@@ -100,6 +100,37 @@ func TestTrialCreditAccounting(t *testing.T) {
 			require.NoError(t, db.First(&preserved, user.Id).Error)
 			assert.Equal(t, 10000, preserved.Quota)
 			require.NoError(t, UpdateTrialCreditConfig(TrialCreditConfig{Enabled: true, Group: "default", Affiliate: true, AffiliateDays: 7}))
+			t.Run("upgrade outstanding trial reservation", func(t *testing.T) {
+				u := User{Username: "upgrade-reserve", AffCode: "upgrade-reserve", Quota: 500}
+				require.NoError(t, db.Create(&u).Error)
+				require.NoError(t, GrantTrialCredit(u.Id, 100, 0, "upgrade-reserve", "admin", 1))
+				require.NoError(t, ReserveTrialCredit("upgrade-reserve", u.Id, "default", 80))
+				// Recreate the preceding version's reservation schema with an in-flight request.
+				require.NoError(t, db.Migrator().DropColumn(&TrialCreditReservation{}, "wallet_reserved"))
+				if engine.name == "postgres" {
+					// A deployed upgrade starts with fresh connections, not cached
+					// SELECT * plans from before the schema change.
+					sqlDB.SetMaxIdleConns(0)
+					sqlDB.SetMaxIdleConns(2)
+				}
+
+				require.NoError(t, MigrateTrialCredit())
+				require.NoError(t, MigrateTrialCredit())
+				var r TrialCreditReservation
+				require.NoError(t, db.Where("request_id = ?", "upgrade-reserve").First(&r).Error)
+				assert.Zero(t, r.WalletReserved)
+				assert.Equal(t, 80, r.Reserved)
+				duplicate := r
+				duplicate.Id = 0
+				require.Error(t, db.Create(&duplicate).Error, "request identity remains unique")
+				settled, err := FinalizeTrialCredit(r.RequestId, 50, false)
+				require.NoError(t, err)
+				assert.Equal(t, 50, settled.TrialCharged)
+				assert.Zero(t, settled.WalletCharged)
+				balance, err := GetTrialCreditBalance(u.Id)
+				require.NoError(t, err)
+				assert.Equal(t, 50, balance)
+			})
 			// QuotaPerUnit=1000, USDExchangeRate=1 and the default USD display put
 			// the default 0.5 waiver at 500 quota units.
 			for _, tc := range []struct {
@@ -266,6 +297,56 @@ func TestTrialCreditAccounting(t *testing.T) {
 				assert.Equal(t, 1000, r.WalletCharged)
 				assert.Equal(t, 200, r.Waived)
 			})
+			t.Run("combined trial and wallet reserve", func(t *testing.T) {
+				for _, tc := range []struct {
+					name                                     string
+					actual, trial, wallet, waived, remaining int
+					refund                                   bool
+				}{
+					{"below trial", 80, 80, 0, 0, 1000, false},
+					{"split", 250, 100, 150, 0, 850, false},
+					{"waived remainder", 1200, 100, 1000, 100, 0, false},
+					{"threshold debt", 1600, 100, 1500, 0, -500, false},
+					{"refund", 0, 0, 0, 0, 1000, true},
+					{"other wallet debt", 250, 100, 150, 0, -150, false},
+				} {
+					t.Run(tc.name, func(t *testing.T) {
+						key := "combined-" + tc.name
+						u := User{Username: key, AffCode: key, Quota: 1000}
+						require.NoError(t, db.Create(&u).Error)
+						require.NoError(t, GrantTrialCredit(u.Id, 100, 0, key, "admin", 1))
+						require.NoError(t, ReserveTrialCredit(key, u.Id, "default", 300))
+						require.NoError(t, ReserveTrialCredit(key, u.Id, "default", 300))
+						wallet, err := GetUserQuota(u.Id, true)
+						require.NoError(t, err)
+						assert.Equal(t, 800, wallet, "reserve the wallet remainder exactly once")
+						require.NoError(t, ReserveTrialCredit(key, u.Id, "default", 500))
+						require.NoError(t, ReleaseTrialCreditReserve(key, 300))
+						require.ErrorIs(t, ReserveTrialCredit(key, u.Id, "default", 1101), ErrTrialInsufficient)
+						wallet, err = GetUserQuota(u.Id, true)
+						require.NoError(t, err)
+						assert.Equal(t, 800, wallet, "failed supplement rolls back atomically")
+						if tc.name == "other wallet debt" {
+							require.NoError(t, db.Model(&u).UpdateColumn("quota", -200).Error)
+						}
+						r, err := FinalizeTrialCredit(key, tc.actual, tc.refund)
+						require.NoError(t, err)
+						assert.True(t, r.Applied)
+						assert.Equal(t, tc.trial, r.TrialCharged)
+						assert.Equal(t, tc.wallet, r.WalletCharged)
+						assert.Equal(t, tc.waived, r.Waived)
+						r, err = FinalizeTrialCredit(key, tc.actual, tc.refund)
+						require.NoError(t, err)
+						assert.False(t, r.Applied)
+						wallet, err = GetUserQuota(u.Id, true)
+						require.NoError(t, err)
+						assert.Equal(t, tc.remaining, wallet)
+						balance, err := GetTrialCreditBalance(u.Id)
+						require.NoError(t, err)
+						assert.Equal(t, 100-tc.trial, balance)
+					})
+				}
+			})
 			t.Run("expiry and refund", func(t *testing.T) {
 				require.NoError(t, GrantTrialCredit(user.Id, 100, 0, "permanent", "admin", 1))
 				require.NoError(t, GrantTrialCredit(user.Id, 60, time.Now().Unix()+100, "expiring", "admin", 1))
@@ -318,7 +399,7 @@ func TestTrialCreditAccounting(t *testing.T) {
 				u := User{Username: "trial-freeze", Quota: 1000, AffCode: "trial-freeze"}
 				require.NoError(t, db.Create(&u).Error)
 				require.NoError(t, GrantTrialCredit(u.Id, 2000, 0, "freeze", "admin", 1))
-				require.ErrorIs(t, ReserveTrialCredit("failed-reserve", u.Id, "default", 2001), ErrTrialInsufficient)
+				require.ErrorIs(t, ReserveTrialCredit("failed-reserve", u.Id, "default", 3001), ErrTrialInsufficient)
 				balance, err := GetTrialCreditBalance(u.Id)
 				require.NoError(t, err)
 				assert.Equal(t, 2000, balance)
@@ -346,6 +427,20 @@ func TestTrialCreditAccounting(t *testing.T) {
 				require.NoError(t, populateUserCache(u))
 				require.NoError(t, cacheDecrUserQuota(u.Id, 950))
 				require.NoError(t, GrantTrialCredit(u.Id, 2000, 0, "cache", "admin", 1))
+				require.NoError(t, ReserveTrialCredit("cache-refund", u.Id, "default", 2300))
+				cached, err := getUserQuotaCache(u.Id)
+				require.NoError(t, err)
+				assert.Equal(t, 700, cached)
+				require.NoError(t, ReleaseTrialCreditReserve("cache-refund", 2100))
+				cached, err = getUserQuotaCache(u.Id)
+				require.NoError(t, err)
+				assert.Equal(t, 900, cached)
+				_, err = FinalizeTrialCredit("cache-refund", 0, true)
+				require.NoError(t, err)
+				cached, err = getUserQuotaCache(u.Id)
+				require.NoError(t, err)
+				assert.Equal(t, 1000, cached)
+				require.NoError(t, cacheDecrUserQuota(u.Id, 950))
 				require.NoError(t, ReserveTrialCredit("cache", u.Id, "default", 2000))
 				// The database balance is authoritative; the charge may exceed the
 				// cached remainder, and the stale cache must be dropped so the next
@@ -354,7 +449,7 @@ func TestTrialCreditAccounting(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, 1000, r.WalletCharged)
 				assert.Equal(t, 200, r.Waived)
-				cached, err := getUserQuotaCache(u.Id)
+				cached, err = getUserQuotaCache(u.Id)
 				require.NoError(t, err)
 				assert.Zero(t, cached)
 			})
@@ -467,7 +562,7 @@ func TestTrialCreditAccounting(t *testing.T) {
 				require.Error(t, GrantTrialCredit(u.Id, common.MaxWalletQuota, 0, "multi-overflow", "admin", 1, 2))
 				assert.Equal(t, 100, balances[0].Balance)
 				assert.Equal(t, 300, balances[1].Balance)
-				require.ErrorIs(t, ReserveTrialCredit("no-cross-kind", u.Id, "default", 101), ErrTrialInsufficient)
+				require.ErrorIs(t, ReserveTrialCredit("no-cross-kind", u.Id, "default", 1101), ErrTrialInsufficient)
 				require.NoError(t, ReserveTrialCredit("consume-ds", u.Id, "default", 80))
 				// The default pool holds only 100, so 50 of the 150 is charged to the
 				// wallet exactly like ordinary balance.
@@ -487,7 +582,8 @@ func TestTrialCreditAccounting(t *testing.T) {
 				assert.Equal(t, 300, balance)
 				require.NoError(t, db.First(&u, u.Id).Error)
 				assert.Equal(t, 950, u.Quota)
-				// Concurrent requests use only the selected pool; finalization remains idempotent.
+				// Concurrent requests cannot double-spend either the selected pool or wallet.
+				require.NoError(t, db.Model(&u).UpdateColumn("quota", 50).Error)
 				results := make(chan error, 2)
 				var wg sync.WaitGroup
 				for i := range 2 {

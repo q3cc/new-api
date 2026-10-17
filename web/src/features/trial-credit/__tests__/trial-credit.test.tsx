@@ -58,7 +58,7 @@ describe('trial credit', () => {
     const view = mount(<TrialBalanceCard />)
     await waitFor(() => expect(view.container.textContent).toBe(''))
   })
-  test('shows independent balance and permanent expiry', async () => {
+  test('shows balance and expiry without charge details or record-only pages', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({
       data: {
         success: true,
@@ -79,7 +79,18 @@ describe('trial credit', () => {
               expires_at: 0,
             },
           ],
-          records: [],
+          records_total: 21,
+          records: [
+            {
+              id: 1,
+              group: 'charge-detail-only-group',
+              actual: 500000,
+              trial_charged: 250000,
+              wallet_charged: 200000,
+              waived: 50000,
+              status: 'settled',
+            },
+          ],
         },
       },
     })
@@ -87,6 +98,15 @@ describe('trial credit', () => {
     expect(await screen.findByText('Never expires')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
     expect(screen.getByText('1 · Trial credit · trial')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '50'
+    )
+    expect(
+      screen.queryByText('charge-detail-only-group')
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Wallet:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Waived:/)).not.toBeInTheDocument()
   })
   test('server failure displays retry and retry restores balance', async () => {
     vi.spyOn(api, 'get')

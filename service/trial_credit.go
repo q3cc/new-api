@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -127,10 +128,14 @@ func RequestAvailableQuota(info *relaycommon.RelayInfo) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if balance > 0 {
-		return balance, nil
+	wallet, err := model.GetUserQuota(info.UserId, false)
+	if err != nil {
+		return 0, err
 	}
-	return model.GetUserQuota(info.UserId, false)
+	if balance > 0 {
+		return min(common.MaxWalletQuota, balance+max(wallet, 0)), nil
+	}
+	return wallet, nil
 }
 func PreConsumeTrialIfNeeded(c *gin.Context, info *relaycommon.RelayInfo, quota int) error {
 	if info.Billing != nil {

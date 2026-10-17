@@ -25,6 +25,8 @@ type PricingPluginVariant struct {
 }
 
 type Pricing struct {
+	ContextLength          int                                  `json:"context_length,omitempty"`
+	MaxOutputTokens        int                                  `json:"max_output_tokens,omitempty"`
 	BillingPluginVariants  []PricingPluginVariant               `json:"billing_plugin_variants,omitempty"`
 	ModelName              string                               `json:"model_name"`
 	Description            string                               `json:"description,omitempty"`
@@ -331,6 +333,8 @@ func updatePricing() {
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],
 		}
+
+		pricing.ContextLength, pricing.MaxOutputTokens = defaultModelTokenLimits(model)
 
 		// 补充模型元数据（描述、标签、供应商、状态）
 		if meta, ok := metaMap[model]; ok {
