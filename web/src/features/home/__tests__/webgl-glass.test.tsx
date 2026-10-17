@@ -521,7 +521,7 @@ test('the frosted tier keeps the wallpaper but opens no WebGL surface', () => {
   expect(frames.size).toBe(0)
 })
 
-test('while scrolling a surface carries its wallpaper sample along, then it settles back', () => {
+test('a scrolling surface samples the wallpaper where the compositor will show it next frame', () => {
   render(<Fixture />)
   load()
   // The wallpaper rect uniform: 1600x900 covering the 1200x800 backdrop.
@@ -532,16 +532,16 @@ test('while scrolling a surface carries its wallpaper sample along, then it sett
   const rest = wallpaperRects().at(-1)
   if (!rest) throw new Error('No wallpaper rect drawn')
   gl.uniform4f.mockClear()
-  // Scroll the metrics card up by 100px; it is the last surface drawn.
+  // Scroll the metrics card up by 100px; it is the last surface drawn. The
+  // sample is taken another 100px up, where the card will be next frame.
   metricsTop = 500
   fireEvent.scroll(window)
   step()
   const scrolling = wallpaperRects().at(-1)
-  expect(scrolling?.y).toBeCloseTo(rest.y - 100)
+  expect(scrolling?.y).toBeCloseTo(rest.y + 100)
   expect(scrolling?.x).toBe(rest.x)
-  // Once the scroll has settled the sample eases back to the true position.
-  vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 1000)
-  for (let i = 0; i < 40; i++) step()
+  // A still card samples its true position again.
+  step()
   expect(wallpaperRects().at(-1)?.y).toBeCloseTo(rest.y)
 })
 
@@ -552,24 +552,26 @@ test('live contexts stay within the budget and the nearest surfaces get them', (
     return (
       <div ref={ref}>
         <div className='home-backdrop' style={{ backgroundPositionX: '50%' }} />
-        <section className='home-hero' />
-        <div className='home-body'>
-          {Array.from({ length: 14 }, (_, index) => (
-            <div
-              key={index}
-              className='home-glass'
-              data-top={index * 50}
-              style={{ borderTopLeftRadius: 20 }}
-            />
-          ))}
-        </div>
+        <section className='home-hero'>
+          <div className='home-hero-actions'>
+            {Array.from({ length: 14 }, (_, index) => (
+              <a
+                key={index}
+                data-slot='button'
+                href='/'
+                data-top={index * 50}
+                style={{ borderTopLeftRadius: 20 }}
+              />
+            ))}
+          </div>
+        </section>
       </div>
     )
   }
   vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(
     function (this: HTMLElement) {
       if (this.classList.contains('home-hero')) {
-        return new DOMRect(0, -2000, 1200, 800)
+        return new DOMRect(0, -2000, 1200, 5000)
       }
       if (this.classList.contains('home-backdrop')) {
         return new DOMRect(0, 0, 1200, 800)

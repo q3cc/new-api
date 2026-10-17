@@ -145,7 +145,7 @@ For commercial licensing, please contact support@quantumnous.com
   position: relative;
   margin: 22px auto 18px;
   max-width: 100%;
-  font-size: clamp(44px, 5.4vw, 80px);
+  font-size: clamp(54px, 7vw, 108px);
   font-weight: 550;
   line-height: 1.1;
   letter-spacing: -0.065em;
@@ -741,7 +741,7 @@ For commercial licensing, please contact support@quantumnous.com
     padding: 16px 24px;
   }
   .home-title {
-    font-size: clamp(40px, 12vw, 64px);
+    font-size: clamp(44px, 13vw, 72px);
     margin-block: 22px;
   }
   .home-tagline {
@@ -898,9 +898,41 @@ For commercial licensing, please contact support@quantumnous.com
     100% 100%,
     100% 100%,
     220% 100%;
+  /* The characters stage their own entrance; the title itself keeps the
+     ambient glint and a slow float so it never sits perfectly still. */
   animation:
-    home-rise 0.95s cubic-bezier(0.16, 1, 0.3, 1) var(--home-delay, 0s) both,
-    home-glint 16s ease-in-out 1.2s infinite alternate;
+    home-glint 16s ease-in-out 1.2s infinite alternate,
+    home-float 7s ease-in-out 1.6s infinite alternate;
+}
+.home-title-char {
+  display: inline-block;
+  white-space: pre;
+  transform-origin: 50% 100%;
+  animation: home-char-in 1.1s cubic-bezier(0.16, 1, 0.3, 1)
+    calc(0.18s + var(--char-index, 0) * 55ms) both;
+}
+@keyframes home-char-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 0.45em, 0) rotateX(55deg) scale(0.86);
+    filter: blur(6px);
+  }
+  60% {
+    filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes home-float {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, -7px, 0);
+  }
 }
 @keyframes home-glint {
   from {

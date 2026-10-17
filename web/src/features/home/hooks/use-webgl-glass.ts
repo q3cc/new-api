@@ -30,8 +30,11 @@ import {
 } from '../lib/glass-renderer'
 import { detectGlassTier } from '../lib/glass-tier'
 
+/** Shader glass is limited to the fixed navigation and the hero: a canvas
+ *  that scrolls with the page always trails the compositor by a frame, so
+ *  the panels below the hero keep their CSS frosted glass instead. */
 const SURFACE_SELECTOR =
-  'header nav, .home-metrics, .home-hero-actions [data-slot=button], .home-glass'
+  'header nav, .home-metrics, .home-hero .home-hero-actions [data-slot=button]'
 /** The canvas reaches this far past the element so the rim sits on its border. */
 const OUTSET = 1
 /** Open a WebGL context this many viewport heights before the screen and
@@ -49,8 +52,6 @@ export const MAX_GLASS_CONTEXTS = 10
  *  this backoff, so a surface is never written off for good. */
 const RETRY_BASE_MS = 500
 const RETRY_MAX_MS = 15000
-/** Scrolling counts as ongoing for this long after the last scroll event. */
-const SCROLL_SETTLE_MS = 120
 /** Surfaces switch to the shader this far before they scroll into view, so
  *  the change never happens in front of the reader. */
 const DRAW_LEAD = 0.25
@@ -58,12 +59,7 @@ const DRAW_LEAD = 0.25
 export const HOME_WALLPAPER_URL = '/api/home/wallpaper'
 
 function materialFor(element: HTMLElement): GlassMaterial {
-  if (
-    element.closest('header') ||
-    element.classList.contains('home-endpoint')
-  ) {
-    return GLASS_MATERIALS.bar
-  }
+  if (element.closest('header')) return GLASS_MATERIALS.bar
   if (element.matches('[data-slot=button]')) {
     if (element.classList.contains('home-primary')) {
       return { ...GLASS_MATERIALS.button, tint: PRIMARY_TINT }
@@ -87,12 +83,10 @@ type GlassSurface = {
   radius: number | null
   /** Last geometry written to an under-content canvas, to skip idle writes. */
   placement: string | null
-  /** Where the surface was last frame and how far its sample of the
-   *  wallpaper currently rides along with it (see draw). */
+  /** Where the surface was last frame, to predict where the compositor
+   *  will show it next frame (see draw). */
   lastX: number | null
   lastY: number | null
-  driftX: number
-  driftY: number
   cleanup: () => void
 }
 
@@ -155,7 +149,6 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
     // Style reads force a style recalculation, so the values that only change
     // with the layout are refreshed on resize rather than every frame.
     let backdropAnchor = 0.5
-    let lastScrollAt = Number.NEGATIVE_INFINITY
     const relayout = () => {
       backdropAnchor =
         Number.parseFloat(getComputedStyle(backdrop).backgroundPositionX) / 100
@@ -172,7 +165,6 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
       )
       const viewportHeight = window.innerHeight
       const now = performance.now()
-      const scrolling = now - lastScrollAt < SCROLL_SETTLE_MS
       const rects = surfaces.map((surface) => {
         const box = surface.element.getBoundingClientRect()
         return {
@@ -261,20 +253,16 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
           (!surface.element.closest('.home-hero') ||
             rect.y + rect.height <= heroRect.bottom)
         // A canvas that scrolls with the page is positioned by the compositor,
-        // but what it shows is drawn here a frame behind the compositor's
-        // scroll offset, so a fixed wallpaper sampled at the surface's screen
-        // position twitches during a scroll. While scrolling, the sample
-        // rides along with the surface instead (no per-frame disagreement);
-        // once the scroll settles it eases back to the true position.
+        // which is one frame ahead of the scroll offset this code sees, so a
+        // wallpaper sampled at the surface's current position shows up a frame
+        // late. Sample where the surface will be next frame instead: the
+        // compositor keeps applying the same delta during a smooth scroll.
+        let aheadX = 0
+        let aheadY = 0
         if (!surface.underContent) {
-          if (surface.lastX !== null && surface.lastY !== null && scrolling) {
-            surface.driftX += rect.x - surface.lastX
-            surface.driftY += rect.y - surface.lastY
-          } else if (!scrolling) {
-            surface.driftX *= 0.82
-            surface.driftY *= 0.82
-            if (Math.abs(surface.driftX) < 0.3) surface.driftX = 0
-            if (Math.abs(surface.driftY) < 0.3) surface.driftY = 0
+          if (surface.lastX !== null && surface.lastY !== null) {
+            aheadX = rect.x - surface.lastX
+            aheadY = rect.y - surface.lastY
           }
           surface.lastX = rect.x
           surface.lastY = rect.y
@@ -316,8 +304,8 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
           rect,
           imageRect: {
             ...imageRect,
-            x: imageRect.x + surface.driftX,
-            y: imageRect.y + surface.driftY,
+            x: imageRect.x - aheadX,
+            y: imageRect.y - aheadY,
           },
           heroTop: heroRect.top,
           heroHeight: heroRect.height,
@@ -333,13 +321,10 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
         })
         surface.element.dataset.glassRenderer = 'webgl'
       })
-      const settling = surfaces.some(
-        (surface) => surface.driftX !== 0 || surface.driftY !== 0
-      )
       const retrying = surfaces.some(
         (surface) => !surface.renderer && surface.failures > 0
       )
-      if ((visible || settling || retrying) && !motion.matches) {
+      if ((visible || retrying) && !motion.matches) {
         frame = requestAnimationFrame(draw)
       }
     }
@@ -373,8 +358,6 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
           placement: null,
           lastX: null,
           lastY: null,
-          driftX: 0,
-          driftY: 0,
           cleanup: () => {},
         }
         mountCanvas(surface)
@@ -416,11 +399,7 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
     const resize = new ResizeObserver(resized)
     resize.observe(hero)
     resize.observe(backdrop)
-    const scrolled = () => {
-      lastScrollAt = performance.now()
-      schedule()
-    }
-    window.addEventListener('scroll', scrolled, { passive: true })
+    window.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', resized, { passive: true })
     document.addEventListener('visibilitychange', schedule)
     motion.addEventListener('change', schedule)
@@ -432,7 +411,7 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
       image.removeEventListener('load', loaded)
       cancelAnimationFrame(frame)
       resize.disconnect()
-      window.removeEventListener('scroll', scrolled)
+      window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', resized)
       document.removeEventListener('visibilitychange', schedule)
       motion.removeEventListener('change', schedule)
