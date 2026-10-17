@@ -6,6 +6,9 @@ package i18n
 
 // Errors returned to AI clients
 const (
+	MsgGeminiResponseBlocked = "relay.gemini_response_blocked"
+	MsgGeminiResponseEmpty   = "relay.gemini_response_empty"
+
 	MsgDatabaseError          = "common.database_error"
 	MsgAuthUserBanned         = "auth.user_banned"
 	MsgTokenGetInfoFailed     = "token.get_info_failed"

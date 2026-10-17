@@ -2,6 +2,7 @@ package relay
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +11,9 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -313,4 +316,64 @@ func TestImageHelperKeepsAdaptorClassifiedConvertError(t *testing.T) {
 	assert.Equal(t, types.ErrorCodeInvalidRequest, apiErr.GetErrorCode())
 	assert.True(t, types.IsSkipRetryError(apiErr), "other channels must not be asked to serve the same name")
 	assert.Contains(t, apiErr.Error(), "not served by the alibaba task plugin")
+}
+
+// A failed generation must reach the shared refund path, not a successful
+// zero-token settlement that could still charge a fixed-price expression.
+type failedGenerationReservation struct {
+	imageReservation
+	settled, refunded bool
+}
+
+func (s *failedGenerationReservation) Settle(int) error { s.settled = true; return nil }
+func (s *failedGenerationReservation) Refund(*gin.Context) {
+	if !s.settled {
+		s.refunded = true
+		s.held = 0
+	}
+}
+func (s *failedGenerationReservation) NeedsRefund() bool { return !s.settled && !s.refunded }
+
+func TestGeminiEmptyGenerationRefundsReservation(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	gin.SetMode(gin.TestMode)
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	for _, tc := range []struct {
+		name, body string
+		code       types.ErrorCode
+	}{
+		{"safety", `{"promptFeedback":{"blockReason":"PROHIBITED_CONTENT"}}`, types.ErrorCodePromptBlocked},
+		{"empty", `{"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}`, types.ErrorCodeEmptyResponse},
+	} {
+		for _, stream := range []bool{false, true} {
+			for _, fixed := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/stream=%t/fixed=%t", tc.name, stream, fixed), func(t *testing.T) {
+					c, _ := gin.CreateTestContext(httptest.NewRecorder())
+					c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+					reservation := &failedGenerationReservation{imageReservation: imageReservation{held: 2000, limit: 10000}}
+					info := &relaycommon.RelayInfo{IsStream: stream, DisablePing: true, RelayFormat: types.RelayFormatOpenAI, OriginModelName: "gemini-test", ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gemini-test"}, Billing: reservation}
+					info.SetEstimatePromptTokens(639)
+					if fixed {
+						expression := `tier("request", fixed(0.001))`
+						info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), GroupRatio: 1, QuotaPerUnit: common.QuotaPerUnit}
+					}
+					body := tc.body
+					if stream {
+						body = "data: " + body + "\n\ndata: [DONE]\n\n"
+					}
+					adaptor := &gemini.Adaptor{}
+					usage, apiErr := adaptor.DoResponse(c, &http.Response{Body: io.NopCloser(strings.NewReader(body))}, info)
+					require.NotNil(t, apiErr)
+					assert.Equal(t, tc.code, apiErr.GetErrorCode())
+					assert.Zero(t, usage.(*dto.Usage).TotalTokens)
+					assert.False(t, reservation.settled)
+					require.NotNil(t, RefundFailedRequestBilling(c, info, apiErr))
+					assert.True(t, reservation.refunded)
+					assert.Zero(t, reservation.held)
+				})
+			}
+		}
+	}
 }

@@ -1,12 +1,10 @@
 package gemini
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -41,13 +39,14 @@ func GeminiTextGenerationHandler(c *gin.Context, info *relaycommon.RelayInfo, re
 	grounding.commit(info)
 	countGeminiBillableFunctionCalls(info, &geminiResponse)
 
-	if len(geminiResponse.Candidates) == 0 && geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
-		info.PerformanceBusinessRejection = true
-		common.SetContextKey(c, constant.ContextKeyAdminRejectReason, fmt.Sprintf("gemini_block_reason=%s", *geminiResponse.PromptFeedback.BlockReason))
-	}
-
-	// 计算使用量（优先上游 UsageMetadata，缺失时本地估算并保留 Gemini 计费语义）
+	apiErr := geminiResponseRejection(c, info, &geminiResponse)
 	usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)
+	if apiErr != nil {
+		return &usage, apiErr
+	}
+	if !geminiResponseHasOutput(&geminiResponse) {
+		return &usage, geminiEmptyResponseError(c, info)
+	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 

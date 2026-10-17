@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -753,4 +754,129 @@ func TestGeminiHandlersCountGroundingQueries(t *testing.T) {
 			assert.Equal(t, tt.want, counts)
 		})
 	}
+}
+
+// Reproduce the rejected Gemini stream that used to bill 639 estimated input
+// tokens and look like a successful empty response through a New API channel.
+func TestGeminiGenerationFailuresPreserveReasonAndMeasuredUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	routes := []struct {
+		name    string
+		stream  bool
+		format  types.RelayFormat
+		handler func(*gin.Context, *relaycommon.RelayInfo, *http.Response) (*dto.Usage, *types.NewAPIError)
+	}{
+		{"chat JSON", false, types.RelayFormatOpenAI, GeminiChatHandler},
+		{"Claude JSON", false, types.RelayFormatClaude, GeminiChatHandler},
+		{"native JSON", false, types.RelayFormatGemini, GeminiTextGenerationHandler},
+		{"Responses JSON", false, types.RelayFormatOpenAIResponses, GeminiResponsesHandler},
+		{"chat stream", true, types.RelayFormatOpenAI, GeminiChatStreamHandler},
+		{"Claude stream", true, types.RelayFormatClaude, GeminiChatStreamHandler},
+		{"native stream", true, types.RelayFormatGemini, GeminiTextGenerationStreamHandler},
+		{"Responses stream", true, types.RelayFormatOpenAIResponses, GeminiResponsesStreamHandler},
+	}
+	for _, tc := range []struct {
+		name, body, reason string
+		code               types.ErrorCode
+		prompt, completion int
+	}{
+		{name: "prohibited prompt", body: `{"promptFeedback":{"blockReason":"PROHIBITED_CONTENT"}}`, reason: "PROHIBITED_CONTENT", code: types.ErrorCodePromptBlocked},
+		{name: "suppressed safety text", body: `{"candidates":[{"content":{"parts":[{"text":"suppressed by safety"}]},"finishReason":"SAFETY"}]}`, reason: "SAFETY", code: types.ErrorCodePromptBlocked},
+		{name: "candidate safety", body: `{"candidates":[{"content":{"parts":[]},"finishReason":"SAFETY"}]}`, reason: "SAFETY", code: types.ErrorCodePromptBlocked},
+		{name: "no candidates", body: `{"candidates":[]}`, code: types.ErrorCodeEmptyResponse},
+		{name: "empty stop", body: `{"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}`, code: types.ErrorCodeEmptyResponse},
+		{name: "image without payload", body: `{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png"}}]},"finishReason":"STOP"}]}`, code: types.ErrorCodeEmptyResponse},
+		{name: "upstream prompt usage", body: `{"promptFeedback":{"blockReason":"PROHIBITED_CONTENT"},"usageMetadata":{"promptTokenCount":7,"totalTokenCount":7}}`, reason: "PROHIBITED_CONTENT", code: types.ErrorCodePromptBlocked, prompt: 7},
+		{name: "upstream thinking usage without output", body: `{"candidates":[],"usageMetadata":{"thoughtsTokenCount":3,"totalTokenCount":3}}`, code: types.ErrorCodeEmptyResponse, completion: 3},
+	} {
+		for _, route := range routes {
+			t.Run(tc.name+"/"+route.name, func(t *testing.T) {
+				rec := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(rec)
+				c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+				c.Request.Header.Set("Accept-Language", "en")
+				info := newGeminiResponsesRelayInfo(route.stream)
+				info.RelayFormat = route.format
+				if route.format == types.RelayFormatClaude {
+					info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{}
+				}
+				info.SetEstimatePromptTokens(639)
+				body := tc.body
+				if route.stream {
+					body = "data: " + body + "\n\ndata: [DONE]\n\n"
+				}
+				usage, apiErr := route.handler(c, info, &http.Response{Body: io.NopCloser(strings.NewReader(body))})
+				require.NotNil(t, apiErr)
+				assert.Equal(t, tc.code, apiErr.GetErrorCode())
+				assert.True(t, types.IsSkipRetryError(apiErr))
+				if tc.reason != "" {
+					assert.Contains(t, apiErr.ToOpenAIError().Message, tc.reason)
+					assert.Contains(t, apiErr.ToOpenAIError().Message, "Gemini blocked")
+					assert.True(t, info.PerformanceBusinessRejection)
+				}
+				require.NotNil(t, usage)
+				assert.Equal(t, tc.prompt, usage.PromptTokens)
+				assert.Equal(t, tc.completion, usage.CompletionTokens)
+				if tc.prompt+tc.completion > 0 {
+					require.NotNil(t, usage.BillingUsage)
+					assert.False(t, usage.BillingUsage.Estimated)
+				}
+				assert.NotContains(t, rec.Body.String(), `"status":"completed"`)
+				assert.NotContains(t, rec.Body.String(), "data: [DONE]")
+				assert.NotContains(t, rec.Body.String(), `"finish_reason":"stop"`)
+				if route.stream {
+					assert.Equal(t, relaycommon.ResponseOutcomeFailed, info.StreamStatus.OutcomeSnapshot().Response)
+				}
+			})
+		}
+	}
+}
+
+func TestGeminiNonTextOutputStillHasBillableEstimates(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, body := range []string{
+		`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup","args":{"q":"test"}}}]}}]}`,
+		`{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"cGF5bG9hZA=="}}]}}]}`,
+	} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		info := newGeminiResponsesRelayInfo(false)
+		info.SetEstimatePromptTokens(20)
+		var response dto.GeminiChatResponse
+		require.NoError(t, common.UnmarshalJsonStr(body, &response))
+		assert.True(t, geminiResponseHasOutput(&response))
+		usage := buildUsageFromGeminiResponse(c, info, &response)
+		assert.Equal(t, 20, usage.PromptTokens)
+		require.NotNil(t, usage.BillingUsage)
+		assert.True(t, usage.BillingUsage.Estimated)
+	}
+}
+
+func TestGeminiLateSafetyRejectionKeepsOnlyDeliveredEstimates(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	gin.SetMode(gin.TestMode)
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := newGeminiResponsesRelayInfo(true)
+	info.RelayFormat = types.RelayFormatOpenAI
+	info.SetEstimatePromptTokens(20)
+	body := `data: {"candidates":[{"content":{"parts":[{"text":"delivered"}]}}]}` + "\n\n" +
+		`data: {"candidates":[{"content":{"parts":[{"text":"suppressed content"}]},"finishReason":"SAFETY"}]}` + "\n\ndata: [DONE]\n\n"
+	usage, apiErr := GeminiChatStreamHandler(c, info, &http.Response{Body: io.NopCloser(strings.NewReader(body))})
+	require.NotNil(t, apiErr)
+	assert.Equal(t, types.ErrorCodePromptBlocked, apiErr.GetErrorCode())
+	require.NotNil(t, usage)
+	assert.Equal(t, 20, usage.PromptTokens)
+	assert.Equal(t, tokenkit.Estimate(info.UpstreamModelName, "delivered"), usage.CompletionTokens)
+	assert.Contains(t, rec.Body.String(), "delivered")
+	assert.NotContains(t, rec.Body.String(), "suppressed content")
+	assert.NotContains(t, rec.Body.String(), "data: [DONE]")
 }
