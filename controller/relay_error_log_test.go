@@ -3,15 +3,18 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	appdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
@@ -22,6 +25,8 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/gorilla/websocket"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -290,5 +295,211 @@ func TestProcessChannelErrorUsesSnapshotWithoutLeakingChannelMetadata(t *testing
 	assert.NotContains(t, userOther, "admin_info")
 	for _, key := range []string{"channel_id", "channel_name", "channel_type"} {
 		assert.NotContains(t, userOther, key)
+	}
+}
+
+func TestResponsesQuotaFailuresBeforeOutputAreReplayable(t *testing.T) {
+	previousAuto, previousKeywords := common.AutomaticDisableChannelEnabled, operation_setting.AutomaticDisableKeywords
+	common.AutomaticDisableChannelEnabled = true
+	operation_setting.AutomaticDisableKeywords = []string{"insufficient_quota", "rate_limit_exceeded", "usage_limit_reached"}
+	t.Cleanup(func() {
+		common.AutomaticDisableChannelEnabled, operation_setting.AutomaticDisableKeywords = previousAuto, previousKeywords
+	})
+	previousTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = previousTimeout })
+	created := `data: {"type":"response.created","response":{"id":"failed-attempt","status":"in_progress"}}` + "\n\n"
+	for _, event := range []string{
+		`{"type":"response.failed","response":{"status":"failed","error":{"code":"insufficient_quota","message":"Quota exhausted"}}}`,
+		`{"type":"error","code":"rate_limit_exceeded","message":"Rate limit reached"}`,
+		`{"type":"error","code":"rate_limit_exceeded","message":"Rate limit reached","error":null}`,
+		`{"type":"error","error":{"code":"usage_limit_reached","message":"Usage limit reached"}}`,
+	} {
+		t.Run(event, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			recorder.Header().Set("X-Codex-Turn-State", "original-state")
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			ctx.Set("auto_ban", true)
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}, DisablePing: true}
+			usage, apiErr := openai.OaiResponsesStreamHandler(ctx, info, &http.Response{StatusCode: 200, Header: http.Header{"X-Codex-Turn-State": []string{"failed-state"}}, Body: io.NopCloser(strings.NewReader(created + "data: " + event + "\n\n"))})
+			require.NotNil(t, apiErr)
+			assert.Equal(t, http.StatusTooManyRequests, apiErr.StatusCode)
+			assert.Nil(t, usage)
+			assert.False(t, ctx.Writer.Written())
+			assert.Empty(t, recorder.Body.String())
+			assert.Equal(t, []string{"original-state"}, recorder.Header().Values("X-Codex-Turn-State"))
+			assert.False(t, types.IsSkipRetryError(apiErr))
+			assert.True(t, info.StreamStatus.ResponseFailed())
+		})
+	}
+	t.Run("ping before quota failure does not commit the response", func(t *testing.T) {
+		general := operation_setting.GetGeneralSetting()
+		previousGeneral := *general
+		general.PingIntervalEnabled, general.PingIntervalSeconds = true, 1
+		t.Cleanup(func() { *general = previousGeneral })
+		reader, writer := io.Pipe()
+		upstreamDone := make(chan struct{})
+		go func() {
+			defer close(upstreamDone)
+			defer writer.Close()
+			_, _ = io.WriteString(writer, created)
+			// Delay the rejection past the configured heartbeat interval.
+			timer := time.NewTimer(1100 * time.Millisecond)
+			defer timer.Stop()
+			<-timer.C
+			_, _ = io.WriteString(writer, `data: {"type":"error","code":"insufficient_quota","message":"Quota exhausted"}`+"\n\n")
+		}()
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		ctx.Set("auto_ban", true)
+		usage, apiErr := openai.OaiResponsesStreamHandler(ctx, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}, &http.Response{StatusCode: 200, Body: reader})
+		<-upstreamDone
+		require.NotNil(t, apiErr)
+		assert.Nil(t, usage)
+		assert.False(t, ctx.Writer.Written())
+		assert.Empty(t, recorder.Body.String())
+	})
+	t.Run("JSON error without type", func(t *testing.T) {
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		usage, apiErr := openai.OaiResponsesHandler(ctx, &relaycommon.RelayInfo{}, &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"status":"failed","error":{"code":"insufficient_quota","message":"Quota exhausted"}}`))})
+		require.NotNil(t, apiErr)
+		assert.Equal(t, http.StatusTooManyRequests, apiErr.StatusCode)
+		assert.Nil(t, usage)
+		assert.False(t, ctx.Writer.Written())
+	})
+}
+
+func TestAutomaticDisableRetryRespectsReplaySafety(t *testing.T) {
+	previousAuto, previousKeywords := common.AutomaticDisableChannelEnabled, operation_setting.AutomaticDisableKeywords
+	common.AutomaticDisableChannelEnabled = true
+	operation_setting.AutomaticDisableKeywords = []string{"insufficient_quota"}
+	t.Cleanup(func() {
+		common.AutomaticDisableChannelEnabled, operation_setting.AutomaticDisableKeywords = previousAuto, previousKeywords
+	})
+	for _, tc := range []struct {
+		name   string
+		budget int
+		setup  func(*gin.Context)
+		want   string
+	}{
+		{"disabled strict session fails over", 2, nil, "automatic_disable"},
+		{"budget exhausted", 0, func(c *gin.Context) { c.Set("channel_affinity_skip_retry_on_failure", false) }, "attempt_budget_exhausted"},
+		{"manual pin", 2, func(c *gin.Context) {
+			c.Set("channel_affinity_skip_retry_on_failure", false)
+			service.GetChannelConstraints(c).AddPin(appdto.ChannelPin{ChannelId: 1, Source: appdto.PinSourceToken, Rank: appdto.PinRankToken, RetryMode: appdto.PinRetrySingleAttempt})
+		}, "pinned_channel"},
+		{"already output", 2, func(c *gin.Context) { c.String(200, "partial") }, "response_started"},
+		{"cancelled", 2, func(c *gin.Context) {
+			requestCtx, cancel := context.WithCancel(c.Request.Context())
+			cancel()
+			c.Request = c.Request.WithContext(requestCtx)
+		}, "request_cancelled"},
+		{"auto ban off retains strict session", 2, func(c *gin.Context) { c.Set("auto_ban", false) }, "strict_session"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			ctx.Set("auto_ban", true)
+			ctx.Set("channel_affinity_skip_retry_on_failure", true)
+			if tc.setup != nil {
+				tc.setup(ctx)
+			}
+			apiErr := types.WithOpenAIError(types.OpenAIError{Code: "insufficient_quota", Message: "Quota exhausted"}, 400)
+			assert.True(t, service.ShouldDisableChannel(apiErr), "structured code matches even when the message changes")
+			decision := service.DecideRelayRetry(ctx, apiErr, tc.budget)
+			assert.Equal(t, tc.want, decision.Reason)
+			assert.Equal(t, tc.want == "automatic_disable", decision.Action == "retry")
+		})
+	}
+}
+
+func TestResponsesAutoDisableRetriesWithoutLeakingFailedAttempt(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	for _, scenario := range []string{"failover succeeds", "all keys fail", "failure after output"} {
+		t.Run(scenario, func(t *testing.T) {
+			fixture := newResponsesWSBillingTest(t, `tier("request", fixed(0.002))`, func(*websocket.Conn, *http.Request) {})
+			common.RedisEnabled = false // Keep the affinity cache independent of each fixture Redis client.
+			previousAuto, previousRetries, previousLogs := common.AutomaticDisableChannelEnabled, common.RetryTimes, constant.ErrorLogEnabled
+			previousKeywords := operation_setting.AutomaticDisableKeywords
+			common.AutomaticDisableChannelEnabled, common.RetryTimes, constant.ErrorLogEnabled = true, 3, true
+			operation_setting.AutomaticDisableKeywords = []string{"insufficient_quota"}
+			affinity := operation_setting.GetChannelAffinitySetting()
+			previousAffinity := *affinity
+			*affinity = operation_setting.ChannelAffinitySetting{Enabled: true, DefaultTTLSeconds: 60, MaxEntries: 100, Rules: []operation_setting.ChannelAffinityRule{{Name: "quota-failover", ModelRegex: []string{"^ws-billing$"}, PathRegex: []string{"/v1/responses"}, KeySources: []operation_setting.ChannelAffinityKeySource{{Type: "gjson", Path: "prompt_cache_key"}}, SkipRetryOnFailure: true}}}
+			t.Cleanup(func() {
+				common.AutomaticDisableChannelEnabled, common.RetryTimes, constant.ErrorLogEnabled = previousAuto, previousRetries, previousLogs
+				operation_setting.AutomaticDisableKeywords = previousKeywords
+				*affinity = previousAffinity
+			})
+			require.NoError(t, model.DB.Model(fixture.channel).Update("auto_ban", 1).Error)
+			var attempts atomic.Int32
+			fixture.httpUpstream = func(w http.ResponseWriter, r *http.Request) {
+				attempt := attempts.Add(1)
+				w.Header().Set("Content-Type", "text/event-stream")
+				if scenario == "all keys fail" || attempt == 1 {
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"response.created\",\"response\":{\"id\":\"failed-attempt\",\"status\":\"in_progress\"}}\n\n")
+					if scenario == "failure after output" {
+						_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n")
+					}
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"insufficient_quota\",\"message\":\"Quota exhausted\"}}}\n\n")
+					return
+				}
+				assert.Equal(t, "Bearer upstream-second", r.Header.Get("Authorization"))
+				// The failed key is persisted before the second upstream attempt.
+				stored, err := model.GetChannelById(fixture.channel.Id, true)
+				if assert.NoError(t, err) {
+					assert.Equal(t, common.ChannelStatusAutoDisabled, stored.ChannelInfo.MultiKeyStatusList[0])
+				}
+				_, _ = fmt.Fprint(w, "data: {\"type\":\"response.created\",\"response\":{\"id\":\"successful-attempt\",\"status\":\"in_progress\"}}\n\n")
+				_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"answer\"}\n\n")
+				_, _ = fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"successful-attempt\",\"status\":\"completed\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"total_tokens\":6}}}\n\n")
+			}
+			request, err := http.NewRequest(http.MethodPost, fixture.gatewayURL+"/v1/responses", strings.NewReader(`{"model":"ws-billing","input":"hello","stream":true,"prompt_cache_key":"quota-test"}`))
+			require.NoError(t, err)
+			request.Header.Set("Authorization", "Bearer sk-"+fixture.token.Key)
+			request.Header.Set("Content-Type", "application/json")
+			response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+			require.NoError(t, err)
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, err)
+			require.NoError(t, response.Body.Close())
+			select {
+			case <-fixture.httpDone:
+			case <-time.After(3 * time.Second):
+				t.Fatal("relay did not finish")
+			}
+			stored, err := model.GetChannelById(fixture.channel.Id, true)
+			require.NoError(t, err)
+			assert.Equal(t, common.ChannelStatusAutoDisabled, stored.ChannelInfo.MultiKeyStatusList[0])
+			var failures []model.Log
+			require.NoError(t, model.LOG_DB.Where("type = ? AND token_id = ?", model.LogTypeError, fixture.token.Id).Find(&failures).Error)
+			require.NotEmpty(t, failures)
+			assert.Contains(t, failures[0].Content, "Quota exhausted")
+			switch scenario {
+			case "failover succeeds":
+				assert.Equal(t, int32(2), attempts.Load())
+				assert.Equal(t, http.StatusOK, response.StatusCode)
+				assert.Contains(t, string(body), "successful-attempt")
+				assert.NotContains(t, string(body), "failed-attempt")
+				assert.NotContains(t, string(body), "response.failed")
+				assert.NotContains(t, string(body), "Quota exhausted")
+				assert.Contains(t, failures[0].Other, "automatic_disable")
+				assertResponsesWSAccounting(t, fixture, []int{1000})
+			case "all keys fail":
+				assert.Equal(t, int32(2), attempts.Load())
+				assert.GreaterOrEqual(t, response.StatusCode, 400)
+				assert.NotContains(t, string(body), "data:")
+				assert.Equal(t, common.ChannelStatusAutoDisabled, stored.Status)
+				assertResponsesWSAccounting(t, fixture, nil)
+			case "failure after output":
+				assert.Equal(t, int32(1), attempts.Load())
+				assert.Contains(t, string(body), "partial")
+				assert.Equal(t, 1, strings.Count(string(body), "event: response.failed"))
+				assertResponsesWSAccounting(t, fixture, []int{1000})
+			}
+		})
 	}
 }

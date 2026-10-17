@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Retry after automatic disable": "自動無効化後に再試行",
+    "Response already started; retry stopped": "応答が開始されたため再試行を停止",
+    "Request cancelled; retry stopped": "リクエストがキャンセルされたため再試行を停止",
     "360": "360",
     "1000": "1000",
     "10000": "10000",

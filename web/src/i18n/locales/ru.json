@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Retry after automatic disable": "Повтор после автоматического отключения",
+    "Response already started; retry stopped": "Ответ уже начат; повторные попытки остановлены",
+    "Request cancelled; retry stopped": "Запрос отменён; повторные попытки остановлены",
     "360": "360",
     "1000": "1000",
     "10000": "10000",

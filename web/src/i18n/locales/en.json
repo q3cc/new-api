@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Retry after automatic disable": "Retry after automatic disable",
+    "Response already started; retry stopped": "Response already started; retry stopped",
+    "Request cancelled; retry stopped": "Request cancelled; retry stopped",
     "360": "360",
     "1000": "1000",
     "10000": "10000",
