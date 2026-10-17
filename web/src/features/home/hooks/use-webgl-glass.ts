@@ -116,6 +116,11 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
         }
         visible = true
         const style = getComputedStyle(surface.element)
+        // The canvas is outset from the element (see .home-optical-glass), so
+        // its corners need the same outset added to stay concentric with the
+        // element's own rounded border instead of drawing a second outline.
+        const outset =
+          (rect.width - surface.element.getBoundingClientRect().width) / 2
         // Light the rim from the upper right like the reference until the
         // pointer moves it. The CSS angle is clockwise from the top; the
         // shader measures its light vector from +x with y pointing down.
@@ -128,7 +133,7 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
           imageRect,
           heroTop: heroRect.top,
           heroHeight: heroRect.height,
-          radius: Number.parseFloat(style.borderTopLeftRadius),
+          radius: Number.parseFloat(style.borderTopLeftRadius) + outset,
           lightAngle,
           material: surface.material,
           dpr: window.devicePixelRatio,

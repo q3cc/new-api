@@ -73,9 +73,11 @@ export const GLASS_MATERIALS = {
     dispersion: 0,
     depthEffect: false,
     saturation: 1.55,
-    highlight: 0.32,
+    // The bar keeps only a whisper of rim and no inner shadow: a bright
+    // bevel with a dark gap reads as a second outline around the navigation.
+    highlight: 0.18,
     highlightWidth: 0.5,
-    innerShadow: 0.08,
+    innerShadow: 0,
     surface: [...DARK_SURFACE, 0.075],
     tint: NO_TINT,
   },
