@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Retry after automatic disable": "自动禁用后重试",
+    "Response already started; retry stopped": "响应已开始，停止重试",
+    "Request cancelled; retry stopped": "请求已取消，停止重试",
     "360": "360",
     "1000": "1000",
     "10000": "10000",

@@ -178,6 +178,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					func() {
 						writeMutex.Lock()
 						defer writeMutex.Unlock()
+						if info.DeferPingUntilOutput && !c.Writer.Written() {
+							return
+						}
 						ExtendWriteDeadline(c)
 						err = PingData(c)
 					}()

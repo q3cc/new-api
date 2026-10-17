@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/bytedance/gopkg/util/gopool"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
@@ -50,11 +52,14 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 		if shouldCloseActiveWebSocketsAfterDisable(channelError.ChannelId) {
 			CloseActiveWebSocketsForChannel(channelError.ChannelId, ChannelDisabledCloseReason)
 		}
-		lang := RootUserLanguage()
-		params := map[string]any{"Name": channelError.ChannelName, "Id": channelError.ChannelId, "Reason": reason}
-		subject := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params)
-		content := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
-		NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
+		// Notifications must not delay failover after the status is persisted.
+		gopool.Go(func() {
+			lang := RootUserLanguage()
+			params := map[string]any{"Name": channelError.ChannelName, "Id": channelError.ChannelId, "Reason": reason}
+			subject := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params)
+			content := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
+			NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
+		})
 	}
 }
 
@@ -86,7 +91,7 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 		return true
 	}
 
-	lowerMessage := strings.ToLower(err.Error())
+	lowerMessage := strings.ToLower(err.Error() + "\n" + string(err.GetErrorCode()))
 	search, _ := AcSearch(lowerMessage, operation_setting.AutomaticDisableKeywords, true)
 	return search
 }

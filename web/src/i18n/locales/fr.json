@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Retry after automatic disable": "Réessayer après la désactivation automatique",
+    "Response already started; retry stopped": "Réponse déjà commencée ; nouvelles tentatives arrêtées",
+    "Request cancelled; retry stopped": "Requête annulée ; nouvelles tentatives arrêtées",
     "360": "360",
     "1000": "1000",
     "10000": "10000",

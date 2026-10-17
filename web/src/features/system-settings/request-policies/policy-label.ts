@@ -5,6 +5,12 @@ import type { TFunction } from 'i18next'
 // sources reported by the channel operations summary.
 export function policyLabel(t: TFunction, value: string): string {
   switch (value) {
+    case 'automatic_disable':
+      return t('Retry after automatic disable')
+    case 'response_started':
+      return t('Response already started; retry stopped')
+    case 'request_cancelled':
+      return t('Request cancelled; retry stopped')
     case 'upstream_failure':
       return t('Upstream request failed')
     case 'request_failed':

@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Retry after automatic disable": "Thử lại sau khi tự động vô hiệu hóa",
+    "Response already started; retry stopped": "Phản hồi đã bắt đầu; dừng thử lại",
+    "Request cancelled; retry stopped": "Yêu cầu đã bị hủy; dừng thử lại",
     "360": "360",
     "1000": "1000",
     "10000": "10000",

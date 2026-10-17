@@ -11,7 +11,6 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
-	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,6 +19,19 @@ import (
 func DecideRelayRetry(c *gin.Context, err *types.NewAPIError, retryTimes int) PolicyDecision {
 	if err == nil {
 		return PolicyDecision{Action: "stop", Reason: "request_completed", Source: "system"}
+	}
+	if c.Request != nil && c.Request.Context().Err() != nil {
+		return PolicyDecision{Action: "stop", Reason: "request_cancelled", Source: "system"}
+	}
+	if c.Writer != nil && c.Writer.Written() {
+		return PolicyDecision{Action: "stop", Reason: "response_started", Source: "system"}
+	}
+	// A disabled credential cannot serve a strict session either. Allow a
+	// bounded failover, but never override an explicit channel pin or a
+	// non-replayable request.
+	if retryTimes > 0 && c.GetBool("auto_ban") && ShouldDisableChannel(err) &&
+		!GetChannelConstraints(c).SuppressesRetry() && !types.IsSkipRetryError(err) {
+		return PolicyDecision{Action: "retry", Reason: "automatic_disable", Source: "global"}
 	}
 	if ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		source := RequestPolicy(c).SessionModeSource
@@ -67,9 +79,8 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	logger.LogError(c, common.LogText("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.MaskSensitiveErrorWithStatusCode())))
 	if ShouldDisableChannel(err) && channelError.AutoBan {
 		reason := err.MaskSensitiveErrorWithStatusCode()
-		gopool.Go(func() {
-			DisableChannel(channelError, reason)
-		})
+		// Make the failed key unavailable before the next selection.
+		DisableChannel(channelError, reason)
 	}
 
 	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
