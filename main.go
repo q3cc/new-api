@@ -307,6 +307,7 @@ func InitResources() error {
 	ratio_setting.InitRatioSettings()
 
 	service.InitHttpClient()
+	controller.StartHomeWallpaperPrefetch()
 
 	// Initialize SQL Database
 	err = model.InitDB()

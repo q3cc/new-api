@@ -20,8 +20,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { useRef } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { api } from '@/lib/http-client'
-
 import { HOME_WALLPAPER_URL, useWebglGlass } from '../hooks/use-webgl-glass'
 import {
   coverImageRect,
@@ -204,7 +202,10 @@ beforeEach(() => {
     gl as unknown as WebGLRenderingContext
   )
   // The wallpaper request stays pending unless a test resolves it.
-  vi.spyOn(api, 'get').mockReturnValue(new Promise(() => {}))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise(() => {}))
+  )
   Object.defineProperty(URL, 'createObjectURL', {
     configurable: true,
     value: vi.fn(() => 'blob:wallpaper'),
@@ -422,14 +423,17 @@ test('navigation uses DOM blur when scrolling text behind it instead of painting
 
 test('the random wallpaper comes through the same-origin proxy and one copy feeds the backdrop and the glass', async () => {
   const blob = new Blob(['webp'], { type: 'image/webp' })
-  vi.mocked(api.get).mockResolvedValue({ data: blob })
+  vi.mocked(fetch).mockResolvedValue(
+    new Response(blob, { headers: { 'content-type': 'image/webp' } })
+  )
   const { container, unmount } = render(<Fixture />)
   await act(async () => {})
-  expect(api.get).toHaveBeenCalledWith(
+  await act(async () => {})
+  expect(fetch).toHaveBeenCalledWith(
     HOME_WALLPAPER_URL,
-    expect.objectContaining({ responseType: 'blob', skipErrorHandler: true })
+    expect.objectContaining({ credentials: 'same-origin' })
   )
-  expect(URL.createObjectURL).toHaveBeenCalledWith(blob)
+  expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
   expect(image.src).toBe('blob:wallpaper')
   const backdrop = container.querySelector<HTMLElement>('.home-backdrop')
   expect(backdrop).not.toHaveAttribute('data-wallpaper')
@@ -442,16 +446,17 @@ test('the random wallpaper comes through the same-origin proxy and one copy feed
 })
 
 test('a failed wallpaper request falls back to the bundled picture and a non-image answer is refused', async () => {
-  vi.mocked(api.get).mockRejectedValueOnce(new Error('offline'))
+  vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'))
   render(<Fixture />)
   await act(async () => {})
   expect(image.src).toMatch(/home-observatory/)
   expect(URL.createObjectURL).not.toHaveBeenCalled()
   cleanup()
-  vi.mocked(api.get).mockResolvedValueOnce({
-    data: new Blob(['<html></html>'], { type: 'text/html' }),
-  })
+  vi.mocked(fetch).mockResolvedValueOnce(
+    new Response('<html></html>', { headers: { 'content-type': 'text/html' } })
+  )
   render(<Fixture />)
+  await act(async () => {})
   await act(async () => {})
   expect(image.src).toMatch(/home-observatory/)
   expect(URL.createObjectURL).not.toHaveBeenCalled()

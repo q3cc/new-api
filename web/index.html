@@ -31,6 +31,20 @@
         document.documentElement.classList.add(theme)
       })()
     </script>
+    <!-- The home wallpaper comes from /api/home/wallpaper. Start that request
+         with the HTML so it runs alongside the script download instead of
+         after the home page code has loaded; the page's own fetch picks up the
+         preloaded response. -->
+    <script>
+      ;(function () {
+        if (location.pathname !== '/') return
+        var link = document.createElement('link')
+        link.rel = 'preload'
+        link.as = 'fetch'
+        link.href = '/api/home/wallpaper'
+        document.head.appendChild(link)
+      })()
+    </script>
     <!--umami-->
     <!--Google Analytics-->
   </head>

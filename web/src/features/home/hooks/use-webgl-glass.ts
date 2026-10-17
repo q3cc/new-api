@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { useEffect, type RefObject } from 'react'
 
 import wallpaper from '@/assets/home-observatory.png'
-import { api } from '@/lib/http-client'
 
 import {
   coverImageRect,
@@ -189,21 +188,25 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
       schedule()
     }
     image.addEventListener('load', loaded, { once: true })
-    // One fetch feeds both the CSS backdrop and the WebGL texture. The bundled
-    // wallpaper stands in when the proxy or the picture service is unavailable.
-    api
-      .get<Blob>(HOME_WALLPAPER_URL, {
-        responseType: 'blob',
-        signal: abort.signal,
-        disableDuplicate: true,
-        skipErrorHandler: true,
-        skipBusinessError: true,
-      })
+    // One fetch feeds both the CSS backdrop and the WebGL texture. A plain
+    // same-origin fetch matches the preload that index.html starts before this
+    // code even loads, so the picture is usually already on its way. The
+    // bundled wallpaper stands in when the proxy or the picture service is
+    // unavailable.
+    fetch(HOME_WALLPAPER_URL, {
+      signal: abort.signal,
+      credentials: 'same-origin',
+    })
       .then((response) => {
-        const blob = response.data
-        if (!(blob instanceof Blob) || !blob.type.startsWith('image/')) {
+        if (
+          !response.ok ||
+          !response.headers.get('content-type')?.startsWith('image/')
+        ) {
           throw new Error('Wallpaper response is not an image')
         }
+        return response.blob()
+      })
+      .then((blob) => {
         if (disposed) return
         objectUrl = URL.createObjectURL(blob)
         image.src = objectUrl
