@@ -78,13 +78,6 @@ export function CinematicHome(props: { isAuthenticated: boolean }) {
   useWebglGlass(glassRef)
   const orbitRef = useRef<HTMLCanvasElement>(null)
   useOrbitSphere(orbitRef)
-  // One span per character stages the title's entrance; a repeated character
-  // is keyed by its occurrence so the key stays data-derived.
-  const titleChars = [...(systemName || 'New API')].map((char, index, all) => ({
-    char,
-    index,
-    key: `${char}#${all.slice(0, index).filter((c) => c === char).length}`,
-  }))
   const count = (value: number | null) =>
     value === null ? '—' : formatNumber(value, locale)
   const features = [
@@ -124,24 +117,11 @@ export function CinematicHome(props: { isAuthenticated: boolean }) {
                 <span aria-hidden='true'>/</span>
                 {t('Unified API Gateway')}
               </p>
-              <h1
-                id='home-title'
-                className='home-title'
-                aria-label={systemName || 'New API'}
-              >
-                {titleChars.map((entry) => (
-                  <span
-                    key={entry.key}
-                    className='home-title-char'
-                    style={
-                      { '--char-index': entry.index } as React.CSSProperties
-                    }
-                    aria-hidden='true'
-                  >
-                    {entry.char}
-                  </span>
-                ))}
-              </h1>
+              <div className='home-title-stage'>
+                <h1 id='home-title' className='home-title'>
+                  {systemName || 'New API'}
+                </h1>
+              </div>
               <div className='home-hero-lede'>
                 <p className='home-tagline'>
                   {t('One endpoint. Endless possibilities.')}

@@ -898,32 +898,27 @@ For commercial licensing, please contact support@quantumnous.com
     100% 100%,
     100% 100%,
     220% 100%;
-  /* The characters stage their own entrance; the title itself keeps the
-     ambient glint and a slow float so it never sits perfectly still. */
-  animation:
-    home-glint 16s ease-in-out 1.2s infinite alternate,
-    home-float 7s ease-in-out 1.6s infinite alternate;
-}
-.home-title-char {
-  display: inline-block;
-  white-space: pre;
+  /* The title tilts up out of the globe, then keeps the ambient glint; the
+     stage around it floats so the title never sits perfectly still. The
+     gradient is clipped to the glyphs, so no animated child may split the
+     text into its own layer. */
   transform-origin: 50% 100%;
-  animation: home-char-in 1.1s cubic-bezier(0.16, 1, 0.3, 1)
-    calc(0.18s + var(--char-index, 0) * 55ms) both;
+  animation:
+    home-title-in 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both,
+    home-glint 16s ease-in-out 1.2s infinite alternate;
 }
-@keyframes home-char-in {
+.home-title-stage {
+  animation: home-float 7s ease-in-out 1.6s infinite alternate;
+}
+@keyframes home-title-in {
   from {
     opacity: 0;
-    transform: translate3d(0, 0.45em, 0) rotateX(55deg) scale(0.86);
-    filter: blur(6px);
-  }
-  60% {
-    filter: blur(0);
+    transform: perspective(900px) translate3d(0, 0.4em, 0) rotateX(48deg)
+      scale(0.9);
   }
   to {
     opacity: 1;
     transform: none;
-    filter: blur(0);
   }
 }
 @keyframes home-float {
