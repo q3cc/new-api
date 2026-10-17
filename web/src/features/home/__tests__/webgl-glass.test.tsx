@@ -20,7 +20,11 @@ For commercial licensing, please contact support@quantumnous.com
 import { useRef } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { HOME_WALLPAPER_URL, useWebglGlass } from '../hooks/use-webgl-glass'
+import {
+  HOME_WALLPAPER_URL,
+  MAX_GLASS_CONTEXTS,
+  useWebglGlass,
+} from '../hooks/use-webgl-glass'
 import {
   coverImageRect,
   createGlassRenderer,
@@ -30,6 +34,7 @@ import {
 
 let image: HTMLImageElement
 let heroTop: number
+let metricsTop: number
 let textTop: number
 let frames: Map<number, FrameRequestCallback>
 let nextFrame: number
@@ -142,6 +147,7 @@ function setMedia(query: string, matches: boolean) {
 
 beforeEach(() => {
   heroTop = 0
+  metricsTop = 600
   textTop = 200
   frames = new Map()
   nextFrame = 0
@@ -193,7 +199,7 @@ beforeEach(() => {
         this.classList.contains('home-metrics') ||
         this.parentElement?.classList.contains('home-metrics')
       ) {
-        return new DOMRect(20, 600, 600, 60)
+        return new DOMRect(20, metricsTop, 600, 60)
       }
       return new DOMRect(20, 20, 600, 60)
     }
@@ -315,7 +321,7 @@ test('the rim is lit from the upper right at rest and follows the pointer light 
   expect(angles()).toContain(Math.PI / 2)
 })
 
-test('unsupported WebGL retains CSS material and native navigation', () => {
+test('unsupported WebGL retains CSS material and native navigation while retrying quietly', () => {
   vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(null)
   const { container } = render(<Fixture />)
   load()
@@ -324,7 +330,15 @@ test('unsupported WebGL retains CSS material and native navigation', () => {
     'href',
     '/pricing'
   )
-  expect(frames.size).toBe(0)
+  // Each surface asked once, then waits out its backoff before asking again.
+  const attempts = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls
+    .length
+  expect(attempts).toBe(4)
+  step()
+  step()
+  expect(
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls
+  ).toHaveLength(attempts)
 })
 
 test('a shader compile failure releases allocations and retains CSS', () => {
@@ -505,4 +519,78 @@ test('the frosted tier keeps the wallpaper but opens no WebGL surface', () => {
   expect(container.querySelector('canvas')).toBeNull()
   expect(container.querySelector('[data-glass-renderer]')).toBeNull()
   expect(frames.size).toBe(0)
+})
+
+test('while scrolling a surface carries its wallpaper sample along, then it settles back', () => {
+  render(<Fixture />)
+  load()
+  // The wallpaper rect uniform: 1600x900 covering the 1200x800 backdrop.
+  const wallpaperRects = () =>
+    gl.uniform4f.mock.calls
+      .filter(([, , , width, height]) => height === 800 && width > 1400)
+      .map(([, x, y]) => ({ x, y }))
+  const rest = wallpaperRects().at(-1)
+  if (!rest) throw new Error('No wallpaper rect drawn')
+  gl.uniform4f.mockClear()
+  // Scroll the metrics card up by 100px; it is the last surface drawn.
+  metricsTop = 500
+  fireEvent.scroll(window)
+  step()
+  const scrolling = wallpaperRects().at(-1)
+  expect(scrolling?.y).toBeCloseTo(rest.y - 100)
+  expect(scrolling?.x).toBe(rest.x)
+  // Once the scroll has settled the sample eases back to the true position.
+  vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 1000)
+  for (let i = 0; i < 40; i++) step()
+  expect(wallpaperRects().at(-1)?.y).toBeCloseTo(rest.y)
+})
+
+test('live contexts stay within the budget and the nearest surfaces get them', () => {
+  function Crowd() {
+    const ref = useRef<HTMLDivElement>(null)
+    useWebglGlass(ref)
+    return (
+      <div ref={ref}>
+        <div className='home-backdrop' style={{ backgroundPositionX: '50%' }} />
+        <section className='home-hero' />
+        <div className='home-body'>
+          {Array.from({ length: 14 }, (_, index) => (
+            <div
+              key={index}
+              className='home-glass'
+              data-top={index * 50}
+              style={{ borderTopLeftRadius: 20 }}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
+  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(
+    function (this: HTMLElement) {
+      if (this.classList.contains('home-hero')) {
+        return new DOMRect(0, -2000, 1200, 800)
+      }
+      if (this.classList.contains('home-backdrop')) {
+        return new DOMRect(0, 0, 1200, 800)
+      }
+      const top = Number(
+        this.dataset.top ?? this.parentElement?.dataset.top ?? 0
+      )
+      return new DOMRect(20, top, 600, 40)
+    }
+  )
+  const { container } = render(<Crowd />)
+  load()
+  const lit = container.querySelectorAll('[data-glass-renderer=webgl]')
+  expect(lit).toHaveLength(MAX_GLASS_CONTEXTS)
+  // The budget goes to the panels nearest the middle of the viewport.
+  expect(container.querySelector('[data-top="0"]')).not.toHaveAttribute(
+    'data-glass-renderer'
+  )
+  expect(container.querySelector('[data-top="350"]')).toHaveAttribute(
+    'data-glass-renderer',
+    'webgl'
+  )
+  expect(gl.createProgram).toHaveBeenCalledTimes(MAX_GLASS_CONTEXTS)
 })

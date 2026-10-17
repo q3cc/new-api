@@ -26,6 +26,7 @@ import {
   GLASS_MATERIALS,
   PRIMARY_TINT,
   type GlassMaterial,
+  type GlassRect,
 } from '../lib/glass-renderer'
 import { detectGlassTier } from '../lib/glass-tier'
 
@@ -33,9 +34,23 @@ const SURFACE_SELECTOR =
   'header nav, .home-metrics, .home-hero-actions [data-slot=button], .home-glass'
 /** The canvas reaches this far past the element so the rim sits on its border. */
 const OUTSET = 1
-/** Keep WebGL contexts only this many viewport heights beyond the screen;
- *  browsers evict the oldest context once a page holds more than about 16. */
-const CONTEXT_REACH = 0.5
+/** Open a WebGL context this many viewport heights before the screen and
+ *  release it this far after; browsers evict the oldest context once a page
+ *  holds more than about 16, and the gap keeps a surface sitting on the edge
+ *  from opening and closing contexts on every small scroll. */
+const CONTEXT_OPEN = 0.5
+const CONTEXT_RELEASE = 1.5
+/** Hard ceiling on live contexts, comfortably under the browser's ~16 (a
+ *  sixteenth context evicts the oldest one and the surfaces start fighting).
+ *  Surfaces beyond the budget keep their CSS glass until one frees up. */
+export const MAX_GLASS_CONTEXTS = 10
+/** A context that fails to open (typically because the browser has not yet
+ *  released the previous page's contexts) is retried on a fresh canvas with
+ *  this backoff, so a surface is never written off for good. */
+const RETRY_BASE_MS = 500
+const RETRY_MAX_MS = 15000
+/** Scrolling counts as ongoing for this long after the last scroll event. */
+const SCROLL_SETTLE_MS = 120
 /** Surfaces switch to the shader this far before they scroll into view, so
  *  the change never happens in front of the reader. */
 const DRAW_LEAD = 0.25
@@ -66,11 +81,18 @@ type GlassSurface = {
    *  backdrop blur can soften whatever scrolls under it on top of the refraction. */
   underContent: boolean
   renderer: ReturnType<typeof createGlassRenderer>
-  unsupported: boolean
+  failures: number
+  retryAt: number
   /** Corner radius read from CSS once per layout, not per frame. */
   radius: number | null
   /** Last geometry written to an under-content canvas, to skip idle writes. */
   placement: string | null
+  /** Where the surface was last frame and how far its sample of the
+   *  wallpaper currently rides along with it (see draw). */
+  lastX: number | null
+  lastY: number | null
+  driftX: number
+  driftY: number
   cleanup: () => void
 }
 
@@ -133,6 +155,7 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
     // Style reads force a style recalculation, so the values that only change
     // with the layout are refreshed on resize rather than every frame.
     let backdropAnchor = 0.5
+    let lastScrollAt = Number.NEGATIVE_INFINITY
     const relayout = () => {
       backdropAnchor =
         Number.parseFloat(getComputedStyle(backdrop).backgroundPositionX) / 100
@@ -148,15 +171,77 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
         backdropAnchor
       )
       const viewportHeight = window.innerHeight
-      let visible = false
-      for (const surface of surfaces) {
+      const now = performance.now()
+      const scrolling = now - lastScrollAt < SCROLL_SETTLE_MS
+      const rects = surfaces.map((surface) => {
         const box = surface.element.getBoundingClientRect()
-        const rect = {
+        return {
           x: box.left - OUTSET,
           y: box.top - OUTSET,
           width: box.width + 2 * OUTSET,
           height: box.height + 2 * OUTSET,
         }
+      })
+      const within = (rect: GlassRect, reach: number) =>
+        rect.y + rect.height > -viewportHeight * reach &&
+        rect.y < viewportHeight * (1 + reach)
+      const distance = (rect: GlassRect) =>
+        Math.abs(rect.y + rect.height / 2 - viewportHeight / 2)
+      const release = (surface: GlassSurface) => {
+        surface.renderer?.dispose(true)
+        surface.renderer = null
+        mountCanvas(surface)
+      }
+      // Contexts are opened while a surface is still approaching, so the
+      // shader compile never lands in the middle of a scroll on screen, and
+      // handed out nearest-first within the budget.
+      surfaces.forEach((surface, index) => {
+        if (surface.renderer && !within(rects[index], CONTEXT_RELEASE)) {
+          release(surface)
+        }
+      })
+      const holders = () => surfaces.filter((surface) => surface.renderer)
+      const candidates = surfaces
+        .map((surface, index) => ({ surface, rect: rects[index] }))
+        .filter(
+          ({ surface, rect }) =>
+            !surface.renderer &&
+            now >= surface.retryAt &&
+            within(rect, CONTEXT_OPEN)
+        )
+        .sort((a, b) => distance(a.rect) - distance(b.rect))
+      for (const { surface, rect } of candidates) {
+        const live = holders()
+        if (live.length >= MAX_GLASS_CONTEXTS) {
+          const farthest = live
+            .map((holder) => ({
+              holder,
+              distance: distance(rects[surfaces.indexOf(holder)]),
+            }))
+            .sort((a, b) => b.distance - a.distance)[0]
+          if (
+            !farthest ||
+            farthest.distance < distance(rect) + viewportHeight * 0.25
+          ) {
+            continue
+          }
+          release(farthest.holder)
+        }
+        surface.renderer = createGlassRenderer(surface.canvas, image)
+        if (surface.renderer) {
+          surface.failures = 0
+          continue
+        }
+        // Usually a context the browser has not released yet: try again on a
+        // fresh canvas after a growing pause.
+        surface.failures += 1
+        surface.retryAt =
+          now + Math.min(RETRY_BASE_MS * 2 ** surface.failures, RETRY_MAX_MS)
+        mountCanvas(surface)
+      }
+      let visible = false
+      surfaces.forEach((surface, index) => {
+        const rect = rects[index]
         const header = surface.element.closest('header')
         // The navigation sits clear on the wallpaper at the top of the page
         // and only turns to glass once the page scrolls. From then on every
@@ -175,19 +260,24 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
           onScreen &&
           (!surface.element.closest('.home-hero') ||
             rect.y + rect.height <= heroRect.bottom)
-        const near =
-          rect.y + rect.height > -viewportHeight * CONTEXT_REACH &&
-          rect.y < viewportHeight * (1 + CONTEXT_REACH)
-        if (!near && surface.renderer) {
-          surface.renderer.dispose(true)
-          surface.renderer = null
-          mountCanvas(surface)
-        }
-        // Contexts are opened while the surface is still approaching, so the
-        // shader compile never lands in the middle of a scroll on screen.
-        if (near && !surface.renderer && !surface.unsupported) {
-          surface.renderer = createGlassRenderer(surface.canvas, image)
-          surface.unsupported = surface.renderer === null
+        // A canvas that scrolls with the page is positioned by the compositor,
+        // but what it shows is drawn here a frame behind the compositor's
+        // scroll offset, so a fixed wallpaper sampled at the surface's screen
+        // position twitches during a scroll. While scrolling, the sample
+        // rides along with the surface instead (no per-frame disagreement);
+        // once the scroll settles it eases back to the true position.
+        if (!surface.underContent) {
+          if (surface.lastX !== null && surface.lastY !== null && scrolling) {
+            surface.driftX += rect.x - surface.lastX
+            surface.driftY += rect.y - surface.lastY
+          } else if (!scrolling) {
+            surface.driftX *= 0.82
+            surface.driftY *= 0.82
+            if (Math.abs(surface.driftX) < 0.3) surface.driftX = 0
+            if (Math.abs(surface.driftY) < 0.3) surface.driftY = 0
+          }
+          surface.lastX = rect.x
+          surface.lastY = rect.y
         }
         if (!wanted || !surface.renderer) {
           delete surface.element.dataset.glassRenderer
@@ -195,7 +285,7 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
             surface.placement = null
             surface.canvas.style.visibility = 'hidden'
           }
-          continue
+          return
         }
         visible = true
         if (surface.underContent) {
@@ -224,7 +314,11 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
           : -Math.PI / 4
         surface.renderer.draw({
           rect,
-          imageRect,
+          imageRect: {
+            ...imageRect,
+            x: imageRect.x + surface.driftX,
+            y: imageRect.y + surface.driftY,
+          },
           heroTop: heroRect.top,
           heroHeight: heroRect.height,
           // Beneath the content the page's own scrims already darken the
@@ -238,8 +332,16 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
           dpr: window.devicePixelRatio,
         })
         surface.element.dataset.glassRenderer = 'webgl'
+      })
+      const settling = surfaces.some(
+        (surface) => surface.driftX !== 0 || surface.driftY !== 0
+      )
+      const retrying = surfaces.some(
+        (surface) => !surface.renderer && surface.failures > 0
+      )
+      if ((visible || settling || retrying) && !motion.matches) {
+        frame = requestAnimationFrame(draw)
       }
-      if (visible && !motion.matches) frame = requestAnimationFrame(draw)
     }
     const schedule = () => {
       cancelAnimationFrame(frame)
@@ -265,9 +367,14 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
           material: materialFor(element),
           underContent: !!element.closest('header'),
           renderer: null,
-          unsupported: false,
+          failures: 0,
+          retryAt: 0,
           radius: null,
           placement: null,
+          lastX: null,
+          lastY: null,
+          driftX: 0,
+          driftY: 0,
           cleanup: () => {},
         }
         mountCanvas(surface)
@@ -309,7 +416,11 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
     const resize = new ResizeObserver(resized)
     resize.observe(hero)
     resize.observe(backdrop)
-    window.addEventListener('scroll', schedule, { passive: true })
+    const scrolled = () => {
+      lastScrollAt = performance.now()
+      schedule()
+    }
+    window.addEventListener('scroll', scrolled, { passive: true })
     window.addEventListener('resize', resized, { passive: true })
     document.addEventListener('visibilitychange', schedule)
     motion.addEventListener('change', schedule)
@@ -321,7 +432,7 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
       image.removeEventListener('load', loaded)
       cancelAnimationFrame(frame)
       resize.disconnect()
-      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('scroll', scrolled)
       window.removeEventListener('resize', resized)
       document.removeEventListener('visibilitychange', schedule)
       motion.removeEventListener('change', schedule)

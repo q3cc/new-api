@@ -210,7 +210,8 @@ export function createGlassRenderer(
     return {
       dispose,
       draw(frame: GlassFrame) {
-        const dpr = Math.min(Math.max(frame.dpr, 1), 2)
+        // 1.5x is enough for a blurred backdrop and keeps the fill rate down.
+        const dpr = Math.min(Math.max(frame.dpr, 1), 1.5)
         const width = Math.max(1, Math.round(frame.rect.width * dpr))
         const height = Math.max(1, Math.round(frame.rect.height * dpr))
         if (canvas.width !== width || canvas.height !== height) {
