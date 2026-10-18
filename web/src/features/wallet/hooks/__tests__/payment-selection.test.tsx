@@ -54,7 +54,7 @@ it('wallet loading preserves server order and separately selects two Alipay serv
     waffo: async () => false,
     waffoPancake: async () => false,
   })
-  expect(regular).toHaveBeenCalledWith(2, 'epay_a', { mapi: undefined })
+  expect(regular).toHaveBeenCalledWith(2, 'epay_a', { mapi: false })
 })
 
 it('a mapi answer renders a payment code instead of opening a gateway tab', async () => {

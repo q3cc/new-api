@@ -185,11 +185,13 @@ export async function dispatchSelectedPayment(
     return processors.waffoPancake(topupAmount)
   }
 
+  const mapiEnabled =
+    paymentMethod.mapi === true || paymentMethod.mapi === 'true'
   return processors.regular(
     topupAmount,
     paymentMethod.id || paymentMethod.type,
     {
-      mapi: paymentMethod.mapi,
+      mapi: mapiEnabled,
     }
   )
 }

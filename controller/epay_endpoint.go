@@ -124,6 +124,8 @@ func enabledEpayMethods() []map[string]string {
 		// in place, so it needs to know this before placing the order.
 		if mapi {
 			public["mapi"] = "true"
+		} else {
+			public["mapi"] = "false"
 		}
 		methods = append(methods, public)
 	}

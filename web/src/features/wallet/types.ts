@@ -125,7 +125,7 @@ export interface PaymentMethod {
   /** Minimum topup amount for this payment method */
   min_topup?: number
   /** The endpoint renders a payment code in the console instead of a gateway page. */
-  mapi?: boolean
+  mapi?: 'true' | 'false' | boolean
   /** Optional react-icons component name or safe icon URL */
   icon?: string
 }
