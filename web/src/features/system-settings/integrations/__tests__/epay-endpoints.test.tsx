@@ -33,6 +33,7 @@ const service: EpayEndpoint = {
   merchant_id: '101',
   has_key: true,
   enabled: true,
+  mapi: false,
 }
 
 it('editing a service without a new secret preserves its key and does not submit the settings form', async () => {

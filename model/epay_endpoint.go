@@ -60,6 +60,9 @@ type EpayEndpointVersion struct {
 	Address    string `json:"-" gorm:"size:2048"`
 	MerchantId string `json:"-" gorm:"size:128"`
 	SecretKey  string `json:"-" gorm:"type:text"`
+	// Mapi asks the gateway for a payment code instead of a hosted checkout
+	// page, so the console can render the QR code itself.
+	Mapi bool `json:"-" gorm:"not null;default:false"`
 }
 
 type EpayEndpointConfig struct {
@@ -70,6 +73,7 @@ type EpayEndpointConfig struct {
 	MerchantId string  `json:"merchant_id"`
 	Key        *string `json:"key,omitempty"`
 	HasKey     bool    `json:"has_key"`
+	Mapi       bool    `json:"mapi"`
 }
 
 type EpayConfig struct {
@@ -162,7 +166,7 @@ func GetEpayConfig() (config EpayConfig, err error) {
 			if err := tx.First(&version, endpoint.VersionId).Error; err != nil {
 				return err
 			}
-			config.Endpoints = append(config.Endpoints, EpayEndpointConfig{Id: endpoint.Id, Name: endpoint.Name, Enabled: endpoint.Enabled, Address: version.Address, MerchantId: version.MerchantId, HasKey: version.SecretKey != ""})
+			config.Endpoints = append(config.Endpoints, EpayEndpointConfig{Id: endpoint.Id, Name: endpoint.Name, Enabled: endpoint.Enabled, Address: version.Address, MerchantId: version.MerchantId, HasKey: version.SecretKey != "", Mapi: version.Mapi})
 		}
 		var option Option
 		if err := tx.Where(commonKeyCol+" = ?", "PayMethods").First(&option).Error; err != nil {
@@ -257,8 +261,8 @@ func SaveEpayConfig(config EpayConfig) error {
 			if reused != 0 {
 				return errors.New("不同支付服务必须使用独立密钥")
 			}
-			if version.Id == 0 || version.Address != address || version.MerchantId != merchant || version.SecretKey != key {
-				version = EpayEndpointVersion{EndpointId: input.Id, Address: address, MerchantId: merchant, SecretKey: key}
+			if version.Id == 0 || version.Address != address || version.MerchantId != merchant || version.SecretKey != key || version.Mapi != input.Mapi {
+				version = EpayEndpointVersion{EndpointId: input.Id, Address: address, MerchantId: merchant, SecretKey: key, Mapi: input.Mapi}
 				if err := tx.Create(&version).Error; err != nil {
 					return err
 				}

@@ -47,6 +47,21 @@ export type AmountResponse = ApiResponse<string>
 export type PaymentResponse = ApiResponse<Record<string, unknown>> & {
   url?: string
 }
+
+/** A mapi payment: the gateway returned a code to render in place. */
+export type EpayMapiPayment = {
+  trade_no: string
+  qrcode?: string
+  pay_url?: string
+  url_scheme?: string
+}
+
+export type TopUpStatusResponse = ApiResponse<{
+  trade_no: string
+  status: string
+  amount: number
+  money: number
+}>
 export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
 export type AffiliateCodeResponse = ApiResponse<string>
 export type AffiliateTransferResponse = ApiResponse
@@ -109,6 +124,8 @@ export interface PaymentMethod {
   color?: string
   /** Minimum topup amount for this payment method */
   min_topup?: number
+  /** The endpoint renders a payment code in the console instead of a gateway page. */
+  mapi?: boolean
   /** Optional react-icons component name or safe icon URL */
   icon?: string
 }

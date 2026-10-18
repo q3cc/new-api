@@ -105,18 +105,26 @@ func logEpayCallbackFailure(c *gin.Context, err error) {
 func enabledEpayMethods() []map[string]string {
 	methods := make([]map[string]string, 0)
 	for _, method := range operationPayMethods() {
+		mapi := false
 		if model.IsEpayPaymentMethod(method["type"]) {
-			if _, err := model.ResolveEpayPaymentMethod(model.EpayPaymentMethodKey(method)); err != nil {
+			version, err := model.ResolveEpayPaymentMethod(model.EpayPaymentMethodKey(method))
+			if err != nil {
 				continue
 			}
+			mapi = version.Mapi
 		}
-		public := make(map[string]string, len(method))
+		public := make(map[string]string, len(method)+1)
 		for key, value := range method {
 			if key != "epay_endpoint_id" {
 				public[key] = value
 			}
 		}
 		public["id"] = model.EpayPaymentMethodKey(method)
+		// The console skips reserving a gateway tab when the code is rendered
+		// in place, so it needs to know this before placing the order.
+		if mapi {
+			public["mapi"] = "true"
+		}
 		methods = append(methods, public)
 	}
 	return methods

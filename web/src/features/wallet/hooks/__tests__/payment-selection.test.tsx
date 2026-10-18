@@ -23,6 +23,7 @@ import { expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 
 import { dispatchSelectedPayment } from '../../lib/payment'
+import { usePayment } from '../use-payment'
 import { useTopupInfo } from '../use-topup-info'
 
 it('wallet loading preserves server order and separately selects two Alipay services', async () => {
@@ -53,5 +54,34 @@ it('wallet loading preserves server order and separately selects two Alipay serv
     waffo: async () => false,
     waffoPancake: async () => false,
   })
-  expect(regular).toHaveBeenCalledWith(2, 'epay_a')
+  expect(regular).toHaveBeenCalledWith(2, 'epay_a', { mapi: undefined })
+})
+
+it('a mapi answer renders a payment code instead of opening a gateway tab', async () => {
+  vi.spyOn(api, 'post').mockResolvedValue({
+    data: {
+      message: 'success',
+      data: {
+        trade_no: 'USR1NOabc',
+        qrcode: 'weixin://wxpay/bizpayurl?pr=test',
+        pay_url: 'https://pay.example.com/qr/1',
+      },
+    },
+  })
+  const open = vi.spyOn(window, 'open')
+  const onEpayMapi = vi.fn()
+  const { result } = renderHook(() => usePayment({ onEpayMapi }))
+
+  await expect(
+    result.current.processPayment(10, 'wxpay', { mapi: true })
+  ).resolves.toBe(true)
+
+  // The code is shown in place, so no tab is reserved or navigated.
+  expect(open).not.toHaveBeenCalled()
+  expect(onEpayMapi).toHaveBeenCalledWith({
+    trade_no: 'USR1NOabc',
+    qrcode: 'weixin://wxpay/bizpayurl?pr=test',
+    pay_url: 'https://pay.example.com/qr/1',
+    url_scheme: undefined,
+  })
 })

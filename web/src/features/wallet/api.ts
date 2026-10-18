@@ -39,6 +39,7 @@ import type {
   WaffoPaymentResponse,
   WaffoPancakePaymentRequest,
   WaffoPancakePaymentResponse,
+  TopUpStatusResponse,
 } from './types'
 
 // ============================================================================
@@ -119,6 +120,20 @@ export async function requestPayment(
     ...res.data,
     url: res.data.url || (res as unknown as { url?: string }).url,
   }
+}
+
+/**
+ * Read one of the caller's own orders, so an in-page payment code can poll for
+ * settlement.
+ */
+export async function getTopUpStatus(
+  tradeNo: string
+): Promise<TopUpStatusResponse> {
+  const res = await api.get('/api/user/topup/status', {
+    params: { trade_no: tradeNo },
+    skipBusinessError: true,
+  })
+  return res.data
 }
 
 /**

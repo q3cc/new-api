@@ -27,6 +27,8 @@ export type EpayEndpoint = {
   enabled: boolean
   has_key: boolean
   key?: string
+  /** Ask the gateway for a payment code instead of a hosted checkout page. */
+  mapi: boolean
 }
 
 export type EpayConfig = {

@@ -31,6 +31,7 @@ const endpoint = {
   address: 'https://a.example.com',
   merchant_id: '101',
   has_key: true,
+  mapi: false,
   enabled: true,
 }
 it('choosing an Epay template opens a prefilled form before adding the required service binding', async () => {

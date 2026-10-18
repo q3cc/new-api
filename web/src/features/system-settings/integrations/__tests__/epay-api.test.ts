@@ -32,6 +32,7 @@ it('saving a service without a new key sends no secret and returns the masked co
         merchant_id: '101',
         enabled: true,
         has_key: true,
+        mapi: false,
       },
     ],
     pay_methods: [{ name: 'Alipay', type: 'alipay', epay_endpoint_id: 'a' }],

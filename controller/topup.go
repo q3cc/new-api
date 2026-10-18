@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -358,8 +359,32 @@ func RequestEpay(c *gin.Context) {
 	}
 	err = topUp.Insert()
 	if err != nil {
+		_ = model.UpdatePendingTopUpStatus(tradeNo, model.PaymentProviderEpay, common.TopUpStatusFailed)
 		logger.LogError(c.Request.Context(), common.LogText("Epay failed to create top-up order user_id=%d trade_no=%s payment_method=%s amount=%d error=%q", id, tradeNo, req.PaymentMethod, req.Amount, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))
+		return
+	}
+	if version.Mapi {
+		// The gateway answers with the payment code itself, so the console can
+		// show the QR in place and keep the reader on this page.
+		code, codeErr := requestEpayMapi(c.Request.Context(), version, paymentType, tradeNo,
+			fmt.Sprintf("TUC%d", req.Amount), topUp.EpayMoney, notifyUrl.String(), returnUrl.String(), c.ClientIP())
+		if codeErr != nil {
+			_ = model.UpdatePendingTopUpStatus(tradeNo, model.PaymentProviderEpay, common.TopUpStatusFailed)
+			logger.LogError(c.Request.Context(), common.LogText("Epay mapi failed to start payment user_id=%d trade_no=%s payment_method=%s error=%q", id, tradeNo, req.PaymentMethod, codeErr.Error()))
+			paymentError(c, common.NewMessage("Failed to start payment"))
+			return
+		}
+		logger.LogInfo(c.Request.Context(), common.LogText("Epay mapi top-up order created user_id=%d trade_no=%s payment_method=%s money=%s", id, tradeNo, req.PaymentMethod, topUp.EpayMoney))
+		c.JSON(http.StatusOK, gin.H{
+			"message": "success",
+			"data": gin.H{
+				"trade_no":   tradeNo,
+				"qrcode":     code.QRCode,
+				"pay_url":    code.PayURL,
+				"url_scheme": code.Scheme,
+			},
+		})
 		return
 	}
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
@@ -471,6 +496,27 @@ func RequestAmount(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "success", "data": strconv.FormatFloat(payMoney, 'f', 2, 64)})
+}
+
+// GetTopUpStatus reports one of the caller's own orders so an in-page payment
+// code can poll for settlement without exposing anyone else's order.
+func GetTopUpStatus(c *gin.Context) {
+	tradeNo := strings.TrimSpace(c.Query("trade_no"))
+	if tradeNo == "" || len(tradeNo) > 255 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	topUp := model.GetTopUpByTradeNo(tradeNo)
+	if topUp == nil || topUp.UserId != c.GetInt("id") {
+		common.ApiErrorT(c, "Order not found")
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"trade_no": topUp.TradeNo,
+		"status":   topUp.Status,
+		"amount":   topUp.Amount,
+		"money":    topUp.Money,
+	})
 }
 
 func GetUserTopUps(c *gin.Context) {

@@ -68,6 +68,7 @@ const endpointSchema = z.object({
   merchant_id: z.string().trim().min(1).max(128),
   key: z.string().trim().max(4096),
   enabled: z.boolean(),
+  mapi: z.boolean(),
 })
 type EndpointValues = z.infer<typeof endpointSchema>
 const formId = 'epay-endpoint-form'
@@ -84,6 +85,7 @@ export function EpayEndpointsEditor(props: Props) {
       merchant_id: '',
       key: '',
       enabled: true,
+      mapi: false,
     },
   })
   useEffect(() => {
@@ -93,6 +95,7 @@ export function EpayEndpointsEditor(props: Props) {
       merchant_id: editing?.merchant_id ?? '',
       key: editing?.key ?? '',
       enabled: editing?.enabled ?? true,
+      mapi: editing?.mapi ?? false,
     })
   }, [editing, open, form])
 
@@ -108,6 +111,7 @@ export function EpayEndpointsEditor(props: Props) {
       merchant_id: values.merchant_id,
       enabled: values.enabled,
       has_key: editing?.has_key ?? false,
+      mapi: values.mapi,
     }
     if (values.key) endpoint.key = values.key
     props.onChange(
@@ -153,6 +157,12 @@ export function EpayEndpointsEditor(props: Props) {
             id: 'merchant',
             header: t('Epay merchant ID'),
             cell: (endpoint) => endpoint.merchant_id,
+          },
+          {
+            id: 'mapi',
+            header: t('Payment code'),
+            cell: (endpoint) =>
+              endpoint.mapi ? t('In console') : t('Gateway page'),
           },
           {
             id: 'enabled',
@@ -284,6 +294,28 @@ export function EpayEndpointsEditor(props: Props) {
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='mapi'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('Show the payment code in the console')}
+                  </FormLabel>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                  <p className='text-muted-foreground text-xs'>
+                    {t(
+                      'Ask the gateway for a payment code and render it here, instead of opening the gateway checkout page. Requires the gateway to enable mapi.'
+                    )}
+                  </p>
                 </FormItem>
               )}
             />

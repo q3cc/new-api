@@ -37,7 +37,7 @@ import {
   isWaffoPancakePayment,
   openPaymentWindow,
 } from '../lib'
-import type { AmountRequest, AmountResponse } from '../types'
+import type { AmountRequest, AmountResponse, EpayMapiPayment } from '../types'
 
 // ============================================================================
 // Payment Hook
@@ -81,7 +81,9 @@ export async function requestPaymentAmount(
   return Number.parseFloat(response.data)
 }
 
-export function usePayment() {
+export function usePayment(options?: {
+  onEpayMapi?: (payment: EpayMapiPayment) => void
+}) {
   const [amount, setAmount] = useState<number>(0)
   const [calculating, setCalculating] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -109,10 +111,15 @@ export function usePayment() {
 
   // Process payment
   const processPayment = useCallback(
-    async (topupAmount: number, paymentType: string) => {
+    async (
+      topupAmount: number,
+      paymentType: string,
+      requestOptions?: { mapi?: boolean }
+    ) => {
       // Reserve the gateway tab while the click's user activation is still live;
       // a popup requested after the order request resolves would be blocked.
-      const paymentWindow = openPaymentWindow()
+      // A mapi method renders its code here instead, so no tab is reserved.
+      const paymentWindow = requestOptions?.mapi ? null : openPaymentWindow()
       try {
         setProcessing(true)
 
@@ -136,11 +143,14 @@ export function usePayment() {
 
         // Handle Stripe payment
         if (isStripe && response.data?.pay_link) {
-          const started = paymentWindow.navigate(response.data.pay_link as string)
+          const started =
+            paymentWindow?.navigate(response.data.pay_link as string) ?? false
           if (!started) {
             handleServerError(
               new Error('payment window closed'),
-              i18next.t('Payment page could not be opened. Allow pop-ups and try again.')
+              i18next.t(
+                'Payment page could not be opened. Allow pop-ups and try again.'
+              )
             )
             return false
           }
@@ -150,13 +160,31 @@ export function usePayment() {
 
         // Handle non-Stripe payment
         if (!isStripe && response.data) {
+          // A mapi endpoint answers with a payment code instead of a checkout
+          // URL; the caller renders it in place, so no tab is involved.
+          const payment = response.data as Partial<EpayMapiPayment>
+          if (
+            payment.trade_no &&
+            (payment.qrcode || payment.pay_url || payment.url_scheme)
+          ) {
+            paymentWindow?.closeIfUnused()
+            options?.onEpayMapi?.({
+              trade_no: payment.trade_no,
+              qrcode: payment.qrcode,
+              pay_url: payment.pay_url,
+              url_scheme: payment.url_scheme,
+            })
+            return true
+          }
           const url = (response as unknown as { url?: string }).url
           if (url) {
-            const started = paymentWindow.submit(url, response.data)
+            const started = paymentWindow?.submit(url, response.data) ?? false
             if (!started) {
               handleServerError(
                 new Error('payment window closed'),
-                i18next.t('Payment page could not be opened. Allow pop-ups and try again.')
+                i18next.t(
+                  'Payment page could not be opened. Allow pop-ups and try again.'
+                )
               )
               return false
             }
@@ -170,11 +198,11 @@ export function usePayment() {
         handleServerError(error, i18next.t('Payment request failed'))
         return false
       } finally {
-        paymentWindow.closeIfUnused()
+        paymentWindow?.closeIfUnused()
         setProcessing(false)
       }
     },
-    []
+    [options]
   )
 
   return {

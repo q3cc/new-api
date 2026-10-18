@@ -159,7 +159,11 @@ export function isWaffoPancakePayment(paymentType: string): boolean {
 }
 
 export interface PaymentProcessors {
-  regular: (topupAmount: number, paymentType: string) => Promise<boolean>
+  regular: (
+    topupAmount: number,
+    paymentType: string,
+    options?: { mapi?: boolean }
+  ) => Promise<boolean>
   waffo: (topupAmount: number, payMethodIndex: number) => Promise<boolean>
   waffoPancake: (topupAmount: number) => Promise<boolean>
 }
@@ -181,7 +185,13 @@ export async function dispatchSelectedPayment(
     return processors.waffoPancake(topupAmount)
   }
 
-  return processors.regular(topupAmount, paymentMethod.id || paymentMethod.type)
+  return processors.regular(
+    topupAmount,
+    paymentMethod.id || paymentMethod.type,
+    {
+      mapi: paymentMethod.mapi,
+    }
+  )
 }
 
 /**
