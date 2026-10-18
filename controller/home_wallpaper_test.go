@@ -2,6 +2,8 @@ package controller
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -99,4 +101,65 @@ func TestHomeWallpaperScalesLargePicturesDownToTheHeroSize(t *testing.T) {
 	assert.Equal(t, 1920, config.Width)
 	assert.Equal(t, 1440, config.Height)
 	assert.Less(t, recorder.Body.Len(), encoded.Len())
+}
+
+// hugePngHeader builds a PNG that declares the given dimensions in its IHDR
+// without any pixel data, so DecodeConfig reports the size a decode would
+// allocate without the test allocating it.
+func hugePngHeader(width, height int) []byte {
+	var buf bytes.Buffer
+	buf.WriteString("\x89PNG\r\n\x1a\n")
+	chunk := func(typ string, data []byte) {
+		var length [4]byte
+		binary.BigEndian.PutUint32(length[:], uint32(len(data)))
+		buf.Write(length[:])
+		buf.WriteString(typ)
+		buf.Write(data)
+		var crc [4]byte
+		binary.BigEndian.PutUint32(crc[:], crc32.ChecksumIEEE(append([]byte(typ), data...)))
+		buf.Write(crc[:])
+	}
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], uint32(width))
+	binary.BigEndian.PutUint32(ihdr[4:8], uint32(height))
+	ihdr[8] = 8 // bit depth
+	ihdr[9] = 2 // truecolor
+	chunk("IHDR", ihdr)
+	chunk("IEND", nil)
+	return buf.Bytes()
+}
+
+func TestHomeWallpaperRefusesPicturesWithAbsurdPixelCounts(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(hugePngHeader(30000, 30000))
+	}))
+	defer upstream.Close()
+	recorder := serveHomeWallpaper(t, upstream.URL+"/l")
+	assert.Equal(t, http.StatusBadGateway, recorder.Code)
+	assert.Empty(t, recorder.Body.String())
+}
+
+func TestHomeWallpaperAnswersDirectlyWhenThePoolIsEmpty(t *testing.T) {
+	originalPool := homeWallpaperPool
+	homeWallpaperPool = make(chan homeWallpaper, 1)
+	t.Cleanup(func() { homeWallpaperPool = originalPool })
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/down" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(append(append([]byte{}, pngMagic...), []byte("picture")...))
+	}))
+	defer upstream.Close()
+	// A burst drained the pool and no refill has landed yet: the request is
+	// answered by the upstream itself, not by waiting on the channel.
+	recorder := serveHomeWallpaper(t, upstream.URL+"/l")
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, strings.HasSuffix(recorder.Body.String(), "picture"))
+	// An unreachable upstream surfaces immediately instead of after the
+	// request context expires waiting on an empty pool.
+	recorder = serveHomeWallpaper(t, upstream.URL+"/down")
+	assert.Equal(t, http.StatusBadGateway, recorder.Code)
 }

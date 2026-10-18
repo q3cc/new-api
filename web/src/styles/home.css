@@ -898,17 +898,16 @@ For commercial licensing, please contact support@quantumnous.com
     100% 100%,
     100% 100%,
     220% 100%;
-  /* The title tilts up out of the globe, then keeps the ambient glint; the
-     stage around it floats so the title never sits perfectly still. The
-     gradient is clipped to the glyphs, so no animated child may split the
-     text into its own layer. */
+  /* The title tilts up out of the globe, then keeps the ambient glint and a
+     slow float. The gradient is clipped to the glyphs, so no animated child
+     may split the text into its own layer; every animation therefore lives
+     on the title itself and the stage wrapper stays inert, so geometry read
+     from the wrapper is the resting geometry. */
   transform-origin: 50% 100%;
   animation:
     home-title-in 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both,
-    home-glint 16s ease-in-out 1.2s infinite alternate;
-}
-.home-title-stage {
-  animation: home-float 7s ease-in-out 1.6s infinite alternate;
+    home-glint 16s ease-in-out 1.2s infinite alternate,
+    home-float 7s ease-in-out 1.6s infinite alternate;
 }
 @keyframes home-title-in {
   from {

@@ -40,7 +40,9 @@ function Fixture() {
         <canvas ref={ref} className='home-orbit' aria-hidden='true' />
         <div className='home-hero-content'>
           <p>Eyebrow</p>
-          <h1 className='home-title'>Title</h1>
+          <div className='home-title-stage'>
+            <h1 className='home-title'>Title</h1>
+          </div>
         </div>
         <dl className='home-metrics' />
       </section>
@@ -104,7 +106,7 @@ beforeEach(() => {
       if (this.classList.contains('home-metrics')) {
         return new DOMRect(0, 660, 1200, 120)
       }
-      if (this.classList.contains('home-title')) {
+      if (this.classList.contains('home-title-stage')) {
         return new DOMRect(400, 320, 400, 60)
       }
       if (this.classList.contains('home-hero-content')) {

@@ -124,7 +124,10 @@ export function useOrbitSphere(canvasRef: RefObject<HTMLCanvasElement | null>) {
     const content = hero?.querySelector<HTMLElement>('.home-hero-content')
     const context = canvas?.getContext('2d')
     if (!canvas || !hero || !content || !context) return
-    const title = content.querySelector<HTMLElement>('.home-title') ?? content
+    // The stage wrapper never animates, while the title inside it does; a
+    // transformed rect would make the whole globe bob with the text.
+    const title =
+      content.querySelector<HTMLElement>('.home-title-stage') ?? content
     const header = document.querySelector('header')
     const metrics = hero.querySelector('.home-metrics')
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)')

@@ -29,7 +29,8 @@ import (
 var homeWallpaperURL = "https://randpic.esa.starcity.ink/l"
 
 // Pictures are fetched ahead of time so a page load is answered from memory
-// instead of waiting on the upstream round trip. Tests set this to zero.
+// instead of waiting on the upstream round trip. Tests set this to zero and
+// drive the pool channel directly.
 var homeWallpaperPrefetch = 3
 
 const (
@@ -39,6 +40,9 @@ const (
 	// this, and a smaller JPEG downloads, decodes and uploads much faster.
 	maxHomeWallpaperEdge = 1920
 	homeWallpaperQuality = 82
+	// image.Decode allocates from the header, and a compressed file can claim
+	// gigabytes of pixels; refuse anything beyond a sane allocation.
+	maxHomeWallpaperPixels = 40 << 20
 )
 
 type homeWallpaper struct {
@@ -103,30 +107,34 @@ func fetchHomeWallpaper(ctx context.Context) (homeWallpaper, error) {
 	if !strings.HasPrefix(contentType, "image/") {
 		return homeWallpaper{}, fmt.Errorf("upstream sent %s instead of an image", contentType)
 	}
-	return fitHomeWallpaper(data, contentType), nil
+	return fitHomeWallpaper(data, contentType)
 }
 
 // fitHomeWallpaper re-encodes oversized pictures as a JPEG no larger than
 // maxHomeWallpaperEdge on either side. Pictures that already fit, or that Go
-// cannot decode, pass through untouched.
-func fitHomeWallpaper(data []byte, contentType string) homeWallpaper {
+// cannot decode, pass through untouched; pictures that declare absurd
+// dimensions are refused rather than decoded.
+func fitHomeWallpaper(data []byte, contentType string) (homeWallpaper, error) {
 	original := homeWallpaper{data: data, contentType: contentType}
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || (config.Width <= maxHomeWallpaperEdge && config.Height <= maxHomeWallpaperEdge) {
-		return original
+		return original, nil
+	}
+	if int64(config.Width)*int64(config.Height) > maxHomeWallpaperPixels {
+		return homeWallpaper{}, fmt.Errorf("upstream picture declares %dx%d pixels", config.Width, config.Height)
 	}
 	source, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return original
+		return original, nil
 	}
 	scale := float64(maxHomeWallpaperEdge) / float64(max(config.Width, config.Height))
 	target := image.NewRGBA(image.Rect(0, 0, max(1, int(float64(config.Width)*scale)), max(1, int(float64(config.Height)*scale))))
 	draw.BiLinear.Scale(target, target.Bounds(), source, source.Bounds(), draw.Src, nil)
 	var encoded bytes.Buffer
 	if err := jpeg.Encode(&encoded, target, &jpeg.Options{Quality: homeWallpaperQuality}); err != nil {
-		return original
+		return original, nil
 	}
-	return homeWallpaper{data: encoded.Bytes(), contentType: "image/jpeg"}
+	return homeWallpaper{data: encoded.Bytes(), contentType: "image/jpeg"}, nil
 }
 
 // refillHomeWallpapers keeps the pool topped up for the lifetime of the
@@ -147,7 +155,8 @@ func refillHomeWallpapers() {
 }
 
 // StartHomeWallpaperPrefetch begins filling the pool so the first visitor
-// after a restart is served from memory too. It is safe to call repeatedly.
+// after a restart is served from memory too. Only main starts it; requests
+// never wait on the pool being filled. Safe to call repeatedly.
 func StartHomeWallpaperPrefetch() {
 	if homeWallpaperPrefetch <= 0 {
 		return
@@ -159,16 +168,20 @@ func StartHomeWallpaperPrefetch() {
 }
 
 func nextHomeWallpaper(ctx context.Context) (homeWallpaper, error) {
-	if homeWallpaperPrefetch <= 0 {
+	if homeWallpaperPool == nil {
+		// Prefetching never started; answer from the upstream directly.
 		return fetchHomeWallpaper(ctx)
 	}
-	StartHomeWallpaperPrefetch()
 	select {
 	case picture := <-homeWallpaperPool:
 		return picture, nil
-	case <-ctx.Done():
-		return homeWallpaper{}, ctx.Err()
+	default:
 	}
+	// The pool is empty — a burst drained it, or the refiller is backing off
+	// after upstream failures. Answer from the upstream directly so the page
+	// fails (or succeeds) with the upstream's own latency instead of holding
+	// the request open on a channel until its context expires.
+	return fetchHomeWallpaper(ctx)
 }
 
 func GetHomeWallpaper(c *gin.Context) {
