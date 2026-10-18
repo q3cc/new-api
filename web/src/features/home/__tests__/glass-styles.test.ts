@@ -49,3 +49,13 @@ test('the frosted tier gives the secondary action an opaque fill for contrast', 
   expect(rule?.[1]).toMatch(/background:\s*#22303f/)
   expect(rule?.[1]).toMatch(/color:\s*#f1f5f9/)
 })
+
+test('returning to the top removes the navigation pill without a fade', () => {
+  // The scrolled pill has a 0.3s background transition; without this the pill
+  // would keep showing for that long after the page returns to the top.
+  const rule = css.match(
+    /\.cinematic-home\.cinematic-home header:not\(\[data-scrolled\]\) nav\s*\{([^}]*)\}/
+  )
+  expect(rule).not.toBeNull()
+  expect(rule?.[1]).toMatch(/transition:\s*none/)
+})

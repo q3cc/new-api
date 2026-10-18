@@ -64,6 +64,10 @@ For commercial licensing, please contact support@quantumnous.com
   background: transparent;
   backdrop-filter: none;
   box-shadow: none;
+  /* Leaving the scrolled state must remove the pill outright. The 0.3s
+     background fade above would otherwise keep showing it as the page
+     returns to the top. */
+  transition: none;
   /* Without a pill behind it the text needs lifting off bright wallpapers. */
   text-shadow:
     0 1px 2px rgb(0 0 0 / 50%),

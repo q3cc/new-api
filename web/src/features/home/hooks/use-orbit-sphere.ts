@@ -137,6 +137,17 @@ export function useOrbitSphere(canvasRef: RefObject<HTMLCanvasElement | null>) {
     let last: number | null = null
     let visible = true
     let drag: { x: number; y: number; yaw: number; pitch: number } | null = null
+    // Gradients are expensive to build and only change with the geometry, so
+    // they are rebuilt on resize or scroll rather than on every frame.
+    let halo: { key: string; gradient: CanvasGradient } | null = null
+    let shade: { key: string; gradient: CanvasGradient } | null = null
+    // Each rider's label only has a handful of legible sizes; setting the
+    // font string every frame forces the canvas to re-parse it.
+    let lastFont = ''
+    // Surface dots are filled in depth buckets: one path per bucket instead
+    // of one path per dot, which is the difference between a smooth globe and
+    // a stuttering one on Windows' canvas implementation.
+    const dotAlphas = Array.from({ length: 5 }, (_, index) => 0.36 + index * 0.125)
 
     const draw = (now: number) => {
       frame = 0
@@ -147,7 +158,7 @@ export function useOrbitSphere(canvasRef: RefObject<HTMLCanvasElement | null>) {
       const titleRect = title.getBoundingClientRect()
       const width = heroRect.width
       const height = heroRect.height
-      const dpr = window.devicePixelRatio || 1
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5)
       const pixelWidth = Math.round(width * dpr)
       const pixelHeight = Math.round(height * dpr)
       if (canvas.width !== pixelWidth) {
@@ -235,7 +246,11 @@ export function useOrbitSphere(canvasRef: RefObject<HTMLCanvasElement | null>) {
               screen.y < copyBottom)
           context.globalAlpha =
             (front ? 0.5 + near * 0.4 : 0.2) * (overCopy ? 0.2 : 1)
-          context.font = `${(10.5 + near * 2.5).toFixed(1)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+          const font = `${(10.5 + near * 2.5).toFixed(1)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+          if (font !== lastFont) {
+            lastFont = font
+            context.font = font
+          }
           context.fillText(rider.text, screen.x, screen.y)
         }
       }
@@ -246,48 +261,92 @@ export function useOrbitSphere(canvasRef: RefObject<HTMLCanvasElement | null>) {
       context.lineCap = 'round'
       // A soft dark halo around the globe gives the rings and log lines a
       // calmer field than a bright random wallpaper offers on its own.
-      const halo = context.createRadialGradient(
-        centerX,
-        centerY,
-        radius * 0.9,
-        centerX,
-        centerY,
-        radius * 2
-      )
-      halo.addColorStop(0, 'rgb(6 12 22 / 42%)')
-      halo.addColorStop(0.55, 'rgb(6 12 22 / 20%)')
-      halo.addColorStop(1, 'rgb(6 12 22 / 0%)')
+      const haloKey = `${centerX}/${centerY}/${radius}`
+      if (halo?.key !== haloKey) {
+        const gradient = context.createRadialGradient(
+          centerX,
+          centerY,
+          radius * 0.9,
+          centerX,
+          centerY,
+          radius * 2
+        )
+        gradient.addColorStop(0, 'rgb(6 12 22 / 42%)')
+        gradient.addColorStop(0.55, 'rgb(6 12 22 / 20%)')
+        gradient.addColorStop(1, 'rgb(6 12 22 / 0%)')
+        halo = { key: haloKey, gradient }
+      }
       context.globalAlpha = 1
-      context.fillStyle = halo
-      context.fillRect(0, 0, width, height)
+      context.fillStyle = halo.gradient
+      // The gradient is transparent beyond twice the radius; painting only
+      // its box saves filling the whole hero every frame.
+      context.fillRect(
+        centerX - radius * 2,
+        centerY - radius * 2,
+        radius * 4,
+        radius * 4
+      )
       drawLogLines(false)
-      const shade = context.createRadialGradient(
-        centerX,
-        centerY,
-        radius * 0.2,
-        centerX,
-        centerY,
-        radius
-      )
-      shade.addColorStop(0, 'rgb(8 16 28 / 52%)')
-      shade.addColorStop(0.82, 'rgb(14 26 42 / 36%)')
-      shade.addColorStop(1, 'rgb(120 170 230 / 16%)')
+      const shadeKey = haloKey
+      if (shade?.key !== shadeKey) {
+        const gradient = context.createRadialGradient(
+          centerX,
+          centerY,
+          radius * 0.2,
+          centerX,
+          centerY,
+          radius
+        )
+        gradient.addColorStop(0, 'rgb(8 16 28 / 52%)')
+        gradient.addColorStop(0.82, 'rgb(14 26 42 / 36%)')
+        gradient.addColorStop(1, 'rgb(120 170 230 / 16%)')
+        shade = { key: shadeKey, gradient }
+      }
       context.globalAlpha = 1
-      context.fillStyle = shade
+      context.fillStyle = shade.gradient
       context.beginPath()
       context.arc(centerX, centerY, radius, 0, Math.PI * 2)
       context.fill()
 
       stroke(ORBIT_PATH, false, 'rgb(190 225 255)', 0, 0.14)
+      // Dots are grouped by depth and filled once per group. One fill per dot
+      // costs ~500 canvas calls per frame, which stutters on Windows' canvas.
+      const front = dotAlphas.map(() => [] as number[])
+      const back: number[] = []
       for (const point of SURFACE) {
         const screen = project(point, true)
-        const facing = screen.depth >= 0
-        context.globalAlpha = facing ? 0.36 + screen.depth * 0.5 : 0.12
-        context.fillStyle = facing ? '#eaf4ff' : '#9fb8d4'
+        if (screen.depth < 0) {
+          back.push(screen.x, screen.y)
+          continue
+        }
+        const bucket = Math.min(
+          front.length - 1,
+          Math.floor(((screen.depth + 1) / 2) * front.length)
+        )
+        front[bucket].push(screen.x, screen.y)
+      }
+      if (back.length > 0) {
+        context.globalAlpha = 0.12
+        context.fillStyle = '#9fb8d4'
         context.beginPath()
-        context.arc(screen.x, screen.y, facing ? 1.3 : 1, 0, Math.PI * 2)
+        for (let index = 0; index < back.length; index += 2) {
+          context.moveTo(back[index] + 1, back[index + 1])
+          context.arc(back[index], back[index + 1], 1, 0, Math.PI * 2)
+        }
         context.fill()
       }
+      context.fillStyle = '#eaf4ff'
+      front.forEach((dots, index) => {
+        if (dots.length === 0) return
+        context.globalAlpha = dotAlphas[index]
+        context.beginPath()
+        for (let cursor = 0; cursor < dots.length; cursor += 2) {
+          context.moveTo(dots[cursor] + 1.3, dots[cursor + 1])
+          context.arc(dots[cursor], dots[cursor + 1], 1.3, 0, Math.PI * 2)
+        }
+        context.fill()
+      })
+      context.globalAlpha = 1
       context.lineWidth = 1.1
       for (const ring of GRID) stroke(ring, true, '#ffffff', 0.34, 0.08)
 

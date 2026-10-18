@@ -125,6 +125,7 @@ beforeEach(() => {
       'fill',
       'stroke',
       'lineTo',
+      'moveTo',
       'addColorStop',
     ].map((name) => [name, vi.fn()])
   )
@@ -204,4 +205,13 @@ test('API log lines orbit the globe, dim on its far side and keep moving', () =>
   step(1000)
   const later = context.fillText.mock.calls.map(([, x, y]) => `${x},${y}`)
   expect(later).not.toEqual(first)
+})
+
+test('the surface dots are filled in a few batched paths rather than one per dot', () => {
+  render(<Fixture />)
+  step(0)
+  // Hundreds of dots still land in the drawing, but each depth bucket is a
+  // single fill. Per-dot fills are what stutters on Windows' canvas.
+  expect(context.arc.mock.calls.length).toBeGreaterThan(300)
+  expect(context.fill.mock.calls.length).toBeLessThanOrEqual(10)
 })
