@@ -69,29 +69,36 @@ export function getPaymentErrorTranslation(
  * blocker applies.
  */
 export interface PaymentWindow {
-  /** POST the gateway form into the reserved tab. */
-  submit: (url: string, params: Record<string, unknown>) => void
-  /** Point the reserved tab at a gateway URL, for GET-based flows. */
-  navigate: (url: string) => void
+  /** POST the gateway form into the reserved tab. False when it was closed. */
+  submit: (url: string, params: Record<string, unknown>) => boolean
+  /** Point the reserved tab at a gateway URL. False when it was closed. */
+  navigate: (url: string) => boolean
   /** Close the reserved tab when the payment never started. */
-  discard: () => void
+  closeIfUnused: () => void
 }
 
-const PAYMENT_WINDOW_NAME = 'new-api-payment'
-
 export function openPaymentWindow(): PaymentWindow {
-  // Without this, a later target=_blank form submit is blocked instead.
-  const popup = window.open('', PAYMENT_WINDOW_NAME)
+  // A per-payment name: reusing one name would let a leftover gateway tab from
+  // an earlier attempt swallow this navigation.
+  const name = `new-api-payment-${Math.random().toString(36).slice(2, 10)}`
+  const popup = window.open('', name)
+  if (popup) {
+    // The gateway page must not be able to reach back into the dashboard.
+    // `noopener` in the feature string would drop the reference we need to
+    // drive the tab later, so clear the handle instead.
+    popup.opener = null
+  }
+  let navigated = false
 
   return {
     submit(url, params) {
       const form = document.createElement('form')
       form.action = url
       form.method = 'POST'
-      // The reserved tab already exists, so this creates no new window. When the
-      // browser refused to open one, submit in this tab instead so the payment
-      // is never silently lost.
-      form.target = popup && !popup.closed ? PAYMENT_WINDOW_NAME : '_self'
+      // A closed reservation is not redirected into this tab: replacing the
+      // dashboard with a gateway that then fails is the blank page users saw.
+      if (!popup || popup.closed) return false
+      form.target = name
       Object.entries(params).forEach(([key, value]) => {
         const input = document.createElement('input')
         input.type = 'hidden'
@@ -100,17 +107,27 @@ export function openPaymentWindow(): PaymentWindow {
         form.appendChild(input)
       })
       document.body.appendChild(form)
-      form.submit()
-      form.remove()
+      try {
+        form.submit()
+      } finally {
+        form.remove()
+      }
+      navigated = true
+      return true
     },
     navigate(url) {
-      if (popup && !popup.closed) {
-        popup.location.href = url
-        return
+      if (!popup || popup.closed) return false
+      try {
+        // replace() is what Safari accepts for a cross-origin assignment.
+        popup.location.replace(url)
+      } catch {
+        return false
       }
-      window.location.href = url
+      navigated = true
+      return true
     },
-    discard() {
+    closeIfUnused() {
+      if (navigated) return
       if (popup && !popup.closed) popup.close()
     },
   }

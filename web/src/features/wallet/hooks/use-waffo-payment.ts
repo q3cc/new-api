@@ -59,7 +59,6 @@ export function useWaffoPayment() {
       // Reserve the gateway tab while the click's user activation is still live;
       // a popup requested after the order request resolves would be blocked.
       const paymentWindow = openPaymentWindow()
-      let started = false
       setProcessing(true)
 
       try {
@@ -72,8 +71,13 @@ export function useWaffoPayment() {
           const paymentUrl = getPaymentUrl(response.data)
 
           if (paymentUrl) {
-            paymentWindow.navigate(paymentUrl)
-            started = true
+            if (!paymentWindow.navigate(paymentUrl)) {
+              handleServerError(
+                new Error('payment window closed'),
+                i18next.t('Payment page could not be opened. Allow pop-ups and try again.')
+              )
+              return false
+            }
             toast.success(i18next.t('Redirecting to payment page...'))
             return true
           }
@@ -89,7 +93,7 @@ export function useWaffoPayment() {
         handleServerError(error, i18next.t('Payment request failed'))
         return false
       } finally {
-        if (!started) paymentWindow.discard()
+        paymentWindow.closeIfUnused()
         setProcessing(false)
       }
     },

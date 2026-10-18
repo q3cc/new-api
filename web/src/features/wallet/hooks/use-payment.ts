@@ -113,7 +113,6 @@ export function usePayment() {
       // Reserve the gateway tab while the click's user activation is still live;
       // a popup requested after the order request resolves would be blocked.
       const paymentWindow = openPaymentWindow()
-      let started = false
       try {
         setProcessing(true)
 
@@ -137,8 +136,14 @@ export function usePayment() {
 
         // Handle Stripe payment
         if (isStripe && response.data?.pay_link) {
-          paymentWindow.navigate(response.data.pay_link as string)
-          started = true
+          const started = paymentWindow.navigate(response.data.pay_link as string)
+          if (!started) {
+            handleServerError(
+              new Error('payment window closed'),
+              i18next.t('Payment page could not be opened. Allow pop-ups and try again.')
+            )
+            return false
+          }
           toast.success(i18next.t('Redirecting to payment page...'))
           return true
         }
@@ -147,8 +152,14 @@ export function usePayment() {
         if (!isStripe && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
-            paymentWindow.submit(url, response.data)
-            started = true
+            const started = paymentWindow.submit(url, response.data)
+            if (!started) {
+              handleServerError(
+                new Error('payment window closed'),
+                i18next.t('Payment page could not be opened. Allow pop-ups and try again.')
+              )
+              return false
+            }
             toast.success(i18next.t('Redirecting to payment page...'))
             return true
           }
@@ -159,7 +170,7 @@ export function usePayment() {
         handleServerError(error, i18next.t('Payment request failed'))
         return false
       } finally {
-        if (!started) paymentWindow.discard()
+        paymentWindow.closeIfUnused()
         setProcessing(false)
       }
     },

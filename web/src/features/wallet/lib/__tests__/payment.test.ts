@@ -106,11 +106,13 @@ test('same gateway type dispatches the selected service identity rather than the
 })
 
 describe('reserved payment window', () => {
-  let popup: { closed: boolean; location: { href: string }; close: () => void }
+  let popup: {
+    closed: boolean
+    opener: unknown
+    location: { replace: (url: string) => void; replaced: string }
+    close: () => void
+  }
   let open: ReturnType<typeof vi.spyOn>
-  let navigatedTo: string
-  const { location } = window
-  const origin = location.href
 
   /** Capture the form at submission time, before the caller removes it. */
   function captureSubmission() {
@@ -120,73 +122,70 @@ describe('reserved payment window', () => {
       target: string
       fields: [string, string][]
     }[] = []
-    vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(
-      function (this: HTMLFormElement) {
-        submitted.push({
-          action: this.getAttribute('action') ?? '',
-          method: this.method,
-          target: this.target,
-          fields: [...this.querySelectorAll('input')].map((input) => [
-            input.name,
-            input.value,
-          ]),
-        })
-      }
-    )
+    vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(function (
+      this: HTMLFormElement
+    ) {
+      submitted.push({
+        action: this.getAttribute('action') ?? '',
+        method: this.method,
+        target: this.target,
+        fields: [...this.querySelectorAll('input')].map((input) => [
+          input.name,
+          input.value,
+        ]),
+      })
+    })
     return submitted
   }
 
   beforeEach(() => {
-    popup = { closed: false, location: { href: '' }, close: vi.fn() }
-    open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window)
-    // jsdom refuses a real navigation, so the same-tab fallback is observed as
-    // an assignment instead.
-    navigatedTo = ''
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: {
-        ...location,
-        set href(value: string) {
-          navigatedTo = value
-        },
-        get href() {
-          return navigatedTo || origin
+    popup = {
+      closed: false,
+      opener: window,
+      location: {
+        replaced: '',
+        replace(url: string) {
+          this.replaced = url
         },
       },
-    })
+      close: vi.fn(),
+    }
+    open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window)
   })
   afterEach(() => {
     vi.restoreAllMocks()
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: location,
-    })
     document.querySelectorAll('form').forEach((form) => form.remove())
   })
 
-  test('reserves the tab when opened, so the later submission is not a popup', () => {
+  test('reserves a uniquely named tab and detaches its opener', () => {
     openPaymentWindow()
+    const firstName = open.mock.calls[0]?.[1]
+    openPaymentWindow()
+    const secondName = open.mock.calls[1]?.[1]
 
     // Opening up front, while the click's user activation is still live, is what
     // keeps the submission out of the popup blocker's way.
-    expect(open).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledTimes(2)
+    expect(firstName).not.toBe(secondName)
+    // The gateway page must not be able to drive the dashboard through opener.
+    expect(popup.opener).toBeNull()
   })
 
   test('posts the gateway form into the reserved tab with every parameter', () => {
     const submitted = captureSubmission()
 
-    openPaymentWindow().submit('https://pay.example.com/submit', {
-      pid: '1001',
-      money: '7.00',
-      device: 'pc',
-    })
+    const started = openPaymentWindow().submit(
+      'https://pay.example.com/submit',
+      { pid: '1001', money: '7.00', device: 'pc' }
+    )
 
+    expect(started).toBe(true)
     expect(submitted).toEqual([
       {
         action: 'https://pay.example.com/submit',
         method: 'post',
         // The reserved tab already exists, so this opens no new window.
-        target: 'new-api-payment',
+        target: open.mock.calls[0]?.[1],
         fields: [
           ['pid', '1001'],
           ['money', '7.00'],
@@ -198,47 +197,59 @@ describe('reserved payment window', () => {
     expect(document.querySelector('form')).toBeNull()
   })
 
-  test('submits in this tab when the browser refused to reserve one', () => {
+  test('reports failure instead of replacing this tab when no tab was reserved', () => {
     open.mockReturnValue(null)
     const submitted = captureSubmission()
 
-    openPaymentWindow().submit('https://pay.example.com/submit', { pid: '1' })
+    const started = openPaymentWindow().submit(
+      'https://pay.example.com/submit',
+      { pid: '1' }
+    )
 
-    // A blocked reservation must still deliver the payment instead of dropping it.
-    expect(submitted[0]?.target).toBe('_self')
+    // Replacing the dashboard with a gateway page is what produced the blank
+    // page, so a blocked reservation reports failure to the caller instead.
+    expect(started).toBe(false)
+    expect(submitted).toHaveLength(0)
   })
 
-  test('submits in this tab when the reserved tab was already closed', () => {
+  test('reports failure when the reserved tab was closed before the order resolved', () => {
     const submitted = captureSubmission()
-    const window_ = openPaymentWindow()
+    const paymentWindow = openPaymentWindow()
     popup.closed = true
 
-    window_.submit('https://pay.example.com/submit', { pid: '1' })
-
-    expect(submitted[0]?.target).toBe('_self')
+    expect(
+      paymentWindow.submit('https://pay.example.com/submit', { pid: '1' })
+    ).toBe(false)
+    expect(submitted).toHaveLength(0)
   })
 
-  test('navigates the reserved tab and falls back to this tab when blocked', () => {
+  test('navigates the reserved tab with replace, and reports a closed tab', () => {
     const reserved = openPaymentWindow()
-    reserved.navigate('https://pay.example.com/checkout')
-    expect(popup.location.href).toBe('https://pay.example.com/checkout')
+    expect(reserved.navigate('https://pay.example.com/checkout')).toBe(true)
+    expect(popup.location.replaced).toBe('https://pay.example.com/checkout')
 
     open.mockReturnValue(null)
-    openPaymentWindow().navigate('https://pay.example.com/checkout')
-    expect(navigatedTo).toBe('https://pay.example.com/checkout')
-  })
+    expect(openPaymentWindow().navigate('https://pay.example.com/x')).toBe(
+      false
+    )
 
-  test('closes only a live reserved tab when the payment never started', () => {
-    const reserved = openPaymentWindow()
-    reserved.discard()
-    expect(popup.close).toHaveBeenCalledTimes(1)
-
+    const closed = openPaymentWindow()
     popup.closed = true
-    openPaymentWindow().discard()
+    expect(closed.navigate('https://pay.example.com/x')).toBe(false)
+  })
+
+  test('closes an unused reservation but leaves a driven tab alone', () => {
+    const unused = openPaymentWindow()
+    unused.closeIfUnused()
+    expect(popup.close).toHaveBeenCalledTimes(1)
+
+    const driven = openPaymentWindow()
+    driven.navigate('https://pay.example.com/checkout')
+    driven.closeIfUnused()
+    // A tab already showing the gateway is the payment page itself.
     expect(popup.close).toHaveBeenCalledTimes(1)
 
     open.mockReturnValue(null)
-    // A blocked reservation has nothing to close.
-    expect(() => openPaymentWindow().discard()).not.toThrow()
+    expect(() => openPaymentWindow().closeIfUnused()).not.toThrow()
   })
 })

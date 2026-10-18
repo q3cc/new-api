@@ -111,13 +111,17 @@ export function SubscriptionPurchaseDialog(props: Props) {
     // Reserve the gateway tab while the click's user activation is still live;
     // a popup requested after the order request resolves would be blocked.
     const paymentWindow = openPaymentWindow()
-    let started = false
     setPaying(true)
     try {
       const res = await paySubscriptionStripe({ plan_id: plan.id })
       if (res.message === 'success' && res.data?.pay_link) {
-        paymentWindow.navigate(res.data.pay_link)
-        started = true
+        if (!paymentWindow.navigate(res.data.pay_link)) {
+          handleServerError(
+            new Error('payment window closed'),
+            t('Payment page could not be opened. Allow pop-ups and try again.')
+          )
+          return
+        }
         toast.success(t('Payment page opened'))
         props.onOpenChange(false)
       } else {
@@ -126,20 +130,24 @@ export function SubscriptionPurchaseDialog(props: Props) {
     } catch (error) {
       handleServerError(error, t('Payment request failed'))
     } finally {
-      if (!started) paymentWindow.discard()
+      paymentWindow.closeIfUnused()
       setPaying(false)
     }
   }
 
   const handlePayCreem = async () => {
     const paymentWindow = openPaymentWindow()
-    let started = false
     setPaying(true)
     try {
       const res = await paySubscriptionCreem({ plan_id: plan.id })
       if (res.message === 'success' && res.data?.checkout_url) {
-        paymentWindow.navigate(res.data.checkout_url)
-        started = true
+        if (!paymentWindow.navigate(res.data.checkout_url)) {
+          handleServerError(
+            new Error('payment window closed'),
+            t('Payment page could not be opened. Allow pop-ups and try again.')
+          )
+          return
+        }
         toast.success(t('Payment page opened'))
         props.onOpenChange(false)
       } else {
@@ -148,7 +156,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
     } catch (error) {
       handleServerError(error, t('Payment request failed'))
     } finally {
-      if (!started) paymentWindow.discard()
+      paymentWindow.closeIfUnused()
       setPaying(false)
     }
   }
@@ -178,7 +186,6 @@ export function SubscriptionPurchaseDialog(props: Props) {
       return
     }
     const paymentWindow = openPaymentWindow()
-    let started = false
     setPaying(true)
     try {
       const res = await paySubscriptionEpay({
@@ -186,8 +193,13 @@ export function SubscriptionPurchaseDialog(props: Props) {
         payment_method: selectedEpayMethod,
       })
       if (res.message === 'success' && res.url) {
-        paymentWindow.submit(res.url, res.data || {})
-        started = true
+        if (!paymentWindow.submit(res.url, res.data || {})) {
+          handleServerError(
+            new Error('payment window closed'),
+            t('Payment page could not be opened. Allow pop-ups and try again.')
+          )
+          return
+        }
         toast.success(t('Payment initiated'))
         props.onOpenChange(false)
       } else {
@@ -196,7 +208,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
     } catch (error) {
       handleServerError(error, t('Payment request failed'))
     } finally {
-      if (!started) paymentWindow.discard()
+      paymentWindow.closeIfUnused()
       setPaying(false)
     }
   }

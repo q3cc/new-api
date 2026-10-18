@@ -35,7 +35,6 @@ export function useCreemPayment() {
     // Reserve the checkout tab while the click's user activation is still live;
     // a popup requested after the order request resolves would be blocked.
     const paymentWindow = openPaymentWindow()
-    let started = false
     setProcessing(true)
     try {
       const response = await requestCreemPayment({
@@ -44,8 +43,13 @@ export function useCreemPayment() {
       })
 
       if (isApiSuccess(response) && response.data?.checkout_url) {
-        paymentWindow.navigate(response.data.checkout_url)
-        started = true
+        if (!paymentWindow.navigate(response.data.checkout_url)) {
+          handleServerError(
+            new Error('payment window closed'),
+            i18next.t('Payment page could not be opened. Allow pop-ups and try again.')
+          )
+          return false
+        }
         toast.success(i18next.t('Redirecting to Creem checkout...'))
         return true
       }
@@ -56,7 +60,7 @@ export function useCreemPayment() {
       handleServerError(_error, i18next.t('Payment request failed'))
       return false
     } finally {
-      if (!started) paymentWindow.discard()
+      paymentWindow.closeIfUnused()
       setProcessing(false)
     }
   }, [])
