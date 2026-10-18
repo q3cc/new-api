@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -26,62 +26,108 @@ import { dispatchSelectedPayment } from '../../lib/payment'
 import { usePayment } from '../use-payment'
 import { useTopupInfo } from '../use-topup-info'
 
-it('wallet loading preserves server order and separately selects two Alipay services', async () => {
-  vi.spyOn(api, 'get').mockResolvedValue({
-    data: {
-      success: true,
+it.each([undefined, false, 'false'])(
+  'wallet loading preserves service selection and gateway mode for mapi=%s',
+  async (mapi) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
       data: {
-        enable_online_topup: true,
-        enable_stripe_topup: false,
-        pay_methods: [
-          { id: 'epay_b', name: 'Alipay B', type: 'alipay' },
-          { id: 'epay_a', name: 'Alipay A', type: 'alipay' },
-        ],
-        min_topup: 1,
-        stripe_min_topup: 1,
-        amount_options: [2],
-        discount: {},
+        success: true,
+        data: {
+          enable_online_topup: true,
+          enable_stripe_topup: false,
+          pay_methods: [
+            { id: 'epay_b', name: 'Alipay B', type: 'alipay' },
+            { id: 'epay_a', name: 'Alipay A', type: 'alipay', mapi },
+          ],
+          min_topup: 1,
+          stripe_min_topup: 1,
+          amount_options: [2],
+          discount: {},
+        },
       },
-    },
-  })
-  const { result } = renderHook(() => useTopupInfo())
-  await waitFor(() => expect(result.current.loading).toBe(false))
-  const methods = result.current.topupInfo?.pay_methods ?? []
-  expect(methods.map((m) => m.id)).toEqual(['epay_b', 'epay_a'])
-  const regular = vi.fn(async () => true)
-  await dispatchSelectedPayment(methods[1], 2, null, {
-    regular,
-    waffo: async () => false,
-    waffoPancake: async () => false,
-  })
-  expect(regular).toHaveBeenCalledWith(2, 'epay_a', { mapi: false })
-})
+    })
+    const { result } = renderHook(() => useTopupInfo())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const methods = result.current.topupInfo?.pay_methods ?? []
+    expect(methods.map((m) => m.id)).toEqual(['epay_b', 'epay_a'])
+    const regular = vi.fn(async () => true)
+    await dispatchSelectedPayment(methods[1], 2, null, {
+      regular,
+      waffo: async () => false,
+      waffoPancake: async () => false,
+    })
+    expect(regular).toHaveBeenCalledWith(2, 'epay_a', { mapi: false })
+  }
+)
 
-it('a mapi answer renders a payment code instead of opening a gateway tab', async () => {
-  vi.spyOn(api, 'post').mockResolvedValue({
-    data: {
-      message: 'success',
+it.each([
+  { mapi: 'true', fails: false },
+  { mapi: true, fails: false },
+  { mapi: 'true', fails: true },
+])(
+  'a loaded mapi=$mapi method never opens a tab, including while pending (fails=$fails)',
+  async ({ mapi, fails }) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
       data: {
-        trade_no: 'USR1NOabc',
-        qrcode: 'weixin://wxpay/bizpayurl?pr=test',
-        pay_url: 'https://pay.example.com/qr/1',
+        success: true,
+        data: {
+          enable_online_topup: true,
+          pay_methods: [{ id: 'epay_wx', name: 'WeChat', type: 'wxpay', mapi }],
+          min_topup: 1,
+          amount_options: [10],
+        },
       },
-    },
-  })
-  const open = vi.spyOn(window, 'open')
-  const onEpayMapi = vi.fn()
-  const { result } = renderHook(() => usePayment({ onEpayMapi }))
+    })
+    const payment = {
+      trade_no: 'USR1NOabc',
+      qrcode: 'weixin://wxpay/bizpayurl?pr=test',
+      pay_url: 'https://pay.example.com/qr/1',
+    }
+    let resolveResponse: () => void = () => {}
+    const responseReady = new Promise<void>((resolve) => {
+      resolveResponse = resolve
+    })
+    const post = vi.spyOn(api, 'post').mockImplementation(async () => {
+      await responseReady
+      if (fails) throw new Error('Payment service unavailable')
+      return { data: { message: 'success', data: payment } }
+    })
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const onEpayMapi = vi.fn()
+    const { result } = renderHook(() => ({
+      topup: useTopupInfo(),
+      payment: usePayment({ onEpayMapi }),
+    }))
+    await waitFor(() => expect(result.current.topup.loading).toBe(false))
+    const method = result.current.topup.topupInfo?.pay_methods[0]
+    if (!method) throw new Error('Expected the configured payment method')
 
-  await expect(
-    result.current.processPayment(10, 'wxpay', { mapi: true })
-  ).resolves.toBe(true)
+    await act(async () => {
+      const pending = dispatchSelectedPayment(method, 10, null, {
+        regular: result.current.payment.processPayment,
+        waffo: async () => false,
+        waffoPancake: async () => false,
+      })
+      // No blank tab may be reserved even before the server answers.
+      const openedWhilePending = open.mock.calls.length
+      resolveResponse()
+      expect(await pending).toBe(!fails)
+      expect(openedWhilePending).toBe(0)
+    })
 
-  // The code is shown in place, so no tab is reserved or navigated.
-  expect(open).not.toHaveBeenCalled()
-  expect(onEpayMapi).toHaveBeenCalledWith({
-    trade_no: 'USR1NOabc',
-    qrcode: 'weixin://wxpay/bizpayurl?pr=test',
-    pay_url: 'https://pay.example.com/qr/1',
-    url_scheme: undefined,
-  })
-})
+    expect(post).toHaveBeenCalledWith(
+      '/api/user/pay',
+      { amount: 10, payment_method: 'epay_wx' },
+      { skipBusinessError: true }
+    )
+    expect(open).not.toHaveBeenCalled()
+    if (fails) {
+      expect(onEpayMapi).not.toHaveBeenCalled()
+    } else {
+      expect(onEpayMapi).toHaveBeenCalledWith({
+        ...payment,
+        url_scheme: undefined,
+      })
+    }
+  }
+)

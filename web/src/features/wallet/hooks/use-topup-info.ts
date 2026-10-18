@@ -73,6 +73,7 @@ function parsePaymentMethods(
         id: typeof item.id === 'string' ? item.id : undefined,
         name: typeof item.name === 'string' ? item.name : '',
         type,
+        mapi: item.mapi === true || item.mapi === 'true',
         color: typeof item.color === 'string' ? item.color : undefined,
         icon: typeof item.icon === 'string' ? item.icon : undefined,
         min_topup:
