@@ -89,6 +89,9 @@ func formatWaffoAmount(amount float64, currency string) string {
 func getWaffoPayMoney(amount float64, group string) float64 {
 	originalAmount := amount
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		if !validQuotaPerUnit() {
+			return 0
+		}
 		amount = amount / common.QuotaPerUnit
 	}
 	topupGroupRatio := common.GetTopupGroupRatio(group)

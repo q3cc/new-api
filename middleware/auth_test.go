@@ -557,3 +557,23 @@ func TestRootAuthProtectsEpayConfiguration(t *testing.T) {
 		}
 	}
 }
+
+// A pending auth-version fence is a short fail-closed window right after a
+// password or session change. Reporting it as a database failure (500) told
+// users the gateway was broken; it is retryable and belongs to 503.
+func TestDashboardAuthReportsPendingStateAsRetryable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	writeDashboardAuthError(c, model.ErrUserAuthCachePending)
+	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	assert.Equal(t, "1", recorder.Header().Get("Retry-After"))
+	assert.Contains(t, recorder.Body.String(), "AUTH_STATE_PENDING")
+
+	// A genuine database failure keeps the 500 and the internal-error code.
+	failure := httptest.NewRecorder()
+	failureContext, _ := gin.CreateTestContext(failure)
+	writeDashboardAuthError(failureContext, errors.New("database is down"))
+	assert.Equal(t, http.StatusInternalServerError, failure.Code)
+	assert.Contains(t, failure.Body.String(), "AUTH_INTERNAL_ERROR")
+}

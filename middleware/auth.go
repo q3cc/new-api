@@ -403,6 +403,14 @@ func writeDashboardAuthError(c *gin.Context, err error) {
 		abortWithWebMessage(c, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", common.NewMessage("Unauthorized, invalid access token"))
 		return
 	}
+	// A pending auth-version fence is a short fail-closed window right after a
+	// password or session change, not a database failure. Report it as
+	// retryable so clients back off instead of surfacing a 500.
+	if errors.Is(err, model.ErrUserAuthCachePending) {
+		c.Header("Retry-After", "1")
+		abortWithWebMessage(c, http.StatusServiceUnavailable, "AUTH_STATE_PENDING", common.NewMessage("Authentication state is updating, please retry"))
+		return
+	}
 	common.SysLog(common.LogText("dashboard authentication error: %s", err.Error()))
 	abortWithWebMessage(c, http.StatusInternalServerError, "AUTH_INTERNAL_ERROR", common.NewMessage("Database error, please contact the administrator"))
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/service"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -277,4 +279,37 @@ func TestSubscriptionRedemptionAPICompatibilityAndPermissions(t *testing.T) {
 	assert.True(t, response.Success)
 	assert.Equal(t, 500, response.Data)
 	assert.Equal(t, model.RedemptionTypeBalance, response.Redemption.Type)
+}
+
+// A zero or non-finite quota unit would panic the decimal math in the payment
+// path. The option is administrator-controlled, so every entry point reports a
+// payment error instead of letting the panic become a 500.
+func TestPaymentMathRejectsAnInvalidQuotaUnit(t *testing.T) {
+	oldQuotaPerUnit := common.QuotaPerUnit
+	oldDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType
+	oldPrice := operation_setting.Price
+	oldUnitPrice := setting.WaffoUnitPrice
+	oldPancakePrice := setting.WaffoPancakeUnitPrice
+	t.Cleanup(func() {
+		common.QuotaPerUnit = oldQuotaPerUnit
+		operation_setting.GetGeneralSetting().QuotaDisplayType = oldDisplayType
+		operation_setting.Price = oldPrice
+		setting.WaffoUnitPrice = oldUnitPrice
+		setting.WaffoPancakeUnitPrice = oldPancakePrice
+	})
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeTokens
+	operation_setting.Price = 7.3
+	setting.WaffoUnitPrice = 1
+	setting.WaffoPancakeUnitPrice = 1
+
+	for _, quotaPerUnit := range []float64{0, math.NaN(), math.Inf(1)} {
+		common.QuotaPerUnit = quotaPerUnit
+		assert.NotPanics(t, func() { getPayMoney(1000, "default") }, "quota unit %v", quotaPerUnit)
+		assert.NotPanics(t, func() { getWaffoPayMoney(1000, "default") }, "quota unit %v", quotaPerUnit)
+		assert.NotPanics(t, func() { getWaffoPancakePayMoney(1000, "default") }, "quota unit %v", quotaPerUnit)
+		assert.NotPanics(t, func() { getStripePayMoney(1000, "default") }, "quota unit %v", quotaPerUnit)
+		assert.NotPanics(t, func() { getStripeCreditedQuota(1000, "default") }, "quota unit %v", quotaPerUnit)
+		_, err := getTopUpQuota(1000)
+		require.Error(t, err, "quota unit %v must be rejected", quotaPerUnit)
+	}
 }

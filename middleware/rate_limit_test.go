@@ -198,7 +198,7 @@ func TestRedisFixedWindowRepairsCounterWithoutTTL(t *testing.T) {
 	assert.False(t, redisServer.Exists(key), "a recovered counter must not remain permanently rate-limited")
 }
 
-func TestRedisFailurePolicies(t *testing.T) {
+func TestRedisFailureAllowsRequests(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	_, redisClient := useRateLimitMiniRedis(t)
 	require.NoError(t, redisClient.Close())
@@ -218,12 +218,10 @@ func TestRedisFailurePolicies(t *testing.T) {
 		c.Status(http.StatusNoContent)
 	})
 
-	ipResponse := performRateLimitRequest(router, "/ip", "192.0.2.60:12345")
-	assert.Equal(t, http.StatusInternalServerError, ipResponse.Code)
-	assert.Empty(t, ipResponse.Body.String())
-	userResponse := performRateLimitRequest(router, "/user", "192.0.2.61:12345")
-	assert.Equal(t, http.StatusInternalServerError, userResponse.Code)
-	assert.Empty(t, userResponse.Body.String())
+	// A counter that cannot be reached must not fail the request: rate limiting
+	// is an abuse guard, not a correctness dependency.
+	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/ip", "192.0.2.60:12345").Code)
+	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/user", "192.0.2.61:12345").Code)
 	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/email", "192.0.2.62:12345").Code)
 }
 

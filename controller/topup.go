@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"gorm.io/gorm"
 	"maps"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -134,11 +135,22 @@ type AmountRequest struct {
 	Amount int64 `json:"amount"`
 }
 
+// validQuotaPerUnit reports whether the configured quota unit can be used as a
+// divisor and converted to a decimal. The option is administrator-controlled,
+// but a zero or non-finite value would panic the payment math, so every caller
+// checks it first and answers with a payment error instead.
+func validQuotaPerUnit() bool {
+	return common.QuotaPerUnit > 0 && !math.IsNaN(common.QuotaPerUnit) && !math.IsInf(common.QuotaPerUnit, 0)
+}
+
 func getPayMoney(amount int64, group string) float64 {
 	dAmount := decimal.NewFromInt(amount)
 	// 充值金额以“展示类型”为准：
 	// - USD/CNY: 前端传 amount 为金额单位；TOKENS: 前端传 tokens，需要换成 USD 金额
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		if !validQuotaPerUnit() {
+			return 0
+		}
 		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 		dAmount = dAmount.Div(dQuotaPerUnit)
 	}
@@ -179,6 +191,9 @@ func getMinTopup() int64 {
 }
 
 func getTopUpQuota(amount int64) (int, error) {
+	if !validQuotaPerUnit() {
+		return 0, common.NewMessage("Quota unit is misconfigured")
+	}
 	quota := decimal.NewFromInt(amount)
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
@@ -282,6 +297,10 @@ func RequestEpay(c *gin.Context) {
 	}
 	id := c.GetInt("id")
 	if rejectInvalidTopUpQuota(c, id, req.Amount) {
+		return
+	}
+	if !validQuotaPerUnit() {
+		paymentError(c, common.NewMessage("Quota unit is misconfigured"))
 		return
 	}
 

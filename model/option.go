@@ -2,7 +2,9 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"maps"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -259,6 +261,22 @@ func validateOptionValue(key string, value string) error {
 	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
+	}
+	if key == "QuotaPerUnit" || key == "Price" || key == "USDExchangeRate" {
+		return validatePositiveFloatOption(key, value)
+	}
+	return nil
+}
+
+// validatePositiveFloatOption rejects values the payment path would divide by
+// or turn into a decimal, where a zero, NaN, or infinite value panics.
+func validatePositiveFloatOption(key, value string) error {
+	number, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(number) || math.IsInf(number, 0) || number < 0 {
+		return fmt.Errorf("%s must be a finite non-negative number", key)
+	}
+	if key == "QuotaPerUnit" && number == 0 {
+		return fmt.Errorf("%s must be greater than zero", key)
 	}
 	return nil
 }

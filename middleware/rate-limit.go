@@ -107,6 +107,15 @@ func redisFixedWindowTake(ctx context.Context, key string, maxRequestNum int, du
 	return allowedValue == 1, count, ttlSeconds, nil
 }
 
+// rateLimitBackendUnavailable lets the request through when the shared counter
+// cannot be reached. Rate limiting guards against abuse; it is not a
+// correctness dependency, and failing the whole API closed on a Redis blip is
+// worse than serving a few extra requests while the error is logged.
+func rateLimitBackendUnavailable(c *gin.Context, mark string, err error) {
+	logger.LogError(c.Request.Context(), common.LogText("rate limit check failed, allowing request (mark=%s): %v", mark, err))
+	c.Next()
+}
+
 func redisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark string) {
 	allowed, _, ttlSeconds, err := redisFixedWindowTake(
 		c.Request.Context(),
@@ -115,9 +124,7 @@ func redisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark st
 		duration,
 	)
 	if err != nil {
-		logger.LogError(c.Request.Context(), common.LogText("rate limit check failed (mark=%s): %v", mark, err))
-		c.Status(http.StatusInternalServerError)
-		c.Abort()
+		rateLimitBackendUnavailable(c, mark, err)
 		return
 	}
 	if !allowed {
@@ -250,9 +257,7 @@ func userRateLimitFactory(maxRequestNum int, duration int64, mark string) func(c
 func userRedisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, key string) {
 	allowed, _, ttlSeconds, err := redisFixedWindowTake(c.Request.Context(), key, maxRequestNum, duration)
 	if err != nil {
-		logger.LogError(c.Request.Context(), common.LogText("rate limit check failed (key=%s): %v", key, err))
-		c.Status(http.StatusInternalServerError)
-		c.Abort()
+		rateLimitBackendUnavailable(c, key, err)
 		return
 	}
 	if !allowed {

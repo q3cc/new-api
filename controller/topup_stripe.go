@@ -416,6 +416,9 @@ func getStripeCreditedQuota(amount int64, group string) decimal.Decimal {
 	if topUpGroupRatio == 0 {
 		topUpGroupRatio = 1
 	}
+	if !validQuotaPerUnit() {
+		return decimal.Zero
+	}
 	return decimal.NewFromInt(amount).
 		Mul(decimal.NewFromFloat(topUpGroupRatio)).
 		Mul(decimal.NewFromFloat(common.QuotaPerUnit))
@@ -424,6 +427,9 @@ func getStripeCreditedQuota(amount int64, group string) decimal.Decimal {
 func getStripePayMoney(amount float64, group string) float64 {
 	originalAmount := amount
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		if !validQuotaPerUnit() {
+			return 0
+		}
 		amount = amount / common.QuotaPerUnit
 	}
 	// Using float64 for monetary calculations is acceptable here due to the small amounts involved

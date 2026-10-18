@@ -56,6 +56,9 @@ func RequestWaffoPancakeAmount(c *gin.Context) {
 func getWaffoPancakePayMoney(amount int64, group string) float64 {
 	dAmount := decimal.NewFromInt(amount)
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		if !validQuotaPerUnit() {
+			return 0
+		}
 		dAmount = dAmount.Div(decimal.NewFromFloat(common.QuotaPerUnit))
 	}
 
@@ -79,6 +82,9 @@ func getWaffoPancakePayMoney(amount int64, group string) float64 {
 
 func normalizeWaffoPancakeTopUpAmount(amount int64) int64 {
 	if operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens {
+		return amount
+	}
+	if !validQuotaPerUnit() {
 		return amount
 	}
 
