@@ -571,6 +571,12 @@ For commercial licensing, please contact support@quantumnous.com
 .cinematic-home[data-glass-tier='frosted'] .home-primary {
   background: #eaf2fa;
 }
+/* Without a backdrop blur the secondary action sits straight on the random
+   wallpaper; an opaque fill keeps its label readable on bright pictures. */
+.cinematic-home[data-glass-tier='frosted'] .home-secondary {
+  background: #22303f;
+  color: #f1f5f9;
+}
 @media (prefers-reduced-transparency: reduce) {
   .cinematic-home
     :is(

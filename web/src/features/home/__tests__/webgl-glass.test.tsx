@@ -38,6 +38,8 @@ let metricsTop: number
 let textTop: number
 let frames: Map<number, FrameRequestCallback>
 let nextFrame: number
+let timers: Map<number, () => void>
+let nextTimer: number
 let media: Map<string, MediaQueryList>
 
 function glBoundary() {
@@ -151,6 +153,8 @@ beforeEach(() => {
   textTop = 200
   frames = new Map()
   nextFrame = 0
+  timers = new Map()
+  nextTimer = 0
   media = new Map()
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
     frames.set(++nextFrame, callback)
@@ -158,6 +162,15 @@ beforeEach(() => {
   })
   vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
     frames.delete(id)
+  })
+  // A retry waits on a timer rather than a frame; tests assert that timer is
+  // armed instead of letting the backoff fire mid-test.
+  vi.spyOn(window, 'setTimeout').mockImplementation(((callback: () => void) => {
+    timers.set(++nextTimer, callback)
+    return nextTimer
+  }) as typeof window.setTimeout)
+  vi.spyOn(window, 'clearTimeout').mockImplementation((id) => {
+    timers.delete(id as number)
   })
   vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
     const entry = new EventTarget() as MediaQueryList
@@ -334,6 +347,10 @@ test('unsupported WebGL retains CSS material and native navigation while retryin
   const attempts = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls
     .length
   expect(attempts).toBe(4)
+  // A device without WebGL must not spin the frame loop; one timer wakes the
+  // retry instead.
+  expect(frames.size).toBe(0)
+  expect(timers.size).toBe(1)
   step()
   step()
   expect(
@@ -359,7 +376,12 @@ test('context loss restores CSS immediately and context restoration resumes WebG
   if (!canvas || !nav) throw new Error('Missing glass canvas')
   fireEvent(canvas, new Event('webglcontextlost', { cancelable: true }))
   expect(nav).not.toHaveAttribute('data-glass-renderer')
-  fireEvent(canvas, new Event('webglcontextrestored'))
+  // A lost context cannot reopen on the same element, so the surface is moved
+  // onto a fresh canvas rather than retried on the dead one.
+  const replacement = container.querySelector('.home-optical-glass-under')
+  expect(replacement).not.toBe(canvas)
+  expect(canvas.isConnected).toBe(false)
+  fireEvent(replacement as Element, new Event('webglcontextrestored'))
   step()
   expect(nav).toHaveAttribute('data-glass-renderer', 'webgl')
 })
@@ -541,6 +563,27 @@ test('a scrolling surface samples the wallpaper where the compositor will show i
   expect(scrolling?.y).toBeCloseTo(rest.y + 100)
   expect(scrolling?.x).toBe(rest.x)
   // A still card samples its true position again.
+  step()
+  expect(wallpaperRects().at(-1)?.y).toBeCloseTo(rest.y)
+})
+
+test('a stale sample does not predict a scroll delta after the frame loop resumes', () => {
+  let now = 0
+  vi.spyOn(performance, 'now').mockImplementation(() => now)
+  render(<Fixture />)
+  load()
+  const wallpaperRects = () =>
+    gl.uniform4f.mock.calls
+      .filter(([, , , width, height]) => height === 800 && width > 1400)
+      .map(([, x, y]) => ({ x, y }))
+  const rest = wallpaperRects().at(-1)
+  if (!rest) throw new Error('No wallpaper rect drawn')
+  gl.uniform4f.mockClear()
+  // The loop was paused (reduced motion, a hidden tab) long enough that the
+  // last sample no longer describes a scroll: no extrapolation that frame.
+  now = 5000
+  metricsTop = 500
+  fireEvent.scroll(window)
   step()
   expect(wallpaperRects().at(-1)?.y).toBeCloseTo(rest.y)
 })

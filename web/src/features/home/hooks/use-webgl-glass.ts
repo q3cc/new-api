@@ -87,6 +87,8 @@ type GlassSurface = {
    *  will show it next frame (see draw). */
   lastX: number | null
   lastY: number | null
+  /** When lastX/lastY were sampled; a stale sample cannot predict a delta. */
+  lastAt: number
   cleanup: () => void
 }
 
@@ -108,6 +110,7 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
     let objectUrl: string | null = null
     let disposed = false
     let frame = 0
+    let retryTimer = 0
     const surfaces: GlassSurface[] = []
 
     // A fresh canvas per context: a deliberately lost context cannot be
@@ -133,6 +136,9 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
         surface.renderer?.dispose()
         surface.renderer = null
         delete surface.element.dataset.glassRenderer
+        // A lost context cannot be reopened on the same element, so the
+        // surface gets a fresh canvas instead of retrying a dead one.
+        mountCanvas(surface)
         schedule()
       }
       canvas.addEventListener('webglcontextlost', lost)
@@ -260,12 +266,26 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
         let aheadX = 0
         let aheadY = 0
         if (!surface.underContent) {
-          if (surface.lastX !== null && surface.lastY !== null) {
-            aheadX = rect.x - surface.lastX
-            aheadY = rect.y - surface.lastY
+          // A sample older than this came from before a paused frame loop
+          // (reduced motion, a hidden tab), so its delta is not a scroll.
+          if (
+            surface.lastX !== null &&
+            surface.lastY !== null &&
+            now - surface.lastAt <= 100
+          ) {
+            const limit = viewportHeight * 0.5
+            aheadX = Math.max(
+              -limit,
+              Math.min(limit, rect.x - surface.lastX)
+            )
+            aheadY = Math.max(
+              -limit,
+              Math.min(limit, rect.y - surface.lastY)
+            )
           }
           surface.lastX = rect.x
           surface.lastY = rect.y
+          surface.lastAt = now
         }
         if (!wanted || !surface.renderer) {
           delete surface.element.dataset.glassRenderer
@@ -321,16 +341,27 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
         })
         surface.element.dataset.glassRenderer = 'webgl'
       })
-      const retrying = surfaces.some(
-        (surface) => !surface.renderer && surface.failures > 0
-      )
-      if ((visible || retrying) && !motion.matches) {
-        frame = requestAnimationFrame(draw)
+      // Only visible glass needs a frame loop. Surfaces waiting out a retry
+      // backoff are woken by one timer instead, so a device without WebGL
+      // does not spin at display rate for nothing.
+      if (!visible || motion.matches) {
+        const nextRetry = surfaces
+          .filter((surface) => !surface.renderer && surface.failures > 0)
+          .map((surface) => surface.retryAt)
+          .sort((a, b) => a - b)
+          .at(0)
+        if (nextRetry !== undefined) {
+          retryTimer = window.setTimeout(schedule, Math.max(0, nextRetry - now))
+        }
+        return
       }
+      frame = requestAnimationFrame(draw)
     }
     const schedule = () => {
       cancelAnimationFrame(frame)
       frame = 0
+      window.clearTimeout(retryTimer)
+      retryTimer = 0
       if (!disposed && !document.hidden && surfaces.length) {
         frame = requestAnimationFrame(draw)
       }
@@ -358,6 +389,7 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
           placement: null,
           lastX: null,
           lastY: null,
+          lastAt: 0,
           cleanup: () => {},
         }
         mountCanvas(surface)
@@ -410,6 +442,7 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
       if (objectUrl) URL.revokeObjectURL(objectUrl)
       image.removeEventListener('load', loaded)
       cancelAnimationFrame(frame)
+      window.clearTimeout(retryTimer)
       resize.disconnect()
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', resized)

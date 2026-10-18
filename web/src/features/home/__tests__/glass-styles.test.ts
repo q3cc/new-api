@@ -38,3 +38,14 @@ test('glass blur keeps the standard declaration last so production minification 
     expect(properties.at(-1)).toBe('backdrop-filter')
   }
 })
+
+test('the frosted tier gives the secondary action an opaque fill for contrast', () => {
+  // Without backdrop blur the button sits straight on the random wallpaper;
+  // a translucent fill leaves its light label unreadable on bright pictures.
+  const rule = css.match(
+    /\.cinematic-home\[data-glass-tier='frosted'\]\s+\.home-secondary\s*\{([^}]*)\}/
+  )
+  expect(rule).not.toBeNull()
+  expect(rule?.[1]).toMatch(/background:\s*#22303f/)
+  expect(rule?.[1]).toMatch(/color:\s*#f1f5f9/)
+})
