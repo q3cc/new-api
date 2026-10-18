@@ -23,6 +23,13 @@ type ClaudeError struct {
 	Message string `json:"message,omitempty"`
 }
 
+// GeminiError is the google.rpc.Status envelope Gemini clients parse.
+type GeminiError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Status  string `json:"status"`
+}
+
 type ErrorType string
 
 const (
@@ -242,6 +249,51 @@ func (e *NewAPIError) ToClaudeError(upstreamURLs ...string) ClaudeError {
 		result.Message = string(e.errorType)
 	}
 	return result
+}
+
+// ToGeminiError masks the upstream addresses like ToOpenAIError and names the
+// HTTP status with the google.rpc.Status code Gemini clients expect.
+func (e *NewAPIError) ToGeminiError(upstreamURLs ...string) GeminiError {
+	status := "UNKNOWN"
+	switch e.StatusCode {
+	case http.StatusBadRequest:
+		status = "INVALID_ARGUMENT"
+	case http.StatusUnauthorized:
+		status = "UNAUTHENTICATED"
+	case http.StatusForbidden:
+		status = "PERMISSION_DENIED"
+	case http.StatusNotFound:
+		status = "NOT_FOUND"
+	case http.StatusConflict:
+		status = "ABORTED"
+	case http.StatusRequestTimeout, http.StatusGatewayTimeout:
+		status = "DEADLINE_EXCEEDED"
+	case http.StatusTooManyRequests:
+		status = "RESOURCE_EXHAUSTED"
+	case 499:
+		status = "CANCELLED"
+	case http.StatusInternalServerError:
+		status = "INTERNAL"
+	case http.StatusNotImplemented:
+		status = "UNIMPLEMENTED"
+	case http.StatusServiceUnavailable:
+		status = "UNAVAILABLE"
+	default:
+		switch {
+		case e.StatusCode >= 400 && e.StatusCode < 500:
+			status = "INVALID_ARGUMENT"
+		case e.StatusCode >= 500 && e.StatusCode < 600:
+			status = "INTERNAL"
+		}
+	}
+	message := e.Error()
+	if e.errorCode != ErrorCodeCountTokenFailed {
+		message = kitutil.MaskSensitiveInfo(message, upstreamURLs...)
+	}
+	if message == "" {
+		message = string(e.errorType)
+	}
+	return GeminiError{Code: e.StatusCode, Message: message, Status: status}
 }
 
 type NewAPIErrorOptions func(*NewAPIError)

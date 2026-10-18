@@ -300,12 +300,14 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			}
 		}
 
-		// Commit on every frame so a client abort keeps the queries seen so far.
-		grounding.observe(&geminiResponse)
-		grounding.commit(info)
-		countGeminiBillableFunctionCalls(info, &geminiResponse)
-
+		// Commit on every accepted frame so a client abort keeps the queries
+		// seen so far. A rejected frame's suppressed content is not a billing
+		// fact and must not reach the grounding or tool-call counters.
 		if rejection == nil {
+			grounding.observe(&geminiResponse)
+			grounding.commit(info)
+			countGeminiBillableFunctionCalls(info, &geminiResponse)
+
 			// 统计图片数量
 			for _, candidate := range geminiResponse.Candidates {
 				for _, part := range candidate.Content.Parts {
@@ -505,10 +507,6 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 	info.ObserveResponseModel(gjson.GetBytes(responseBody, "modelVersion").Str)
-	var grounding geminiGroundingCounter
-	grounding.observe(&geminiResponse)
-	grounding.commit(info)
-	countGeminiBillableFunctionCalls(info, &geminiResponse)
 	apiErr := geminiResponseRejection(c, info, &geminiResponse)
 	usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)
 	if apiErr != nil {
@@ -517,6 +515,10 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	if !geminiResponseHasOutput(&geminiResponse) {
 		return &usage, geminiEmptyResponseError(c, info)
 	}
+	var grounding geminiGroundingCounter
+	grounding.observe(&geminiResponse)
+	grounding.commit(info)
+	countGeminiBillableFunctionCalls(info, &geminiResponse)
 
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
 	fullTextResponse.Model = info.UpstreamModelName

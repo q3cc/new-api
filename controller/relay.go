@@ -222,6 +222,10 @@ func writeRelayError(c *gin.Context, relayFormat types.RelayFormat, apiErr *type
 	if relayFormat == types.RelayFormatClaude {
 		payload = gin.H{"type": "error", "error": apiErr.ToClaudeError(upstreamURLs...)}
 	}
+	// Gemini clients parse google.rpc.Status, not the OpenAI envelope.
+	if relayFormat == types.RelayFormatGemini {
+		payload = gin.H{"error": apiErr.ToGeminiError(upstreamURLs...)}
+	}
 	if c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
 		if relayFormat == types.RelayFormatClaude {
 			c.SSEvent("error", payload)

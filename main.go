@@ -200,6 +200,7 @@ func main() {
 	middleware.SetUpLogger(server)
 	InjectUmamiAnalytics()
 	InjectGoogleAnalytics()
+	InjectHomeWallpaperPreload()
 
 	// 设置路由
 	router.SetRouter(server, router.WebAssets{
@@ -288,6 +289,28 @@ func InjectGoogleAnalytics() {
 	indexPage = bytes.ReplaceAll(indexPage, placeholder, analyticsInject)
 }
 
+// InjectHomeWallpaperPreload drops the built-in home page's wallpaper preload
+// when the operator serves a custom home page, which never requests it.
+func InjectHomeWallpaperPreload() {
+	common.OptionMapRWMutex.RLock()
+	custom := strings.TrimSpace(common.OptionMap["HomePageContent"]) != ""
+	common.OptionMapRWMutex.RUnlock()
+	if !custom {
+		return
+	}
+	start := bytes.Index(indexPage, []byte("    <!--home-wallpaper-preload-->\n"))
+	end := bytes.Index(indexPage, []byte("    <!--/home-wallpaper-preload-->\n"))
+	if start < 0 || end < start {
+		return
+	}
+	// Keep the closing marker's newline so the surrounding head stays intact.
+	end += len("    <!--/home-wallpaper-preload-->\n")
+	stripped := make([]byte, 0, len(indexPage)-(end-start))
+	stripped = append(stripped, indexPage[:start]...)
+	stripped = append(stripped, indexPage[end:]...)
+	indexPage = stripped
+}
+
 func InitResources() error {
 	// Initialize resources here if needed
 	// This is a placeholder function for future resource initialization
@@ -307,7 +330,6 @@ func InitResources() error {
 	ratio_setting.InitRatioSettings()
 
 	service.InitHttpClient()
-	controller.StartHomeWallpaperPrefetch()
 
 	// Initialize SQL Database
 	err = model.InitDB()
@@ -335,6 +357,8 @@ func InitResources() error {
 		}
 	}
 	model.InitOptionMap()
+	// After the options are loaded, so a custom home page skips the prefetch.
+	controller.StartHomeWallpaperPrefetch()
 
 	// 清理旧的磁盘缓存文件
 	common.CleanupOldCacheFiles()

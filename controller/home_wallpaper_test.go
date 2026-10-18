@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -162,4 +163,31 @@ func TestHomeWallpaperAnswersDirectlyWhenThePoolIsEmpty(t *testing.T) {
 	// request context expires waiting on an empty pool.
 	recorder = serveHomeWallpaper(t, upstream.URL+"/down")
 	assert.Equal(t, http.StatusBadGateway, recorder.Code)
+}
+
+func TestHomeWallpaperPrefetchStaysOffForACustomHomePage(t *testing.T) {
+	originalPrefetch, originalPool := homeWallpaperPrefetch, homeWallpaperPool
+	homeWallpaperPrefetch, homeWallpaperPool = 1, nil
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	homePageContent := common.OptionMap["HomePageContent"]
+	common.OptionMap["HomePageContent"] = "custom home"
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		homeWallpaperPrefetch, homeWallpaperPool = originalPrefetch, originalPool
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap["HomePageContent"] = homePageContent
+		common.OptionMapRWMutex.Unlock()
+	})
+	// The custom home page never requests the wallpaper, so no refiller runs.
+	StartHomeWallpaperPrefetch()
+	assert.Nil(t, homeWallpaperPool)
+
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap["HomePageContent"] = ""
+	common.OptionMapRWMutex.Unlock()
+	StartHomeWallpaperPrefetch()
+	require.NotNil(t, homeWallpaperPool)
 }

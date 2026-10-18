@@ -14,6 +14,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/tokenkit"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -879,4 +880,59 @@ func TestGeminiLateSafetyRejectionKeepsOnlyDeliveredEstimates(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "delivered")
 	assert.NotContains(t, rec.Body.String(), "suppressed content")
 	assert.NotContains(t, rec.Body.String(), "data: [DONE]")
+}
+
+// A frame the provider rejected as unsafe must not contribute tool-call or
+// grounding facts: the caller never receives that content, so billing it would
+// charge for suppressed output.
+func TestGeminiRejectedFrameContributesNoBillableToolCalls(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	gin.SetMode(gin.TestMode)
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	operation_setting.SetToolPriceForTest("gemini_rejected_fn", 5)
+	t.Cleanup(func() { operation_setting.DeleteToolPriceForTest("gemini_rejected_fn") })
+	body := `data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"gemini_rejected_fn","args":{}}}]},"finishReason":"SAFETY"}]}` + "\n\ndata: [DONE]\n\n"
+	for _, stream := range []bool{false, true} {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		c.Request.Header.Set("Accept-Language", "en")
+		info := newGeminiResponsesRelayInfo(stream)
+		info.RelayFormat = types.RelayFormatOpenAI
+		var apiErr *types.NewAPIError
+		if stream {
+			_, apiErr = GeminiChatStreamHandler(c, info, &http.Response{Body: io.NopCloser(strings.NewReader(body))})
+		} else {
+			var response dto.GeminiChatResponse
+			require.NoError(t, common.UnmarshalJsonStr(`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"gemini_rejected_fn","args":{}}}]},"finishReason":"SAFETY"}]}`, &response))
+			apiErr = geminiResponseRejection(c, info, &response)
+			if apiErr == nil {
+				countGeminiBillableFunctionCalls(info, &response)
+			}
+		}
+		require.NotNil(t, apiErr)
+		require.Equal(t, types.ErrorCodePromptBlocked, apiErr.GetErrorCode())
+		if info.ResponsesUsageInfo != nil {
+			assert.Empty(t, info.ResponsesUsageInfo.BuiltInTools,
+				"a rejected frame must not bill tool calls (stream=%v)", stream)
+		}
+	}
+}
+
+// An accepted frame keeps billing its priced tool calls, so the guard above is
+// narrowing what counts rather than disabling the counter.
+func TestGeminiAcceptedFrameBillsPricedToolCalls(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	operation_setting.SetToolPriceForTest("gemini_accepted_fn", 5)
+	t.Cleanup(func() { operation_setting.DeleteToolPriceForTest("gemini_accepted_fn") })
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := newGeminiResponsesRelayInfo(false)
+	var response dto.GeminiChatResponse
+	require.NoError(t, common.UnmarshalJsonStr(`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"gemini_accepted_fn","args":{}}}]},"finishReason":"STOP"}]}`, &response))
+	require.Nil(t, geminiResponseRejection(c, info, &response))
+	countGeminiBillableFunctionCalls(info, &response)
+	require.Contains(t, info.ResponsesUsageInfo.BuiltInTools, "gemini_accepted_fn")
+	assert.Equal(t, 1, info.ResponsesUsageInfo.BuiltInTools["gemini_accepted_fn"].CallCount)
 }

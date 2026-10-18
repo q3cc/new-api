@@ -35,6 +35,7 @@
          with the HTML so it runs alongside the script download instead of
          after the home page code has loaded; the page's own fetch picks up the
          preloaded response. -->
+    <!--home-wallpaper-preload-->
     <script>
       ;(function () {
         if (location.pathname !== '/') return
@@ -48,6 +49,7 @@
         document.head.appendChild(link)
       })()
     </script>
+    <!--/home-wallpaper-preload-->
     <!--umami-->
     <!--Google Analytics-->
   </head>

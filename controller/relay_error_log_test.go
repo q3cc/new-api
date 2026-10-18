@@ -174,8 +174,35 @@ func TestRelayStreamErrorUsesClientProtocol(t *testing.T) {
 				assert.Contains(t, body, "event:error\n")
 				assert.Contains(t, body, `"type":"error"`)
 			}
+			if format == types.RelayFormatGemini {
+				// Gemini clients parse google.rpc.Status, not the OpenAI envelope.
+				assert.Contains(t, body, `"code":502`)
+				assert.Contains(t, body, `"status":"INTERNAL"`)
+				assert.NotContains(t, body, `"type":"bad_response"`)
+			}
 		})
 	}
+}
+
+func TestRelayErrorEncodesTheGeminiStatusEnvelope(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/x:generateContent", nil)
+	writeRelayError(ctx, types.RelayFormatGemini, types.NewOpenAIError(
+		errors.New("prompt blocked: PROHIBITED_CONTENT"),
+		types.ErrorCodePromptBlocked,
+		http.StatusBadRequest,
+		types.ErrOptionWithSkipRetry(),
+	))
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Equal(t, "application/json; charset=utf-8", recorder.Header().Get("Content-Type"))
+	var payload struct {
+		Error types.GeminiError `json:"error"`
+	}
+	require.NoError(t, common.UnmarshalJsonStr(recorder.Body.String(), &payload))
+	assert.Equal(t, http.StatusBadRequest, payload.Error.Code)
+	assert.Equal(t, "INVALID_ARGUMENT", payload.Error.Status)
+	assert.Contains(t, payload.Error.Message, "PROHIBITED_CONTENT")
 }
 
 type streamBillingRecorder struct {

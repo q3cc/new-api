@@ -55,12 +55,21 @@ var (
 	homeWallpaperPool chan homeWallpaper
 )
 
-// The picture service answers with a redirect to the chosen file on its own
-// host. The upstream is fixed operator configuration rather than user input, so
-// the general SSRF redirect policy (which also rejects fake-IP DNS answers from
-// local proxies) does not apply; the hop is still confined to that host.
-func homeWallpaperClient() *http.Client {
-	return &http.Client{
+// fetchHomeWallpaper downloads one random picture and scales it down to the
+// size the hero can use.
+func fetchHomeWallpaper(ctx context.Context) (homeWallpaper, error) {
+	ctx, cancel := context.WithTimeout(ctx, homeWallpaperTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, homeWallpaperURL, nil)
+	if err != nil {
+		return homeWallpaper{}, err
+	}
+	req.Header.Set("Accept", "image/webp,image/*;q=0.8")
+	// The picture service answers with a redirect to the chosen file on its own
+	// host. The upstream is fixed operator configuration rather than user input,
+	// so the general SSRF redirect policy (which also rejects fake-IP DNS answers
+	// from local proxies) does not apply; the hop is still confined to that host.
+	client := &http.Client{
 		Transport: service.GetHttpClient().Transport,
 		Timeout:   homeWallpaperTimeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -74,19 +83,7 @@ func homeWallpaperClient() *http.Client {
 			return nil
 		},
 	}
-}
-
-// fetchHomeWallpaper downloads one random picture and scales it down to the
-// size the hero can use.
-func fetchHomeWallpaper(ctx context.Context) (homeWallpaper, error) {
-	ctx, cancel := context.WithTimeout(ctx, homeWallpaperTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, homeWallpaperURL, nil)
-	if err != nil {
-		return homeWallpaper{}, err
-	}
-	req.Header.Set("Accept", "image/webp,image/*;q=0.8")
-	resp, err := homeWallpaperClient().Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return homeWallpaper{}, err
 	}
@@ -154,11 +151,21 @@ func refillHomeWallpapers() {
 	}
 }
 
+// homeWallpaperEnabled reports whether the built-in cinematic home page is the
+// one being served. A custom home page never requests the wallpaper, so
+// prefetching it would only cost upstream traffic.
+func homeWallpaperEnabled() bool {
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+	return strings.TrimSpace(common.OptionMap["HomePageContent"]) == ""
+}
+
 // StartHomeWallpaperPrefetch begins filling the pool so the first visitor
-// after a restart is served from memory too. Only main starts it; requests
-// never wait on the pool being filled. Safe to call repeatedly.
+// after a restart is served from memory too. Only main starts it, after the
+// options are loaded; requests never wait on the pool being filled. Safe to
+// call repeatedly.
 func StartHomeWallpaperPrefetch() {
-	if homeWallpaperPrefetch <= 0 {
+	if homeWallpaperPrefetch <= 0 || !homeWallpaperEnabled() {
 		return
 	}
 	homeWallpaperOnce.Do(func() {
