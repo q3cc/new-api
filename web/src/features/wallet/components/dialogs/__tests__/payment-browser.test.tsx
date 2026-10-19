@@ -100,3 +100,31 @@ describe.each([false, true])('recharge confirmation (Creem: %s)', (creem) => {
     expect(onConfirm).toHaveBeenCalledOnce()
   })
 })
+
+describe('QR payment browser availability', () => {
+  it.each([
+    ['MicroMessenger/8', 'wxpay', true, true],
+    ['MicroMessenger/8', 'alipay', true, true],
+    ['AlipayClient/10', 'alipay', true, true],
+    ['AlipayClient/10', 'wxpay', true, false],
+    ['QQ/9', 'alipay', true, false],
+    ['MicroMessenger/8', 'alipay', false, false],
+  ])('%s / %s mapi=%s available=%s', (ua, type, mapi, allowed) => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(ua)
+    render(
+      <PaymentConfirmDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        topupAmount={1}
+        paymentAmount={1}
+        paymentMethod={{ name: type, type, mapi }}
+        calculating={false}
+        processing={false}
+      />
+    )
+    expect(
+      screen.getByRole('button', { name: 'Confirm Payment' })
+    ).toHaveProperty('disabled', !allowed)
+  })
+})

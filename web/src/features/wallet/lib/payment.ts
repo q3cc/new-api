@@ -24,7 +24,12 @@ import {
   DEFAULT_PAYMENT_TYPE,
   DEFAULT_MIN_TOPUP,
 } from '../constants'
-import type { PaymentMethod, PresetAmount, TopupInfo } from '../types'
+import type {
+  EpayMapiPayment,
+  PaymentMethod,
+  PresetAmount,
+  TopupInfo,
+} from '../types'
 
 // ============================================================================
 // Payment Processing Functions
@@ -40,6 +45,73 @@ export function getRechargeBrowser(
   // MQQBrowser alone also identifies the standalone QQ browser.
   if (/\bQQ\//i.test(userAgent)) return 'QQ'
   return null
+}
+
+export function canUseQrPayment(
+  method: PaymentMethod | undefined,
+  browser = getRechargeBrowser()
+): boolean {
+  if (!method || !(method.mapi === true || method.mapi === 'true')) return false
+  if (browser === 'QQ') return false
+  if (browser === 'Alipay') return method.type === PAYMENT_TYPES.ALIPAY
+  return (
+    method.type === PAYMENT_TYPES.WECHAT || method.type === PAYMENT_TYPES.ALIPAY
+  )
+}
+
+export function getInAppPaymentLink(
+  payment: EpayMapiPayment | null,
+  paymentType?: string
+): string | undefined {
+  const browser = getRechargeBrowser()
+  if (paymentType === PAYMENT_TYPES.WECHAT && browser !== 'WeChat') {
+    return undefined
+  }
+  if (paymentType === PAYMENT_TYPES.ALIPAY && browser === 'WeChat') {
+    return undefined
+  }
+  let webLink: string | undefined
+  for (const value of [
+    payment?.url_scheme,
+    payment?.pay_url,
+    payment?.qrcode,
+  ]) {
+    if (!value) continue
+    try {
+      const url = new URL(value)
+      if (url.username || url.password) continue
+      // Native scheme: match payment type strictly
+      if (url.protocol === 'weixin:') {
+        if (
+          paymentType === PAYMENT_TYPES.WECHAT &&
+          (browser === null || browser === 'WeChat')
+        ) {
+          return url.href
+        }
+        continue
+      }
+      if (['alipay:', 'alipays:'].includes(url.protocol)) {
+        if (
+          paymentType === PAYMENT_TYPES.ALIPAY &&
+          (browser === null || browser === 'Alipay')
+        ) {
+          return url.href
+        }
+        continue
+      }
+      if (!webLink && ['https:', 'http:'].includes(url.protocol)) {
+        webLink = url.href
+      }
+    } catch {
+      // A QR payload need not be a navigable URL.
+    }
+  }
+  if (!webLink) return undefined
+  // Wrap Alipay HTTPS in app scheme for both desktop and Alipay browser
+  if (paymentType === PAYMENT_TYPES.ALIPAY && browser !== 'WeChat') {
+    return `alipays://platformapi/startapp?appId=20000067&url=${encodeURIComponent(webLink)}`
+  }
+  return webLink
 }
 
 /**

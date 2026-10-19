@@ -48,6 +48,7 @@ import {
   getDefaultPaymentType,
   getMinTopupAmount,
   dispatchSelectedPayment,
+  canUseQrPayment,
 } from './lib'
 import type {
   UserWalletData,
@@ -63,6 +64,8 @@ interface WalletProps {
 }
 
 export function Wallet(props: WalletProps) {
+  const [autoLaunchPayment, setAutoLaunchPayment] = useState(false)
+  const [launchPaymentType, setLaunchPaymentType] = useState<string>()
   const { t } = useTranslation()
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
@@ -200,6 +203,8 @@ export function Wallet(props: WalletProps) {
   const handlePaymentConfirm = async () => {
     if (!selectedPaymentMethod) return
 
+    setLaunchPaymentType(selectedPaymentMethod.type)
+    setAutoLaunchPayment(canUseQrPayment(selectedPaymentMethod))
     const success = await dispatchSelectedPayment(
       selectedPaymentMethod,
       topupAmount,
@@ -375,6 +380,8 @@ export function Wallet(props: WalletProps) {
       />
 
       <EpayQrDialog
+        paymentType={launchPaymentType}
+        autoLaunch={autoLaunchPayment}
         payment={epayMapiPayment}
         onOpenChange={(open) => {
           if (!open) setEpayMapiPayment(null)

@@ -34,7 +34,7 @@ import { formatLocalCurrencyAmount } from '@/lib/currency'
 
 import { DEFAULT_DISCOUNT_RATE } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
-import { getRechargeBrowser } from '../../lib/payment'
+import { canUseQrPayment, getRechargeBrowser } from '../../lib/payment'
 import type { PaymentMethod } from '../../types'
 import { PaymentBrowserNotice } from './payment-browser-notice'
 
@@ -64,7 +64,9 @@ export function PaymentConfirmDialog({
   usdExchangeRate = 1,
 }: PaymentConfirmDialogProps) {
   const { t } = useTranslation()
-  const rechargeBrowser = getRechargeBrowser()
+  const rechargeBrowser = canUseQrPayment(paymentMethod)
+    ? null
+    : getRechargeBrowser()
   const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
   const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
   const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0

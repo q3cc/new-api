@@ -25,6 +25,7 @@ import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 
 import { getTopUpStatus } from '../../api'
+import { getInAppPaymentLink } from '../../lib/payment'
 import type { EpayMapiPayment } from '../../types'
 
 /** How often the page asks whether the gateway has settled the order. */
@@ -33,6 +34,8 @@ const POLL_INTERVAL_MS = 3000
 const PAYMENT_WINDOW_SECONDS = 10 * 60
 
 type Props = {
+  paymentType?: string
+  autoLaunch?: boolean
   payment: EpayMapiPayment | null
   onOpenChange: (open: boolean) => void
   onPaid: () => void
@@ -61,6 +64,33 @@ export function EpayQrDialog(props: Props) {
 
   const tradeNo = props.payment?.trade_no ?? ''
   const open = !!props.payment
+  const launchLink = props.autoLaunch
+    ? getInAppPaymentLink(props.payment, props.paymentType)
+    : undefined
+  const launchedTrade = useRef('')
+  const launchAnchor = useRef<HTMLAnchorElement>(null)
+
+  useEffect(() => {
+    if (!open || !launchLink || launchedTrade.current === tradeNo) return
+    // Let the QR dialog paint before trying to leave this page.
+    let frame1 = 0
+    let frame2 = 0
+    frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => {
+        if (paidRef.current) return
+        launchedTrade.current = tradeNo
+        try {
+          launchAnchor.current?.click()
+        } catch {
+          // The QR and retry link remain usable when navigation is blocked.
+        }
+      })
+    })
+    return () => {
+      cancelAnimationFrame(frame1)
+      cancelAnimationFrame(frame2)
+    }
+  }, [open, tradeNo, launchLink])
 
   useEffect(() => {
     if (!open) return
@@ -125,7 +155,11 @@ export function EpayQrDialog(props: Props) {
       open={open}
       onOpenChange={props.onOpenChange}
       title={t('Scan to pay')}
-      description={t('Scan the code with your phone to complete the payment.')}
+      description={
+        props.autoLaunch
+          ? undefined
+          : t('Scan the code with your phone to complete the payment.')
+      }
       contentHeight='auto'
       footer={
         <>
@@ -154,7 +188,16 @@ export function EpayQrDialog(props: Props) {
             {t('The gateway did not return a scannable code.')}
           </p>
         )}
-        {props.payment?.pay_url && props.payment.qrcode ? (
+        {props.autoLaunch && launchLink && (
+          <a
+            ref={launchAnchor}
+            href={launchLink}
+            className='text-sm underline underline-offset-4'
+          >
+            {t('Open the payment app')}
+          </a>
+        )}
+        {!props.autoLaunch && props.payment?.pay_url && props.payment.qrcode ? (
           <a
             className='text-sm underline underline-offset-4'
             href={props.payment.pay_url}
@@ -164,7 +207,7 @@ export function EpayQrDialog(props: Props) {
             {t('Open the payment page instead')}
           </a>
         ) : null}
-        {props.payment?.url_scheme ? (
+        {!props.autoLaunch && props.payment?.url_scheme ? (
           <a
             className='text-sm underline underline-offset-4'
             href={props.payment.url_scheme}
@@ -180,9 +223,6 @@ export function EpayQrDialog(props: Props) {
             {minutes}:{seconds}
           </p>
         </div>
-        <p className='text-muted-foreground text-xs'>
-          {t('This page updates automatically once the payment is confirmed.')}
-        </p>
       </div>
     </Dialog>
   )

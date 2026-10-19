@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { PAYMENT_TYPES } from '../../constants'
 import {
   dispatchSelectedPayment,
+  getInAppPaymentLink,
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
@@ -253,3 +254,64 @@ describe('reserved payment window', () => {
     expect(() => openPaymentWindow().closeIfUnused()).not.toThrow()
   })
 })
+
+describe('in-app payment link generation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('rejects mismatched paymentType and protocol in desktop browser', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Chrome/130')
+    // Alipay paymentType should not accept weixin:// protocol
+    expect(
+      getInAppPaymentLink(
+        { trade_no: '1', qrcode: 'weixin://wxpay/bizpayurl?pr=test' },
+        PAYMENT_TYPES.ALIPAY
+      )
+    ).toBeUndefined()
+    // WeChat paymentType should not accept alipays:// protocol
+    expect(
+      getInAppPaymentLink(
+        { trade_no: '1', qrcode: 'alipays://platformapi/startapp?appId=test' },
+        PAYMENT_TYPES.WECHAT
+      )
+    ).toBeUndefined()
+  })
+
+  test('wraps Alipay HTTPS pay_url for Alipay browser', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 Version/18 Mobile Safari/604.1'
+    )
+    const payUrl = 'https://pay.example.com/checkout?order=1&sign=a%2Bb'
+    const link = getInAppPaymentLink(
+      { trade_no: '1', pay_url: payUrl },
+      PAYMENT_TYPES.ALIPAY
+    )
+    expect(link).toBe(
+      `alipays://platformapi/startapp?appId=20000067&url=${encodeURIComponent(payUrl)}`
+    )
+  })
+
+  test('wraps Alipay HTTPS pay_url for desktop browser', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Chrome/130')
+    const payUrl = 'https://pay.example.com/checkout'
+    const link = getInAppPaymentLink(
+      { trade_no: '1', pay_url: payUrl },
+      PAYMENT_TYPES.ALIPAY
+    )
+    expect(link).toBe(
+      `alipays://platformapi/startapp?appId=20000067&url=${encodeURIComponent(payUrl)}`
+    )
+  })
+
+  test('does not wrap Alipay HTTPS in WeChat browser', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('MicroMessenger/8')
+    const payUrl = 'https://pay.example.com/checkout'
+    const link = getInAppPaymentLink(
+      { trade_no: '1', pay_url: payUrl },
+      PAYMENT_TYPES.ALIPAY
+    )
+    expect(link).toBeUndefined()
+  })
+})
+
