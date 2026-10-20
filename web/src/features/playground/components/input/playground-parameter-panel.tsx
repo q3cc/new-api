@@ -115,8 +115,8 @@ function PlaygroundParameterContent({
             key={control.key}
           >
             <div className='flex items-start justify-between gap-3'>
-              <div className='min-w-0 space-y-1'>
-                <div className='flex min-w-0 items-center gap-2'>
+              <div className='min-w-0 flex-1 space-y-1'>
+                <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
                   <label
                     className='truncate text-sm leading-5 font-medium'
                     htmlFor={controlId}
