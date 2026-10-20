@@ -47,7 +47,7 @@ installBuildMetadata()
 // Start polling for stale builds. When a new frontend deployment lands while
 // a tab is open, the browser keeps serving the previously cached assets until
 // the user hard-refreshes. The checker polls for changes to the deployed entry
-// scripts, then automatically reloads the page once a new build is detected.
+// scripts captured before React mounts, then offers a user-confirmed refresh.
 // Default: first check after 30 seconds, then every 5 minutes.
 startVersionChecker()
 

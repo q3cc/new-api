@@ -16,17 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { t } from 'i18next'
+import { toast } from 'sonner'
+
 /**
- * Stale-build auto refresh.
+ * Stale-build update notification.
  *
  * When a new frontend deployment lands, browsers keep serving the previously
  * cached HTML and entry chunks to already-open tabs. Those tabs keep running
  * old code until the user hard-refreshes. This module polls the server for the
- * currently deployed entry assets and reloads the page once they differ from
- * the ones this document loaded.
+ * currently deployed entry assets and offers a refresh when they differ from
+ * the ones this document loaded. Navigation requires an explicit user action.
  *
  * Detection compares the entry script URLs of the deployed `index.html` with
- * the script URLs actually present in this document. Rsbuild embeds a content
+ * a snapshot of script URLs taken before the application mounts. Rsbuild embeds a content
  * hash in every emitted filename, so any deploy that changes code changes those
  * URLs. `build-id` metadata is honoured as an additional signal when the server
  * injects it into the HTML.
@@ -35,7 +38,7 @@ For commercial licensing, please contact support@quantumnous.com
 const DEFAULT_CHECK_INTERVAL = 5 * 60 * 1000
 const DEFAULT_INITIAL_DELAY = 30 * 1000
 const INDEX_PATH = '/index.html'
-const RELOAD_DELAY = 1000
+const UPDATE_TOAST_ID = 'frontend-update'
 
 export interface VersionCheckerConfig {
   /** How often to poll, in milliseconds. Defaults to 5 minutes. */
@@ -66,18 +69,14 @@ export interface VersionProbeResult {
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let initialTimer: ReturnType<typeof setTimeout> | null = null
 let isChecking = false
+let loadedEntries: string[] | null = null
+let updateNotified = false
+let generation = 0
 let stopVisibilityWatch: (() => void) | null = null
 
 export function extractEntryUrls(html: string): string[] {
-  const urls: string[] = []
-  const scriptPattern =
-    /<script\b[^>]*\bsrc=["']([^"']+\.(?:js|mjs))["'][^>]*>/gi
-  let match = scriptPattern.exec(html)
-  while (match !== null) {
-    urls.push(match[1])
-    match = scriptPattern.exec(html)
-  }
-  return urls.sort()
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return getEntryUrls(doc)
 }
 
 export function extractBuildId(html: string): string | null {
@@ -89,21 +88,21 @@ export function extractBuildId(html: string): string | null {
   return attrMatch?.[1] ?? null
 }
 
-function getLoadedEntryUrls(): string[] {
-  const scripts = [...document.querySelectorAll('script[src]')]
+function getEntryUrls(doc: Document): string[] {
+  const scripts = [...doc.querySelectorAll('script[src]')]
   const urls: string[] = []
   for (const script of scripts) {
     const src = script.getAttribute('src')
     if (!src) continue
     if (!/\.(js|mjs)(\?|$)/.test(src)) continue
-    urls.push(new URL(src, document.baseURI).pathname)
+    urls.push(src)
   }
   return urls.sort()
 }
 
 function normalizeUrl(url: string): string {
   try {
-    return new URL(url, document.baseURI).pathname
+    return new URL(url, document.baseURI).href
   } catch {
     return url
   }
@@ -115,6 +114,7 @@ function normalizeUrl(url: string): string {
 export async function probeForNewVersion(
   indexPath: string = INDEX_PATH
 ): Promise<VersionProbeResult> {
+  const baseline = (loadedEntries ??= getEntryUrls(document).map(normalizeUrl))
   let html: string
   try {
     // `no-store` bypasses the HTTP cache so a cached index.html cannot hide a
@@ -141,13 +141,12 @@ export async function probeForNewVersion(
   }
 
   const deployedEntries = extractEntryUrls(html).map(normalizeUrl)
-  const loadedEntries = getLoadedEntryUrls()
-  if (deployedEntries.length === 0 || loadedEntries.length === 0) {
+  if (deployedEntries.length === 0 || baseline.length === 0) {
     return { hasNewVersion: false, reason: 'unavailable' }
   }
 
   const deployed = new Set(deployedEntries)
-  const loaded = new Set(loadedEntries)
+  const loaded = new Set(baseline)
   const sameSize = deployed.size === loaded.size
   const sameEntries = sameSize && [...deployed].every((url) => loaded.has(url))
   if (sameEntries) {
@@ -185,22 +184,29 @@ async function defaultReload(): Promise<void> {
 }
 
 async function runCheck(config: VersionCheckerConfig): Promise<void> {
-  if (isChecking) return
+  if (isChecking || updateNotified) return
+  const currentGeneration = generation
   isChecking = true
   try {
     const result = await probeForNewVersion(config.indexPath)
-    if (!result.hasNewVersion) return
-    // eslint-disable-next-line no-console
-    console.info('[version-checker] new deployment detected (%s), reloading', result.reason)
+    if (currentGeneration !== generation || !result.hasNewVersion) return
+    updateNotified = true
     const reload = config.reload ?? defaultReload
     const forceReload = config.forceReload ?? (() => window.location.reload())
-    setTimeout(() => {
-      Promise.resolve(reload()).catch(() => {
-        forceReload()
-      })
-    }, RELOAD_DELAY)
+    toast.info(t('New version available'), {
+      id: UPDATE_TOAST_ID,
+      duration: Infinity,
+      closeButton: true,
+      action: {
+        label: t('Refresh'),
+        onClick: () => {
+          if (currentGeneration !== generation) return
+          void Promise.resolve().then(reload).catch(forceReload)
+        },
+      },
+    })
   } finally {
-    isChecking = false
+    if (currentGeneration === generation) isChecking = false
   }
 }
 
@@ -211,6 +217,7 @@ export function startVersionChecker(
   config: VersionCheckerConfig = {}
 ): () => void {
   stopVersionChecker()
+  loadedEntries = getEntryUrls(document).map(normalizeUrl)
 
   const interval = config.checkInterval ?? DEFAULT_CHECK_INTERVAL
   const initialDelay = config.initialDelay ?? DEFAULT_INITIAL_DELAY
@@ -238,6 +245,11 @@ export function startVersionChecker(
 }
 
 export function stopVersionChecker(): void {
+  generation += 1
+  isChecking = false
+  loadedEntries = null
+  updateNotified = false
+  toast.dismiss(UPDATE_TOAST_ID)
   if (initialTimer) {
     clearTimeout(initialTimer)
     initialTimer = null
