@@ -506,6 +506,15 @@ func GetTopUpStatus(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	if strings.HasPrefix(tradeNo, "SUBUSR") {
+		order := model.GetSubscriptionOrderByTradeNo(tradeNo)
+		if order == nil || order.UserId != c.GetInt("id") {
+			common.ApiErrorT(c, "Order not found")
+			return
+		}
+		common.ApiSuccess(c, gin.H{"trade_no": order.TradeNo, "status": order.Status, "money": order.Money})
+		return
+	}
 	topUp := model.GetTopUpByTradeNo(tradeNo)
 	if topUp == nil || topUp.UserId != c.GetInt("id") {
 		common.ApiErrorT(c, "Order not found")

@@ -77,3 +77,60 @@ it('subscription payment submits the selected Alipay service rather than its sha
     })
   )
 })
+
+it('subscription mapi opens a QR dialog without reserving a blank tab', async () => {
+  vi.spyOn(api, 'post').mockResolvedValue({
+    data: {
+      message: 'success',
+      data: {
+        trade_no: 'SUBUSR900NOtest',
+        qrcode: 'https://pay.example/qr',
+      },
+    },
+  })
+  const get = vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: { status: 'pending' } },
+  })
+  const openWindow = vi.spyOn(window, 'open')
+  const onPaid = vi.fn()
+  const onOpenChange = vi.fn()
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <SubscriptionPurchaseDialog
+        open
+        onOpenChange={onOpenChange}
+        onPurchaseSuccess={onPaid}
+        enableOnlineTopUp
+        epayMethods={[
+          { id: 'epay_a', name: 'WeChat', type: 'wxpay', mapi: 'true' },
+        ]}
+        plan={{
+          plan: {
+            id: 7,
+            title: 'Monthly API',
+            enabled: true,
+            currency: 'USD',
+            price_amount: 10,
+            duration_unit: 'month',
+            duration_value: 1,
+            quota_reset_period: 'monthly',
+            sort_order: 0,
+            max_purchase_per_user: 0,
+            total_amount: 5000000,
+            allow_balance_pay: false,
+            allow_wallet_overflow: true,
+          },
+        }}
+      />
+    </QueryClientProvider>
+  )
+  await userEvent.click(screen.getByRole('button', { name: /^Pay$/ }))
+  expect(await screen.findByText('Scan to pay')).toBeInTheDocument()
+  expect(openWindow).not.toHaveBeenCalled()
+  get.mockResolvedValue({
+    data: { success: true, data: { status: 'success' } },
+  })
+  await userEvent.click(screen.getByRole('button', { name: 'I have paid' }))
+  await waitFor(() => expect(onPaid).toHaveBeenCalledTimes(1))
+  expect(onOpenChange).toHaveBeenCalledWith(false)
+})

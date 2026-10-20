@@ -99,6 +99,19 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		common.ApiErrorT(c, "Failed to create order")
 		return
 	}
+	if version.Mapi {
+		code, err := requestEpayMapi(c.Request.Context(), version, paymentType, tradeNo,
+			fmt.Sprintf("SUB:%s", plan.Title), order.EpayMoney, notifyUrl.String(), returnUrl.String(), c.ClientIP())
+		if err != nil {
+			_ = model.ExpireSubscriptionOrder(tradeNo, model.PaymentProviderEpay)
+			common.ApiErrorT(c, "Failed to start payment")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{
+			"trade_no": tradeNo, "qrcode": code.QRCode, "pay_url": code.PayURL, "url_scheme": code.Scheme,
+		}})
+		return
+	}
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
 		Type:           paymentType,
 		ServiceTradeNo: tradeNo,

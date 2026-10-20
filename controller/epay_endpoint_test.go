@@ -5,12 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/Calcium-Ion/go-epay/epay"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
@@ -24,6 +26,11 @@ func setupEpayCallbackTest(t *testing.T) (*model.EpayEndpointVersion, *model.Epa
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
+	return setupEpayCallbackDatabase(t, db, common.DatabaseTypeSQLite)
+}
+
+func setupEpayCallbackDatabase(t *testing.T, db *gorm.DB, dialect common.DatabaseType) (*model.EpayEndpointVersion, *model.EpayEndpointVersion) {
+	t.Helper()
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
@@ -33,7 +40,7 @@ func setupEpayCallbackTest(t *testing.T) (*model.EpayEndpointVersion, *model.Epa
 	mainType, logType := common.MainDatabaseType(), common.LogDatabaseType()
 	t.Setenv("LOG_SQL_DSN", "")
 	model.DB, model.LOG_DB = db, db
-	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	common.SetDatabaseTypes(dialect, dialect)
 	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.EpayEndpoint{}, &model.EpayEndpointVersion{}, &model.TopUp{}, &model.SubscriptionOrder{}, &model.SubscriptionPlan{}, &model.User{}, &model.UserSubscription{}, &model.Log{}))
 	require.NoError(t, model.InitLogDB())
 	t.Cleanup(func() {
@@ -318,5 +325,86 @@ func TestEpaySameTypeSelectionsAndOrderIsolation(t *testing.T) {
 		rejected := httptest.NewRecorder()
 		router.ServeHTTP(rejected, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"amount":2,"plan_id":900,"payment_method":"alipay"}`)))
 		assert.NotContains(t, rejected.Body.String(), `"message":"success"`)
+	}
+}
+
+func TestSubscriptionMapiReturnsCodeAndPollsOwnedOrder(t *testing.T) {
+	service.InitHttpClient()
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			dsn := os.Getenv(dialect.env)
+			if dialect.env != "" && dsn == "" {
+				t.Skip("database DSN not configured")
+			}
+			db, _ := newAuditTestDatabase(t, dialect.kind, dsn)
+			a, _ := setupEpayCallbackDatabase(t, db, common.DatabaseType(dialect.kind))
+			confirmPaymentComplianceForTest(t)
+			reject := false
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/mapi.php", r.URL.Path)
+				require.NoError(t, r.ParseForm())
+				assert.Contains(t, r.Form.Get("notify_url"), "/api/subscription/epay/a/notify")
+				assert.Equal(t, "9.99", r.Form.Get("money"))
+				if reject {
+					_, _ = w.Write([]byte(`{"code":0,"msg":"declined"}`))
+					return
+				}
+				_, _ = w.Write([]byte(`{"code":1,"qrcode":"https://pay.example/qr"}`))
+			}))
+			defer upstream.Close()
+			require.NoError(t, model.DB.Model(a).Updates(map[string]any{"address": upstream.URL, "mapi": true}).Error)
+			require.NoError(t, model.DB.Create(&model.EpayEndpoint{Id: "a", Name: "A", Enabled: true, VersionId: a.Id}).Error)
+			require.NoError(t, model.DB.Create(&model.Option{Key: "PayMethods", Value: `[{"name":"Alipay","type":"alipay","epay_endpoint_id":"a"}]`}).Error)
+			router := gin.New()
+			userID := 900
+			router.Use(func(c *gin.Context) { c.Set("id", userID); c.Next() })
+			router.POST("/purchase", SubscriptionRequestEpay)
+			router.GET("/status", GetTopUpStatus)
+			router.GET("/notify/:endpoint_id", SubscriptionEpayNotify)
+			response := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/purchase", strings.NewReader(`{"plan_id":900,"payment_method":"alipay"}`))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(response, req)
+			var payment struct {
+				Message string            `json:"message"`
+				Data    map[string]string `json:"data"`
+			}
+			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &payment))
+			require.Equal(t, "success", payment.Message, response.Body.String())
+			require.Equal(t, "https://pay.example/qr", payment.Data["qrcode"])
+			tradeNo := payment.Data["trade_no"]
+			require.NotEmpty(t, tradeNo)
+			for _, id := range []int{900, 901} {
+				userID = id
+				status := httptest.NewRecorder()
+				router.ServeHTTP(status, httptest.NewRequest(http.MethodGet, "/status?trade_no="+tradeNo, nil))
+				if id == 900 {
+					assert.Contains(t, status.Body.String(), `"status":"pending"`)
+				} else {
+					assert.NotContains(t, status.Body.String(), tradeNo)
+				}
+			}
+
+			userID = 900
+			params := epay.GenerateParams(map[string]string{"pid": "101", "out_trade_no": tradeNo, "money": "9.99", "type": "alipay", "trade_status": epay.StatusTradeSuccess, "sign_type": "MD5"}, a.SecretKey)
+			values := url.Values{}
+			for key, value := range params {
+				values.Set(key, value)
+			}
+			callback := httptest.NewRecorder()
+			router.ServeHTTP(callback, httptest.NewRequest(http.MethodGet, "/notify/a?"+values.Encode(), nil))
+			require.Equal(t, "success", callback.Body.String())
+			settled := httptest.NewRecorder()
+			router.ServeHTTP(settled, httptest.NewRequest(http.MethodGet, "/status?trade_no="+tradeNo, nil))
+			assert.Contains(t, settled.Body.String(), `"status":"success"`)
+			reject = true
+			failed := httptest.NewRecorder()
+			router.ServeHTTP(failed, httptest.NewRequest(http.MethodPost, "/purchase", strings.NewReader(`{"plan_id":900,"payment_method":"alipay"}`)))
+			assert.NotContains(t, failed.Body.String(), `"message":"success"`)
+			var failedOrder model.SubscriptionOrder
+			require.NoError(t, model.DB.Where("trade_no <> ?", tradeNo).First(&failedOrder).Error)
+			assert.Equal(t, common.TopUpStatusExpired, failedOrder.Status)
+
+		})
 	}
 }
