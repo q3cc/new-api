@@ -27,6 +27,7 @@ import { applyFaviconToDom } from '@/lib/dom-utils'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { createAppQueryClient } from '@/lib/query-client'
 import { readCachedStatus, statusQueryOptions } from '@/lib/status-query'
+import { startVersionChecker } from '@/lib/version-checker'
 
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -42,6 +43,13 @@ import './styles/index.css'
 // VChart theme is driven by our ThemeProvider (html.light/html.dark) via per-chart `theme` prop.
 initializeFrontendCache()
 installBuildMetadata()
+
+// Start polling for stale builds. When a new frontend deployment lands while
+// a tab is open, the browser keeps serving the previously cached assets until
+// the user hard-refreshes. The checker polls for changes to the deployed entry
+// scripts, then automatically reloads the page once a new build is detected.
+// Default: first check after 30 seconds, then every 5 minutes.
+startVersionChecker()
 
 const queryClient = createAppQueryClient(() => {
   void router.navigate({ to: '/500' })
