@@ -45,7 +45,10 @@
         // A fetch() runs in CORS mode; the preload must too, or the browser
         // treats them as different requests and downloads the picture twice.
         link.crossOrigin = 'anonymous'
-        link.href = '/api/home/wallpaper'
+        // Same formula as homeWallpaperRequestUrl() in use-webgl-glass.ts.
+        link.href =
+          '/api/home/wallpaper?w=' +
+          Math.round(window.innerWidth * (window.devicePixelRatio || 1))
         document.head.appendChild(link)
       })()
     </script>

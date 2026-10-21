@@ -7553,6 +7553,10 @@
     "Invited users": "Приглашённые пользователи",
     "No invited users": "Нет приглашённых пользователей",
     "Accounts registered with the invite code of {{username}}": "Аккаунты, зарегистрированные по коду приглашения {{username}}",
-    "Showing the latest {{shown}} of {{total}} invited users": "Показаны последние {{shown}} из {{total}} приглашённых пользователей"
+    "Showing the latest {{shown}} of {{total}} invited users": "Показаны последние {{shown}} из {{total}} приглашённых пользователей",
+    "Compress context and retry": "Сжать контекст и повторить",
+    "The conversation is too short to compress. Shorten the message or start a new conversation.": "Разговор слишком короткий для сжатия. Сократите сообщение или начните новый разговор.",
+    "{{tokens}} tokens (context limit unknown)": "{{tokens}} токенов (лимит контекста неизвестен)",
+    "Context limit unknown; learned from the provider when a request is too long": "Лимит контекста неизвестен; он будет получен из ошибки провайдера, если запрос окажется слишком длинным"
   }
 }

@@ -30,8 +30,10 @@ import {
   chatMessages,
   shouldCompress,
   contextMessages,
+  effectiveCapability,
   inputBudget,
   compressionSourceHash,
+  type EffectiveCapability,
 } from '../lib/context-compression'
 import type {
   ConversationEntry,
@@ -92,19 +94,35 @@ export function usePlaygroundCompression(
   }, [document, busy])
   const usageHash = compressionSourceHash(usageMessages)
   const debouncedHash = useDebounce(usageHash, 600)
-  const capability = capabilities.data?.find(
-    (item) => item.model === document.config.model
+  const outputTokens = document.parameterEnabled.max_tokens
+    ? document.config.max_tokens
+    : 4096
+  const capability = effectiveCapability(
+    document.config.model,
+    capabilities.data?.find((item) => item.model === document.config.model),
+    document.contextLimits?.[document.config.model]
   )
-  const compressionModel = compressionCapabilities.data?.find(
+  // Without a configured compression model the conversation's own model
+  // compresses, as RikkaHub does, so an over-long request always has a way out.
+  const configuredCompressionModel = compressionCapabilities.data?.find(
     (item) => item.model === settings?.model && item.text_generation
   )
-  const budget = capability?.text_generation
+  const compressionModel: EffectiveCapability =
+    configuredCompressionModel ?? capability
+  const resolvedCompressionGroup = configuredCompressionModel
+    ? compressionGroup
+    : group
+  // A model the capability table does not know is budgeted against an assumed
+  // window: usage is shown and automatic compression can fire, but nothing is
+  // blocked on the assumption.
+  const budget = capabilities.data
     ? inputBudget(
         capability,
         document.contextLimits?.[capability.model],
-        document.parameterEnabled.max_tokens ? document.config.max_tokens : 4096
+        outputTokens
       )
     : undefined
+  const budgetAssumed = !!capability.assumedWindow
   const usage = useQuery({
     queryKey: [
       'playground-context-usage',
@@ -146,10 +164,11 @@ export function usePlaygroundCompression(
     const current = workspace.getSnapshot().entries[entry.key]
     let document = { ...current.row.document, messages }
     const settings = document.compressionSettings ?? defaults
-    const capability = models.find(
-      (model) => model.model === document.config.model
+    const capability = effectiveCapability(
+      document.config.model,
+      models.find((model) => model.model === document.config.model),
+      document.contextLimits?.[document.config.model]
     )
-    if (!capability?.text_generation) return contextMessages(document)
     const output = document.parameterEnabled.max_tokens
       ? document.config.max_tokens
       : 4096
@@ -207,7 +226,9 @@ export function usePlaygroundCompression(
       )
     }
     signal.throwIfAborted()
-    if (count.input_tokens > budget) {
+    // An assumed window may be smaller than the real one; let the provider
+    // decide, and the context-length error offers compression if it refuses.
+    if (!capability.assumedWindow && count.input_tokens > budget) {
       throw new Error('Compressed context is still too large')
     }
     return result
@@ -217,10 +238,11 @@ export function usePlaygroundCompression(
     capabilities,
     compressionCapabilities,
     compressionModel,
-    compressionGroup,
+    compressionGroup: resolvedCompressionGroup,
     prepare,
     usage,
     budget,
+    budgetAssumed,
     busy,
   }
 }

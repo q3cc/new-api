@@ -25,7 +25,10 @@ import {
   getConversation,
   writeConversation,
 } from '../conversations-api'
-import { isContextLengthError } from '../lib/message/message-error-utils'
+import {
+  isContextLengthError,
+  parseContextLimit,
+} from '../lib/message/message-error-utils'
 import { parseRequestErrorDetails } from '../lib/streaming/request-error-utils'
 import { parseStreamErrorDetails } from '../lib/streaming/stream-utils'
 
@@ -43,6 +46,74 @@ it.each([
   'treats the upstream error code $code as an over-long request: $expected',
   ({ code, expected }) => {
     expect(isContextLengthError(code)).toBe(expected)
+  }
+)
+
+it.each([
+  {
+    provider: 'OpenAI',
+    content:
+      "This model's maximum context length is 128000 tokens. However, your messages resulted in 130512 tokens. Please reduce the length of the messages.",
+    limit: 128000,
+  },
+  {
+    provider: 'vLLM',
+    content:
+      "This model's maximum context length is 32,768 tokens. However, you requested 40000 tokens.",
+    limit: 32768,
+  },
+  {
+    provider: 'Anthropic',
+    content: 'prompt is too long: 210000 tokens > 200000 maximum',
+    limit: 200000,
+  },
+  {
+    provider: 'Gemini',
+    content:
+      'The input token count (1200000) exceeds the maximum number of tokens allowed (1048576).',
+    limit: 1048576,
+  },
+  {
+    provider: 'Qwen',
+    content: 'Range of input length should be [1, 30720]',
+    limit: 30720,
+  },
+  {
+    provider: 'a gateway without a number',
+    content: 'Input exceeds the context window of this model',
+    limit: undefined,
+  },
+  {
+    provider: 'a Chinese gateway',
+    content: '请求失败：上下文长度超出模型限制',
+    limit: undefined,
+  },
+])(
+  'recognizes an over-long request from $provider by its text and learns limit $limit',
+  ({ content, limit }) => {
+    expect(isContextLengthError(undefined, content)).toBe(true)
+    expect(parseContextLimit(content)).toBe(limit)
+  }
+)
+
+it.each([
+  'Requests to the ChatCompletions_Create Operation have exceeded token rate limit of your current OpenAI S0 pricing tier.',
+  'Rate limit reached on tokens per min (TPM): Limit 30000, Used 29000.',
+  'You exceeded your current quota, please check your plan and billing details.',
+  'Invalid API key provided',
+  'The model `gpt-9` does not exist',
+])('does not offer compression for an unrelated error: %s', (content) => {
+  expect(isContextLengthError(undefined, content)).toBe(false)
+})
+
+it.each([
+  { content: 'maximum context length is 512 tokens', limit: undefined },
+  { content: 'maximum context length is 99999999 tokens', limit: undefined },
+  { content: undefined, limit: undefined },
+])(
+  'ignores an implausible or missing context limit: $content',
+  ({ content, limit }) => {
+    expect(parseContextLimit(content)).toBe(limit)
   }
 )
 
@@ -136,6 +207,16 @@ it('loads and resaves every message when historical errors contain numeric or ma
     document: loaded.document,
   })
   expect(put).toHaveBeenCalledOnce()
-  expect(saved.document).toEqual(loaded.document)
-  expect(saved.revision).toBe(4)
+  // The document was just sent; only the saved metadata is asked back.
+  expect(put.mock.calls[0][2]).toMatchObject({ params: { return: 'meta' } })
+  expect(JSON.parse(put.mock.calls[0][1] as string).document).toEqual(
+    loaded.document
+  )
+  expect(saved).toEqual({
+    id: 41,
+    title: loaded.title,
+    revision: 4,
+    create_time: loaded.create_time,
+    update_time: loaded.update_time,
+  })
 })

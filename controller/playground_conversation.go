@@ -73,6 +73,18 @@ func GetPlaygroundConversation(c *gin.Context) {
 	common.ApiSuccess(c, row)
 }
 
+// respondPlaygroundSaved answers a write. The client already holds the document
+// it sent, so with return=meta only the saved metadata goes back instead of a
+// second copy of a document of up to several megabytes. Clients that do not
+// ask still receive the full row.
+func respondPlaygroundSaved(c *gin.Context, row *model.PlaygroundConversationDetail) {
+	if c.Query("return") == "meta" {
+		common.ApiSuccess(c, row.PlaygroundConversation)
+		return
+	}
+	common.ApiSuccess(c, row)
+}
+
 func CreatePlaygroundConversation(c *gin.Context) {
 	var write model.PlaygroundWrite
 	if !decodePlaygroundWrite(c, &write) {
@@ -83,7 +95,7 @@ func CreatePlaygroundConversation(c *gin.Context) {
 		playgroundConversationError(c, err)
 		return
 	}
-	common.ApiSuccess(c, row)
+	respondPlaygroundSaved(c, row)
 }
 
 func SavePlaygroundConversation(c *gin.Context) {
@@ -97,7 +109,7 @@ func SavePlaygroundConversation(c *gin.Context) {
 		playgroundConversationError(c, err)
 		return
 	}
-	common.ApiSuccess(c, row)
+	respondPlaygroundSaved(c, row)
 }
 
 func DeletePlaygroundConversation(c *gin.Context) {

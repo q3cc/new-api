@@ -60,6 +60,9 @@ import type {
 } from '../lib/conversation-workspace'
 import type { GroupOption } from '../types'
 
+// Mirrors the server's bound for models the capability table does not know.
+const MAX_CUSTOM_CONTEXT_LIMIT = 10_000_000
+
 type Props = {
   entry: ConversationEntry
   workspace: ConversationWorkspace
@@ -137,20 +140,23 @@ export function PlaygroundCompressionPanel(props: Props) {
   const models = (settingsCapabilities.data ?? [])
     .filter((item) => item.text_generation)
     .map((item) => ({ value: item.model, label: item.model }))
-  const { usage, budget, busy } = props.compression
+  const { usage, budget, budgetAssumed, busy } = props.compression
   const used = busy ? undefined : usage.data?.input_tokens
-  const percentage =
-    used !== undefined && budget
-      ? `${formatNumber((used / budget) * 100, locale)}%`
-      : '—'
+  // An assumed window is only a trigger for compression, so like RikkaHub the
+  // count is shown on its own instead of a share of a guessed limit.
+  const shownBudget = budgetAssumed ? undefined : budget
   let usageText = t('Context size unavailable')
   if (budget !== undefined) {
     if (usage.isError) {
       usageText = t('Failed to estimate context')
     } else if (used === undefined) {
       usageText = t('Estimating...')
+    } else if (shownBudget) {
+      usageText = `${formatNumber(used, locale)} / ${formatNumber(shownBudget, locale)} tokens · ${formatNumber((used / shownBudget) * 100, locale)}%`
     } else {
-      usageText = `${formatNumber(used, locale)} / ${formatNumber(budget, locale)} tokens · ${percentage}`
+      usageText = t('{{tokens}} tokens (context limit unknown)', {
+        tokens: formatNumber(used, locale),
+      })
     }
   }
   const pendingAttempt = !!document.compressionAttempt
@@ -176,8 +182,8 @@ export function PlaygroundCompressionPanel(props: Props) {
                     aria-description={usageText}
                     className={
                       used !== undefined &&
-                      budget !== undefined &&
-                      used >= budget * 0.8
+                      shownBudget !== undefined &&
+                      used >= shownBudget * 0.8
                         ? 'text-destructive'
                         : 'text-muted-foreground hover:text-foreground'
                     }
@@ -216,7 +222,7 @@ export function PlaygroundCompressionPanel(props: Props) {
                   >
                     <ContextUsageIcon
                       usedTokens={used}
-                      maxTokens={budget}
+                      maxTokens={shownBudget}
                       aria-hidden='true'
                       className={
                         busy || usage.isFetching ? 'animate-pulse' : undefined
@@ -421,13 +427,16 @@ export function PlaygroundCompressionPanel(props: Props) {
             </Button>
             {[...new Set([document.config.model, selected?.model])].map(
               (name) => {
-                const capability = [
+                if (!name) return null
+                const known = [
                   ...capabilities,
                   ...(props.compression.compressionCapabilities.data ?? []),
-                ].find((item) => item.model === name)
-                if (!name || !capability?.text_generation) return null
-                const ceiling =
-                  capability.input_limit || capability.context_window
+                ].find((item) => item.model === name && item.text_generation)
+                // A model the table does not know accepts any plausible
+                // limit; the server applies the same bound.
+                const ceiling = known
+                  ? known.input_limit || known.context_window
+                  : MAX_CUSTOM_CONTEXT_LIMIT
                 const id = `context-${props.entry.key}-${name}`
                 return (
                   <div key={name} className='space-y-2'>
@@ -441,7 +450,10 @@ export function PlaygroundCompressionPanel(props: Props) {
                         type='number'
                         min={1}
                         max={ceiling}
-                        defaultValue={document.contextLimits?.[name] ?? ceiling}
+                        defaultValue={
+                          document.contextLimits?.[name] ??
+                          (known ? ceiling : '')
+                        }
                         disabled={props.disabled}
                         aria-invalid={limitError}
                         onBlur={(event) => {
@@ -487,7 +499,11 @@ export function PlaygroundCompressionPanel(props: Props) {
                       </Button>
                     </div>
                     <span className='text-muted-foreground'>
-                      {t('Maximum')}: {formatNumber(ceiling, locale)}
+                      {known
+                        ? `${t('Maximum')}: ${formatNumber(ceiling, locale)}`
+                        : t(
+                            'Context limit unknown; learned from the provider when a request is too long'
+                          )}
                     </span>
                   </div>
                 )

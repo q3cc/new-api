@@ -25,6 +25,8 @@ import { MessageActionButton } from './message-action-button'
 
 type MessageErrorActionsProps = {
   disabled?: boolean
+  /** The provider refused the request as too long for the model's context. */
+  contextLengthError?: boolean
   onDelete?: () => void
   onEditPrompt?: () => void
   onRetry?: () => void
@@ -33,6 +35,7 @@ type MessageErrorActionsProps = {
 
 export function MessageErrorActions({
   disabled = false,
+  contextLengthError = false,
   onDelete,
   onEditPrompt,
   onRetry,
@@ -46,6 +49,13 @@ export function MessageErrorActions({
 
   return (
     <div className='flex flex-wrap items-center gap-0.5 pt-2'>
+      {contextLengthError && !onCompress && (
+        <p className='text-muted-foreground w-full pb-1 text-xs'>
+          {t(
+            'The conversation is too short to compress. Shorten the message or start a new conversation.'
+          )}
+        </p>
+      )}
       {onCompress && (
         <Button
           className='touch-manipulation pointer-coarse:min-h-11'
@@ -55,7 +65,7 @@ export function MessageErrorActions({
           variant='outline'
         >
           <Minimize2Icon aria-hidden='true' />
-          {t('Compress context to continue')}
+          {t('Compress context and retry')}
         </Button>
       )}
 

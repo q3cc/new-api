@@ -166,7 +166,26 @@ func testPlaygroundCompression(t *testing.T) {
 	document["contextLimits"] = map[string]int{"gpt-4o": 128001}
 	documentWrite.Document, err = common.Marshal(document)
 	require.NoError(t, err)
-	assert.ErrorIs(t, documentWrite.Validate(), ErrPlaygroundSettingsInvalid)
+	assert.ErrorIs(t, documentWrite.Validate(), ErrPlaygroundSettingsInvalid, "a known model stays within its window")
+
+	// A model outside the capability table can carry a learned limit and may
+	// have produced the summary itself.
+	document["contextLimits"] = map[string]int{"self-hosted-llm": 32768}
+	document["compression"] = PlaygroundCompression{Summary: "summary", Boundary: "user-1", SourceHash: strings.Repeat("a", 64), Model: "self-hosted-llm", CreatedAt: 1}
+	documentWrite.Document, err = common.Marshal(document)
+	require.NoError(t, err)
+	assert.NoError(t, documentWrite.Validate())
+	for _, limits := range []map[string]int{{"self-hosted-llm": 0}, {"self-hosted-llm": 10_000_001}, {" padded": 4096}} {
+		document["contextLimits"] = limits
+		documentWrite.Document, err = common.Marshal(document)
+		require.NoError(t, err)
+		assert.ErrorIs(t, documentWrite.Validate(), ErrPlaygroundSettingsInvalid, limits)
+	}
+	document["contextLimits"] = map[string]int{}
+	document["compression"] = PlaygroundCompression{Summary: "summary", Boundary: "user-1", SourceHash: strings.Repeat("a", 64), Model: " ", CreatedAt: 1}
+	documentWrite.Document, err = common.Marshal(document)
+	require.NoError(t, err)
+	assert.ErrorIs(t, documentWrite.Validate(), ErrPlaygroundSettingsInvalid, "a blank compression model is refused")
 }
 
 func TestPlaygroundModelCapabilities(t *testing.T) {

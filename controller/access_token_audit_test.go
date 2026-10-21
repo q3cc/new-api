@@ -125,6 +125,13 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 	assert.NotContains(t, created.Body.String(), "last_operation")
 	assert.NotContains(t, created.Body.String(), "creation_hash")
 	path := fmt.Sprintf("/api/playground/conversations/%d", result.Data.Id)
+	assert.Contains(t, created.Body.String(), "private-body-sentinel", "a client that does not ask for metadata still gets the document")
+	resaveBody := fmt.Sprintf(`{"operation_id":"playground-auth-resave","revision":%d,"title":"private conversation","document":{"messages":[{"key":"u","from":"user","versions":[{"id":"v","content":"private-body-sentinel"}]}],"config":{},"parameterEnabled":{},"draft":"typed"}}`, result.Data.Revision)
+	resaved := accessTokenRequest(r, http.MethodPut, path+"?return=meta", userJWT, "", resaveBody)
+	require.Equal(t, http.StatusOK, resaved.Code)
+	assert.NotContains(t, resaved.Body.String(), "private-body-sentinel", "return=meta sends no second copy of the document")
+	assert.NotContains(t, resaved.Body.String(), `"document"`)
+	assert.Contains(t, resaved.Body.String(), fmt.Sprintf(`"revision":%d`, result.Data.Revision+1))
 	legacyMessages := `[{"key":"legacy","from":"user","versions":[{"id":"v","content":"private-upload-sentinel"}]}]`
 	sourceBody, err := common.Marshal(model.PlaygroundLegacySource{Messages: &legacyMessages})
 	require.NoError(t, err)

@@ -22,6 +22,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import {
   HOME_WALLPAPER_URL,
+  homeWallpaperRequestUrl,
   MAX_GLASS_CONTEXTS,
   useWebglGlass,
 } from '../hooks/use-webgl-glass'
@@ -492,7 +493,9 @@ test('the random wallpaper comes through the same-origin proxy and one copy feed
   await act(async () => {})
   await act(async () => {})
   expect(fetch).toHaveBeenCalledWith(
-    HOME_WALLPAPER_URL,
+    `${HOME_WALLPAPER_URL}?w=${Math.round(
+      window.innerWidth * (window.devicePixelRatio || 1)
+    )}`,
     expect.objectContaining({ credentials: 'same-origin' })
   )
   expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
@@ -505,6 +508,13 @@ test('the random wallpaper comes through the same-origin proxy and one copy feed
   expect(container.querySelectorAll('canvas')).toHaveLength(4)
   unmount()
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:wallpaper')
+})
+
+test('a phone asks for a wallpaper sized to its screen in device pixels', () => {
+  vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390)
+  vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(3)
+
+  expect(homeWallpaperRequestUrl()).toBe('/api/home/wallpaper?w=1170')
 })
 
 test('a failed wallpaper request falls back to the bundled picture and a non-image answer is refused', async () => {

@@ -7553,6 +7553,10 @@
     "Invited users": "Invited users",
     "No invited users": "No invited users",
     "Accounts registered with the invite code of {{username}}": "Accounts registered with the invite code of {{username}}",
-    "Showing the latest {{shown}} of {{total}} invited users": "Showing the latest {{shown}} of {{total}} invited users"
+    "Showing the latest {{shown}} of {{total}} invited users": "Showing the latest {{shown}} of {{total}} invited users",
+    "Compress context and retry": "Compress context and retry",
+    "The conversation is too short to compress. Shorten the message or start a new conversation.": "The conversation is too short to compress. Shorten the message or start a new conversation.",
+    "{{tokens}} tokens (context limit unknown)": "{{tokens}} tokens (context limit unknown)",
+    "Context limit unknown; learned from the provider when a request is too long": "Context limit unknown; learned from the provider when a request is too long"
   }
 }

@@ -170,17 +170,29 @@ export async function writeConversation(
   if (new TextEncoder().encode(body).byteLength > 8 * 1024 * 1024) {
     throw new Error('Conversation exceeds the size limit')
   }
+  // The caller keeps the document it sent, so only the saved metadata comes
+  // back instead of a second copy of the whole conversation.
+  const config = {
+    signal,
+    params: { return: 'meta' },
+    headers: { 'Content-Type': 'application/json' },
+  }
   const res =
     id === null
-      ? await api.post<Envelope<SavedConversation>>(path, body, {
-          signal,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      : await api.put<Envelope<SavedConversation>>(`${path}/${id}`, body, {
-          signal,
-          headers: { 'Content-Type': 'application/json' },
-        })
-  return parseConversation(requireServerSuccess(res.data).data)
+      ? await api.post<Envelope<ConversationSummary>>(path, body, config)
+      : await api.put<Envelope<ConversationSummary>>(
+          `${path}/${id}`,
+          body,
+          config
+        )
+  const saved = requireServerSuccess(res.data).data
+  return {
+    id: saved.id,
+    title: saved.title,
+    revision: saved.revision,
+    create_time: saved.create_time,
+    update_time: saved.update_time,
+  }
 }
 export async function deleteConversation(id: number, signal?: AbortSignal) {
   const res = await api.delete<Envelope<null>>(`${path}/${id}`, { signal })

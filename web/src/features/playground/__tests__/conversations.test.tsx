@@ -27,6 +27,7 @@ import {
 } from '@tanstack/react-router'
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -39,7 +40,11 @@ import { afterEach, assert, beforeEach, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
-import type { ModelCapability, PlaygroundPreference } from '../compression-api'
+import {
+  clearContextEstimateCache,
+  type ModelCapability,
+  type PlaygroundPreference,
+} from '../compression-api'
 import * as conversationsApi from '../conversations-api'
 import {
   conversationSearchSchema,
@@ -70,6 +75,7 @@ function row(id: number, title: string): SavedConversation {
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   localStorage.clear()
+  clearContextEstimateCache()
   useAuthStore.getState().auth.setUser({ id: 1, username: 'tester', role: 1 })
   records = new Map([
     [1, row(1, 'Alpha')],
@@ -220,6 +226,10 @@ beforeEach(() => {
   })
 })
 afterEach(() => {
+  // Unmount before resetting: clearing the client under a mounted playground
+  // makes its queries refetch, and once the mocks are restored that refetch
+  // reaches the real origin, gets 401 and signs out the next test.
+  cleanup()
   useAuthStore.getState().auth.reset()
   client.clear()
   vi.restoreAllMocks()
@@ -301,7 +311,12 @@ it('opens context actions on a touch long press without closing on release and s
   const ring = await screen.findByRole('button', {
     name: 'Model context usage',
   })
-  expect(ring).toHaveAccessibleDescription('Context size unavailable')
+  // Without a known window the count is shown alone, never a guessed share.
+  await waitFor(() =>
+    expect(ring).toHaveAccessibleDescription(
+      /^[\d,]+ tokens \(context limit unknown\)$/
+    )
+  )
   vi.useFakeTimers()
   try {
     fireEvent.pointerDown(ring, {
@@ -467,34 +482,32 @@ it.each(['conversation', 'default', 'legacy'])(
       vi
         .mocked(api.post)
         .mock.calls.filter(([url]) => url === '/pg/chat/completions')
-    // The scene classification is the first request and already uses the
-    // compression model, so a separate group never leaks into the chat request.
+    // The summary request is the first and only compression request and
+    // already uses the compression model, so a separate group never leaks
+    // into the chat request.
     expect(calls()[0][1]).toMatchObject({
-      model: 'other-model',
-      group: scope === 'legacy' ? 'default' : 'DSS',
-      stream: false,
-    })
-    expect(
-      screen.getByRole('button', { name: 'Export conversation' })
-    ).toBeDisabled()
-    expect(records.get(1)?.document.compressionAttempt).toBe('requested')
-    await act(async () => completions[0].finish('work'))
-    await waitFor(() => expect(completions).toHaveLength(2))
-    expect(calls()[1][1]).toMatchObject({
       model: 'other-model',
       group: scope === 'legacy' ? 'default' : 'DSS',
       max_tokens: 4096,
       stream: false,
     })
-    await act(async () => completions[1].finish('Summary'))
-    await waitFor(() => expect(completions).toHaveLength(3))
-    expect(records.get(1)?.document.compression?.summary).toBe('Summary')
-    expect(calls()[2][1]).toMatchObject({
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Export conversation' })
+      ).toBeDisabled()
+    )
+    expect(records.get(1)?.document.compressionAttempt).toBe('requested')
+    await act(async () => completions[0].finish('Summary'))
+    await waitFor(() => expect(completions).toHaveLength(2))
+    expect(records.get(1)?.document.compression?.summary).toBe(
+      '## Context handoff\nSummary'
+    )
+    expect(calls()[1][1]).toMatchObject({
       model: 'test-model',
       group: 'default',
     })
-    expect(calls()[2][1]).not.toHaveProperty('max_tokens')
-    await act(async () => completions[2].finish('Continued reply'))
+    expect(calls()[1][1]).not.toHaveProperty('max_tokens')
+    await act(async () => completions[1].finish('Continued reply'))
     await screen.findByText('Continued reply')
     expect(records.get(1)?.document.messages.slice(0, 8)).toEqual(original)
   }
@@ -592,9 +605,11 @@ it('opens an empty conversation when there is no server history', async () => {
   renderPlayground('')
   const input = await screen.findByPlaceholderText('Ask anything')
   expect(input).toHaveValue('')
-  expect(
-    screen.getByRole('button', { name: 'Export conversation' })
-  ).toBeDisabled()
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Export conversation' })
+    ).toBeDisabled()
+  )
   fireEvent.change(input, { target: { value: 'first draft' } })
   await waitFor(
     () =>
@@ -615,9 +630,11 @@ it('continues each request after switching and writes replies to their originati
   })
   fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
   await waitFor(() => expect(completions).toHaveLength(1))
-  expect(
-    screen.getByRole('button', { name: 'Export conversation' })
-  ).toBeDisabled()
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Export conversation' })
+    ).toBeDisabled()
+  )
   expect(records.get(1)?.document.messages[0].versions[0].content).toBe(
     'request A'
   )
@@ -630,7 +647,11 @@ it('continues each request after switching and writes replies to their originati
   await waitFor(() => expect(completions).toHaveLength(2))
   await act(async () => completions[0].finish())
   expect(screen.queryByText('Reply to request A')).not.toBeInTheDocument()
-  expect(screen.getAllByRole('button', { name: /^Stop/ })[0]).toBeEnabled()
+  // The request is out before the input swaps Send for Stop; wait for the
+  // render instead of racing it.
+  expect(
+    (await screen.findAllByRole('button', { name: /^Stop/ }))[0]
+  ).toBeEnabled()
   fireEvent.click(screen.getByRole('button', { name: 'Alpha' }))
   await screen.findByText('Reply to request A')
   await act(async () => completions[1].finish())
@@ -754,7 +775,7 @@ it('automatically titles imported history and displays progress without adding a
   renderPlayground()
   await waitFor(() => expect(completions).toHaveLength(1))
   expect(
-    screen.getByRole('button', { name: 'Generating title...' })
+    await screen.findByRole('button', { name: 'Generating title...' })
   ).toBeDisabled()
   // Utility responses are separate from chat messages.
   await act(async () => completions[0].finish())
@@ -762,7 +783,10 @@ it('automatically titles imported history and displays progress without adding a
     expect(records.get(1)?.document.titleGeneration).toBe('generated')
   )
   expect(records.get(1)?.document.messages).toHaveLength(1)
-  expect(screen.getByRole('button', { name: 'Generate title' })).toBeEnabled()
+  // The saved record can land before the header re-renders.
+  expect(
+    await screen.findByRole('button', { name: 'Generate title' })
+  ).toBeEnabled()
   expect(records.get(1)?.title).toContain('Plan a garden')
 })
 
@@ -777,7 +801,7 @@ it('generates a title after the first new reply and keeps the title response out
   await waitFor(() => expect(completions).toHaveLength(1))
   await act(async () => completions[0].finish())
   await waitFor(() => expect(completions).toHaveLength(2))
-  expect(screen.getByText('Reply to Plan a garden')).toBeInTheDocument()
+  expect(await screen.findByText('Reply to Plan a garden')).toBeInTheDocument()
   await act(async () => completions[1].finish())
   await waitFor(() =>
     expect(records.get(1)?.document.titleGeneration).toBe('generated')
@@ -785,18 +809,9 @@ it('generates a title after the first new reply and keeps the title response out
   expect(records.get(1)?.document.messages).toHaveLength(2)
 })
 
-it('compresses the context straight from the error when the upstream rejects it as too long', async () => {
-  modelCapabilities = [
-    {
-      model: 'test-model',
-      context_window: 128000,
-      input_limit: 0,
-      output_limit: 0,
-      text_generation: true,
-      compression_warning: false,
-    },
-  ]
-  preference = { model: 'test-model', automatic: false, revision: 0 }
+it('compresses with the chat model, learns its limit and retries when an unknown model rejects the context as too long', async () => {
+  // The model is outside the capability table and no compression model is
+  // configured; the provider reports the overflow only in text.
   const first = records.get(1)
   assert(first)
   first.document.messages = Array.from({ length: 8 }, (_, index) => ({
@@ -808,28 +823,62 @@ it('compresses the context straight from the error when the upstream rejects it 
   renderPlayground()
   await screen.findByDisplayValue('draft Alpha')
   completionError = {
-    code: 'context_length_exceeded',
-    message: 'Input is too long',
+    message:
+      "This model's maximum context length is 32768 tokens. However, your messages resulted in 40000 tokens.",
   }
   fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
     target: { value: 'Continue' },
   })
   fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
   const shortcut = await screen.findByRole('button', {
-    name: 'Compress context to continue',
+    name: 'Compress context and retry',
   })
   expect(completions).toHaveLength(0)
   completionError = null
   fireEvent.click(shortcut)
   await waitFor(() => expect(completions).toHaveLength(1))
-  await act(async () => completions[0].finish('work'))
-  await waitFor(() => expect(completions).toHaveLength(2))
-  await act(async () => completions[1].finish('Summary of the earlier work'))
+  const calls = () =>
+    vi
+      .mocked(api.post)
+      .mock.calls.filter(([url]) => url === '/pg/chat/completions')
+      .map(([, body]) => body as { model: string; messages: unknown[] })
+  const summaryRequest = calls().at(-1)
+  expect(summaryRequest?.model).toBe('test-model')
+  expect(summaryRequest?.messages.at(-1)).toMatchObject({ role: 'user' })
+  await waitFor(() =>
+    expect(records.get(1)?.document.contextLimits).toEqual({
+      'test-model': 32768,
+    })
+  )
+  await act(async () => completions[0].finish('Summary of the earlier work'))
   await waitFor(() =>
     expect(records.get(1)?.document.compression?.summary).toBe(
-      'Summary of the earlier work'
+      '## Context handoff\nSummary of the earlier work'
     )
   )
+  // The failed reply is retried once, now against the compressed context.
+  await waitFor(() => expect(completions).toHaveLength(2))
+  await act(async () => completions[1].finish('Continued after compression'))
+  await screen.findByText('Continued after compression')
+})
+
+it('explains instead of offering compression when an over-long request has no older turns to summarize', async () => {
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  completionError = {
+    code: 'context_length_exceeded',
+    message: 'Input is too long',
+  }
+  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+    target: { value: 'A single very long message' },
+  })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+  await screen.findByText(
+    'The conversation is too short to compress. Shorten the message or start a new conversation.'
+  )
+  expect(
+    screen.queryByRole('button', { name: 'Compress context and retry' })
+  ).not.toBeInTheDocument()
 })
 
 it('offers retry for an interrupted title without automatically requesting it again', async () => {

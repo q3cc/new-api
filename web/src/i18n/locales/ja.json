@@ -7553,6 +7553,10 @@
     "Invited users": "招待したユーザー",
     "No invited users": "招待したユーザーはいません",
     "Accounts registered with the invite code of {{username}}": "{{username}} の招待コードで登録されたアカウント",
-    "Showing the latest {{shown}} of {{total}} invited users": "全 {{total}} 人中、最新の {{shown}} 人を表示しています"
+    "Showing the latest {{shown}} of {{total}} invited users": "全 {{total}} 人中、最新の {{shown}} 人を表示しています",
+    "Compress context and retry": "コンテキストを圧縮して再試行",
+    "The conversation is too short to compress. Shorten the message or start a new conversation.": "会話が短すぎて圧縮できません。メッセージを短くするか、新しい会話を開始してください。",
+    "{{tokens}} tokens (context limit unknown)": "{{tokens}} トークン（コンテキスト上限不明）",
+    "Context limit unknown; learned from the provider when a request is too long": "コンテキスト上限は不明です。リクエストが長すぎる場合、プロバイダーのエラーから自動的に取得します"
   }
 }

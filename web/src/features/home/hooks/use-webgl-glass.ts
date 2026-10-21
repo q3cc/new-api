@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, type RefObject } from 'react'
 
-import wallpaper from '@/assets/home-observatory.png'
+import wallpaper from '@/assets/home-observatory.jpg'
 
 import {
   coverImageRect,
@@ -57,6 +57,16 @@ const RETRY_MAX_MS = 15000
 const DRAW_LEAD = 0.25
 /** Same-origin copy of the random wallpaper; the picture service has no CORS. */
 export const HOME_WALLPAPER_URL = '/api/home/wallpaper'
+
+/**
+ * Wallpaper request sized to the viewport in device pixels, so small screens
+ * get a smaller picture. index.html preloads the same URL with the same
+ * formula; keep the two in step or the picture is requested twice.
+ */
+export function homeWallpaperRequestUrl(): string {
+  const width = Math.round(window.innerWidth * (window.devicePixelRatio || 1))
+  return `${HOME_WALLPAPER_URL}?w=${width}`
+}
 
 function materialFor(element: HTMLElement): GlassMaterial {
   if (element.closest('header')) return GLASS_MATERIALS.bar
@@ -274,14 +284,8 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
             now - surface.lastAt <= 100
           ) {
             const limit = viewportHeight * 0.5
-            aheadX = Math.max(
-              -limit,
-              Math.min(limit, rect.x - surface.lastX)
-            )
-            aheadY = Math.max(
-              -limit,
-              Math.min(limit, rect.y - surface.lastY)
-            )
+            aheadX = Math.max(-limit, Math.min(limit, rect.x - surface.lastX))
+            aheadY = Math.max(-limit, Math.min(limit, rect.y - surface.lastY))
           }
           surface.lastX = rect.x
           surface.lastY = rect.y
@@ -401,9 +405,10 @@ export function useWebglGlass(rootRef: RefObject<HTMLDivElement | null>) {
     // One fetch feeds both the CSS backdrop and the WebGL texture. A plain
     // same-origin fetch matches the preload that index.html starts before this
     // code even loads, so the picture is usually already on its way. The
-    // bundled wallpaper stands in when the proxy or the picture service is
-    // unavailable.
-    fetch(HOME_WALLPAPER_URL, {
+    // proxy redirects to a content-named URL the browser caches, so a picture
+    // seen before is not downloaded again. The bundled wallpaper stands in
+    // when the proxy or the picture service is unavailable.
+    fetch(homeWallpaperRequestUrl(), {
       signal: abort.signal,
       credentials: 'same-origin',
     })

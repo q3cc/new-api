@@ -51,6 +51,8 @@ export type ConversationEntry = {
   row: SavedConversation
   localVersion: number
   dirty: boolean
+  /** The only unsaved change is the input draft; scheduled saves skip it. */
+  draftOnly?: boolean
   saving: boolean
   titleGenerating?: boolean
   compressionProgress?: { completed: number; total: number }
@@ -81,6 +83,25 @@ export function interruptedDocument(
         : message
     ),
   }
+}
+
+function isGenerating(document: ConversationDocument): boolean {
+  return document.messages.some(
+    (message) => message.status === 'loading' || message.status === 'streaming'
+  )
+}
+
+// Only the input draft differs: nothing a later reader depends on changed.
+function isDraftOnlyChange(
+  previous: SavedConversation,
+  next: SavedConversation
+): boolean {
+  if (previous.title !== next.title) return false
+  const before = previous.document as Record<string, unknown>
+  const after = next.document as Record<string, unknown>
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+  keys.delete('draft')
+  return [...keys].every((key) => before[key] === after[key])
 }
 
 export class ConversationWorkspace {
@@ -329,24 +350,25 @@ export class ConversationWorkspace {
         .slice(0, 40)
         .join('')
     }
+    const draftOnly =
+      isDraftOnlyChange(previous.row, row) &&
+      (!previous.dirty || !!previous.draftOnly)
     const entry = {
       ...this.snapshot.entries[key],
       row,
       localVersion: previous.localVersion + 1,
       dirty: true,
+      draftOnly,
     }
     this.setEntry(entry)
     void this.cache(entry)
-    const wasPending = previous.row.document.messages.some(
-      (message) =>
-        message.status === 'loading' || message.status === 'streaming'
-    )
-    const isPending = row.document.messages.some(
-      (message) =>
-        message.status === 'loading' || message.status === 'streaming'
-    )
+    const wasPending = isGenerating(previous.row.document)
+    const isPending = isGenerating(row.document)
     if (wasPending && !isPending && !entry.error) void this.flush(key)
-    else this.schedule()
+    // A reply in progress is saved once when it settles, and a draft rides
+    // along with the next save; both stay in the local cache meanwhile, so
+    // neither re-uploads the whole document every few seconds.
+    else if (!isPending && !draftOnly) this.schedule()
   }
   rename(key: string, title: string) {
     this.cancelTitle(key)
@@ -550,7 +572,12 @@ export class ConversationWorkspace {
       () => {
         this.timer = undefined
         const entries = Object.values(this.snapshot.entries).filter(
-          (entry) => entry.dirty && !entry.error && !entry.saving
+          (entry) =>
+            entry.dirty &&
+            !entry.draftOnly &&
+            !entry.error &&
+            !entry.saving &&
+            !isGenerating(entry.row.document)
         )
         const entry =
           entries.find((item) => item.key !== this.lastScheduled) ?? entries[0]
@@ -584,8 +611,11 @@ export class ConversationWorkspace {
       document: entry.row.document,
     }
     const sentVersion = entry.pendingVersion ?? entry.localVersion
+    // Once a save is requested the change is no longer local-only, so a
+    // failed attempt is retried by the schedule like any other.
     entry = {
       ...entry,
+      draftOnly: false,
       pending: write,
       pendingVersion: sentVersion,
       saving: true,
@@ -611,6 +641,7 @@ export class ConversationWorkspace {
           document: current.row.document,
         },
         dirty,
+        draftOnly: false,
         saving: false,
         pending: undefined,
         pendingVersion: undefined,

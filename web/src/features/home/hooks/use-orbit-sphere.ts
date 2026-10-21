@@ -147,7 +147,10 @@ export function useOrbitSphere(canvasRef: RefObject<HTMLCanvasElement | null>) {
     // Surface dots are filled in depth buckets: one path per bucket instead
     // of one path per dot, which is the difference between a smooth globe and
     // a stuttering one on Windows' canvas implementation.
-    const dotAlphas = Array.from({ length: 5 }, (_, index) => 0.36 + index * 0.125)
+    const dotAlphas = Array.from(
+      { length: 5 },
+      (_, index) => 0.36 + index * 0.125
+    )
 
     const draw = (now: number) => {
       frame = 0

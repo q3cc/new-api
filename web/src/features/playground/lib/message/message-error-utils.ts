@@ -33,8 +33,68 @@ export const CONTEXT_LENGTH_ERROR_CODES = new Set([
 ])
 export const FALLBACK_ERROR_CONTENT = 'An unknown error occurred'
 
-export function isContextLengthError(errorCode?: string | null): boolean {
-  return !!errorCode && CONTEXT_LENGTH_ERROR_CODES.has(errorCode)
+// Many providers send an over-long request back without one of those codes,
+// only as text. These phrases cover OpenAI-compatible servers (including vLLM
+// and DeepSeek), Anthropic, Gemini, Qwen and Chinese-language gateways.
+const CONTEXT_LENGTH_ERROR_PATTERNS = [
+  /context[_ ]length[_ ]exceeded/i,
+  /maximum context length/i,
+  /context (?:window|length) (?:of|is|exceeded|limit)/i,
+  /exceeds? (?:the )?(?:model'?s? )?(?:maximum )?context (?:window|length)/i,
+  /prompt is too long/i,
+  /input token count.*exceeds the maximum/i,
+  /input (?:token )?limit/i,
+  /too many (?:input )?tokens/i,
+  /token.*exceed.*limit|exceed.*token.*limit/i,
+  /exceed.*max_prompt_tokens/i,
+  /reduce the length of the messages/i,
+  /range of input length should be/i,
+  /上下文(?:长度|窗口)?.{0,6}(?:超出|超过|超限)/,
+  /(?:超出|超过)(?:了)?(?:模型)?(?:最大)?(?:上下文|输入)长度/,
+]
+
+// Throughput limits also talk about tokens and limits ("exceeded token rate
+// limit", "tokens per minute"); compressing does not help with those.
+const RATE_LIMIT_PATTERN =
+  /rate.?limit|quota|per (?:minute|min|second|day)|\b[TR]P[MD]\b|限流|频率/i
+
+export function isContextLengthError(
+  errorCode?: string | null,
+  content?: string | null
+): boolean {
+  if (errorCode && CONTEXT_LENGTH_ERROR_CODES.has(errorCode)) return true
+  if (!content || RATE_LIMIT_PATTERN.test(content)) return false
+  return CONTEXT_LENGTH_ERROR_PATTERNS.some((pattern) => pattern.test(content))
+}
+
+// Phrasings that state the real window, so a conversation can budget for a
+// model the capability table does not know.
+const CONTEXT_LIMIT_PATTERNS = [
+  /maximum context length is (\d[\d,]*)/i,
+  /\d[\d,]* tokens? > (\d[\d,]*) maximum/i,
+  /maximum number of tokens allowed \((\d[\d,]*)\)/i,
+  /context (?:window|length) (?:of|is) (\d[\d,]*)/i,
+  /(?:limit|maximum) (?:of|is) (\d[\d,]*) (?:input )?tokens/i,
+  /range of input length should be \[\d+, *(\d+)\]/i,
+]
+const MIN_LEARNED_CONTEXT_LIMIT = 1024
+const MAX_LEARNED_CONTEXT_LIMIT = 10_000_000
+
+export function parseContextLimit(content?: string | null): number | undefined {
+  if (!content) return undefined
+  for (const pattern of CONTEXT_LIMIT_PATTERNS) {
+    const match = pattern.exec(content)
+    if (!match) continue
+    const limit = Number(match[1].replaceAll(',', ''))
+    if (
+      Number.isSafeInteger(limit) &&
+      limit >= MIN_LEARNED_CONTEXT_LIMIT &&
+      limit <= MAX_LEARNED_CONTEXT_LIMIT
+    ) {
+      return limit
+    }
+  }
+  return undefined
 }
 
 export function normalizeMessageErrorCode(code: unknown): string | undefined {

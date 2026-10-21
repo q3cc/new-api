@@ -357,6 +357,62 @@ it('joins concurrent opens and caches edits before the next scheduled server sav
   expect(rows.get(1)?.document.draft).toBe('')
 })
 
+it('keeps a draft-only edit local until the next real save carries it to the server', async () => {
+  vi.useFakeTimers()
+  const client = workspace()
+  const key = (await client.create(emptyConversationDocument())) ?? ''
+  const before = writes.length
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, draft: 'typing…' },
+  }))
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(writes).toHaveLength(before)
+  expect(
+    [...cached.values()].some((item) => item.row.document.draft === 'typing…')
+  ).toBe(true)
+
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, messages: [message('sent')] },
+  }))
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(writes).toHaveLength(before + 1)
+  expect(writes.at(-1)?.document.draft).toBe('typing…')
+})
+
+it('saves a streaming reply once when it settles instead of every few seconds', async () => {
+  vi.useFakeTimers()
+  const client = workspace()
+  const key = (await client.create(emptyConversationDocument())) ?? ''
+  const before = writes.length
+  for (const text of ['Hel', 'Hello', 'Hello, wor']) {
+    client.update(key, (row) => ({
+      ...row,
+      document: { ...row.document, messages: [message(text, 'streaming')] },
+    }))
+    await vi.advanceTimersByTimeAsync(5000)
+  }
+  expect(writes).toHaveLength(before)
+  // The local cache still holds the partial reply for crash recovery.
+  expect(
+    [...cached.values()].some(
+      (item) =>
+        item.row.document.messages[0]?.versions[0].content === 'Hello, wor'
+    )
+  ).toBe(true)
+
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, messages: [message('Hello, world')] },
+  }))
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(writes).toHaveLength(before + 1)
+  expect(writes.at(-1)?.document.messages[0].versions[0].content).toBe(
+    'Hello, world'
+  )
+})
+
 it('backs off after rate limiting and preserves a single pending operation', async () => {
   vi.useFakeTimers()
   const client = workspace()

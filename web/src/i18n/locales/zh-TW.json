@@ -7553,6 +7553,10 @@
     "Invited users": "邀請的使用者",
     "No invited users": "暫無邀請的使用者",
     "Accounts registered with the invite code of {{username}}": "使用 {{username}} 的邀請碼註冊的帳號",
-    "Showing the latest {{shown}} of {{total}} invited users": "僅顯示最近 {{shown}} 個，共 {{total}} 個邀請使用者"
+    "Showing the latest {{shown}} of {{total}} invited users": "僅顯示最近 {{shown}} 個，共 {{total}} 個邀請使用者",
+    "Compress context and retry": "壓縮上下文並重試",
+    "The conversation is too short to compress. Shorten the message or start a new conversation.": "對話太短，無法壓縮。請縮短訊息或建立新對話。",
+    "{{tokens}} tokens (context limit unknown)": "{{tokens}} tokens（上下文上限未知）",
+    "Context limit unknown; learned from the provider when a request is too long": "上下文上限未知；請求過長時會從服務商回傳的錯誤中自動取得"
   }
 }

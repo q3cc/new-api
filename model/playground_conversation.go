@@ -162,12 +162,20 @@ func (write *PlaygroundWrite) Validate() error {
 	}
 	for name, limit := range doc.ContextLimits {
 		capability := GetPlaygroundModelCapability(name)
-		if limit < 1 || limit > max(capability.ContextWindow, capability.InputLimit) {
+		// Models outside the capability table get their limit from the user or
+		// from a provider's context-length error, within a plausible bound.
+		ceiling := maxPlaygroundCustomContextLimit
+		if capability.TextGeneration {
+			ceiling = max(capability.ContextWindow, capability.InputLimit)
+		}
+		if !validPlaygroundModelName(name) || limit < 1 || limit > ceiling {
 			return ErrPlaygroundSettingsInvalid
 		}
 	}
 	if c := doc.Compression; c != nil {
-		if strings.TrimSpace(c.Summary) == "" || !keys[c.Boundary] || len(c.SourceHash) != 64 || !GetPlaygroundModelCapability(c.Model).TextGeneration || c.CreatedAt <= 0 {
+		// Any chat model may have produced the summary: without a configured
+		// compression model the conversation's own model compresses.
+		if strings.TrimSpace(c.Summary) == "" || !keys[c.Boundary] || len(c.SourceHash) != 64 || !validPlaygroundModelName(c.Model) || c.CreatedAt <= 0 {
 			return ErrPlaygroundSettingsInvalid
 		}
 	}

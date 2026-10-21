@@ -69,6 +69,14 @@ type PlaygroundPreferenceWrite struct {
 
 var ErrPlaygroundSettingsInvalid = errors.New("Invalid compression settings")
 
+// maxPlaygroundCustomContextLimit bounds a context limit for a model the
+// capability table does not know.
+const maxPlaygroundCustomContextLimit = 10_000_000
+
+func validPlaygroundModelName(name string) bool {
+	return name != "" && len(name) <= 255 && strings.TrimSpace(name) == name
+}
+
 func (s PlaygroundCompressionSettings) Validate() error {
 	if len(s.Group) > 64 || strings.TrimSpace(s.Group) != s.Group {
 		return ErrPlaygroundSettingsInvalid

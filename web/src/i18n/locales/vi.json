@@ -7553,6 +7553,10 @@
     "Invited users": "Người dùng được mời",
     "No invited users": "Chưa có người dùng được mời",
     "Accounts registered with the invite code of {{username}}": "Các tài khoản đăng ký bằng mã mời của {{username}}",
-    "Showing the latest {{shown}} of {{total}} invited users": "Hiển thị {{shown}} người gần nhất trong tổng số {{total}} người được mời"
+    "Showing the latest {{shown}} of {{total}} invited users": "Hiển thị {{shown}} người gần nhất trong tổng số {{total}} người được mời",
+    "Compress context and retry": "Nén ngữ cảnh và thử lại",
+    "The conversation is too short to compress. Shorten the message or start a new conversation.": "Cuộc trò chuyện quá ngắn để nén. Hãy rút gọn tin nhắn hoặc bắt đầu cuộc trò chuyện mới.",
+    "{{tokens}} tokens (context limit unknown)": "{{tokens}} token (chưa rõ giới hạn ngữ cảnh)",
+    "Context limit unknown; learned from the provider when a request is too long": "Chưa rõ giới hạn ngữ cảnh; sẽ được lấy từ lỗi của nhà cung cấp khi yêu cầu quá dài"
   }
 }

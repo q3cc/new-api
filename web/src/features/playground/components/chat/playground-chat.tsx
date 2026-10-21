@@ -70,7 +70,8 @@ interface PlaygroundChatProps {
   onSaveEdit?: (newContent: string) => void
   onCancelEdit?: (open: boolean) => void
   onSaveEditAndSubmit?: (newContent: string) => void
-  onCompress?: () => void
+  /** Compress the context and retry the failed reply; absent when too few turns remain. */
+  onCompress?: (message: MessageType) => void
   messageLayoutMode?: PlaygroundMessageLayoutMode
 }
 
@@ -135,6 +136,8 @@ export function PlaygroundChat({
       editingKey
     )
     const isError = isErrorMessage(message)
+    const contextLengthError =
+      isError && isContextLengthError(message.errorCode, content)
     const previousUserMessage = isError
       ? getPreviousUserMessage(messages, messageIndex)
       : null
@@ -211,9 +214,10 @@ export function PlaygroundChat({
                 isError ? (
                   <MessageErrorActions
                     disabled={isGenerating}
+                    contextLengthError={contextLengthError}
                     onCompress={
-                      isContextLengthError(message.errorCode)
-                        ? onCompress
+                      contextLengthError && onCompress
+                        ? () => onCompress(message)
                         : undefined
                     }
                     onRetry={
