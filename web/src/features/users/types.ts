@@ -32,6 +32,16 @@ export type UserStatus = z.infer<typeof userStatusSchema>
 export const userRoleSchema = z.number()
 export type UserRole = z.infer<typeof userRoleSchema>
 
+/** Periodically computed from recent client IPs */
+export const userRiskScoreSchema = z.object({
+  score: z.number(),
+  shared_ip_users: z.number(),
+  same_subnet_users: z.number(),
+  ip_count: z.number(),
+  updated_at: z.number(),
+})
+export type UserRiskScore = z.infer<typeof userRiskScoreSchema>
+
 export const userSchema = z.object({
   id: z.number(),
   username: z.string(),
@@ -62,6 +72,7 @@ export const userSchema = z.object({
   admin_permissions: z
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
+  risk_score: userRiskScoreSchema.optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -70,6 +81,39 @@ export const userListSchema = z.array(userSchema)
 // ============================================================================
 // API Request/Response Types
 // ============================================================================
+
+export interface UserRecentIp {
+  ip: string
+  last_seen: number
+}
+
+export interface UserInvitee {
+  id: number
+  username: string
+  display_name: string
+  status: number
+  created_at: number
+  risk_score?: UserRiskScore
+}
+
+export interface UserInviteesResponse {
+  items: UserInvitee[]
+  total: number
+}
+
+export interface UserRiskRelation {
+  user_id: number
+  username?: string
+  matches: string[]
+}
+
+export interface UserRiskDetail {
+  score: UserRiskScore
+  details: {
+    shared_ip: UserRiskRelation[]
+    same_subnet: UserRiskRelation[]
+  }
+}
 
 /** Generic API response */
 export interface ApiResponse<T = unknown> {

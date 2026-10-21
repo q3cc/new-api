@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { RateLimitSection } from '../request-limits/rate-limit-section'
 import { SSRFSection } from '../request-limits/ssrf-section'
 import { TokenLimitSection } from '../request-limits/token-limit-section'
+import { UserRiskSection } from '../request-limits/user-risk-section'
 import type { SecuritySettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
@@ -73,6 +74,29 @@ const SECURITY_SECTIONS = [
         defaultValues={{
           'token_setting.max_user_tokens':
             settings['token_setting.max_user_tokens'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'user-risk',
+    titleKey: 'User Risk Score',
+    build: (settings: SecuritySettings) => (
+      <UserRiskSection
+        defaultValues={{
+          'user_risk_setting.enabled': settings['user_risk_setting.enabled'],
+          'user_risk_setting.window_days':
+            settings['user_risk_setting.window_days'],
+          'user_risk_setting.shared_ip_score':
+            settings['user_risk_setting.shared_ip_score'],
+          'user_risk_setting.same_subnet_score':
+            settings['user_risk_setting.same_subnet_score'],
+          'user_risk_setting.multi_ip_threshold':
+            settings['user_risk_setting.multi_ip_threshold'],
+          'user_risk_setting.multi_ip_score':
+            settings['user_risk_setting.multi_ip_score'],
+          'user_risk_setting.max_score':
+            settings['user_risk_setting.max_score'],
         }}
       />
     ),

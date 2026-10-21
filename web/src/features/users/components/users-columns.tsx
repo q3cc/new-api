@@ -26,6 +26,7 @@ import { GroupBadge } from '@/components/group-badge'
 import { LongText } from '@/components/long-text'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Tooltip,
@@ -44,7 +45,9 @@ import {
 } from '../constants'
 import type { User } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
+import { UserInviteesDialog } from './user-invitees-dialog'
 import { UserQuotaCell } from './user-quota-cell'
+import { UserRiskBadge } from './user-risk-badge'
 
 export function useUsersColumns(): ColumnDef<User>[] {
   const { t } = useTranslation()
@@ -106,6 +109,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
                 <LongText className='max-w-[140px] text-sm font-normal'>
                   {username}
                 </LongText>
+                <UserRiskBadge risk={row.original.risk_score} />
                 {remark && (
                   <Tooltip>
                     <TooltipTrigger
@@ -254,13 +258,24 @@ export function useUsersColumns(): ColumnDef<User>[] {
               className='min-w-0 space-y-1 text-xs font-normal'
             >
               {(affCount > 0 || affHistoryQuota !== 0) && (
-                <LongText>
-                  {t('Invited {{count}} users', { count: affCount })} ·{' '}
-                  {t('Earnings')}:{' '}
-                  <span className='tabular-nums'>
-                    {formatQuota(affHistoryQuota)}
-                  </span>
-                </LongText>
+                <UserInviteesDialog
+                  userId={user.id}
+                  username={user.username}
+                  trigger={
+                    <Button
+                      variant='link'
+                      className='h-auto max-w-full justify-start p-0 text-xs font-normal'
+                    >
+                      <span className='truncate'>
+                        {t('Invited {{count}} users', { count: affCount })} ·{' '}
+                        {t('Earnings')}:{' '}
+                        <span className='tabular-nums'>
+                          {formatQuota(affHistoryQuota)}
+                        </span>
+                      </span>
+                    </Button>
+                  }
+                />
               )}
               {inviterId > 0 && (
                 <LongText className='text-muted-foreground'>

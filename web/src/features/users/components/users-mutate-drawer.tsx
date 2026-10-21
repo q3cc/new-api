@@ -97,6 +97,8 @@ import {
 } from '../lib'
 import type { User } from '../types'
 import { UserQuotaDialog } from './user-quota-dialog'
+import { UserRecentIpsSection } from './user-recent-ips-section'
+import { UserRiskSection } from './user-risk-section'
 import { useUsers } from './users-provider'
 
 type UsersMutateDrawerProps = {
@@ -579,6 +581,9 @@ export function UsersMutateDrawer({
                   </div>
                 </SideDrawerSection>
               )}
+
+              {currentRow && <UserRiskSection userId={currentRow.id} />}
+              {currentRow && <UserRecentIpsSection userId={currentRow.id} />}
             </form>
           </Form>
           <SheetFooter className={sideDrawerFooterClassName()}>

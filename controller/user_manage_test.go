@@ -641,3 +641,154 @@ func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
 		})
 	}
 }
+
+func TestGetUserRecentIpsMergesSourcesAndHidesHigherRoles(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	user := model.User{Username: "recent-ip-user", Password: "password", AffCode: "recent-ip-user", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	require.NoError(t, db.Create(&user).Error)
+	root := model.User{Username: "recent-ip-root", Password: "password", AffCode: "recent-ip-root", Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default"}
+	require.NoError(t, db.Create(&root).Error)
+
+	now := time.Now().Unix()
+	for i, ip := range []string{"198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.1", ""} {
+		model.RecordAuditLog(nil, model.AuditLog{UserId: user.Id, ActorRole: common.RoleCommonUser, CreatedAt: now - 100 + int64(i), Category: model.AuditCategoryLogin, Ip: ip, Success: true})
+	}
+	require.NoError(t, model.LOG_DB.Create([]*model.Log{
+		{UserId: user.Id, Type: model.LogTypeConsume, CreatedAt: now - 10, Ip: "203.0.113.1"},
+		{UserId: user.Id, Type: model.LogTypeError, CreatedAt: now - 20, Ip: "203.0.113.2"},
+		{UserId: user.Id, Type: model.LogTypeConsume, CreatedAt: now - 5, Ip: "198.51.100.2"},
+		{UserId: user.Id, Type: model.LogTypeTopup, CreatedAt: now, Ip: "192.0.2.99"},
+		{UserId: user.Id, Type: model.LogTypeConsume, CreatedAt: now - 40*24*3600, Ip: "192.0.2.98"},
+		{UserId: root.Id, Type: model.LogTypeConsume, CreatedAt: now, Ip: "192.0.2.97"},
+	}).Error)
+
+	request := func(targetId int, role int) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(targetId)}}
+		c.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/user/%d/recent_ips", targetId), nil)
+		c.Set("role", role)
+		GetUserRecentIps(c)
+		return recorder
+	}
+
+	var response struct {
+		Success bool                 `json:"success"`
+		Data    []model.UserRecentIp `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(request(user.Id, common.RoleAdminUser).Body.Bytes(), &response))
+	require.True(t, response.Success)
+	ips := make([]string, 0, len(response.Data))
+	for _, item := range response.Data {
+		ips = append(ips, item.Ip)
+	}
+	assert.Equal(t, []string{"198.51.100.2", "203.0.113.1", "203.0.113.2", "198.51.100.1", "198.51.100.3"}, ips,
+		"distinct IPs ordered by last seen; top-up callers, stale usage logs and other users are excluded")
+	assert.Equal(t, now-5, response.Data[0].LastSeen)
+
+	assert.Contains(t, request(root.Id, common.RoleAdminUser).Body.String(), `"success":false`)
+}
+
+func TestUserRiskScoreInListAndDetail(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.UserRiskScore{}))
+	target := model.User{Username: "risk-target", Password: "password", AffCode: "risk-target", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	partner := model.User{Username: "risk-partner", Password: "password", AffCode: "risk-partner", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	clean := model.User{Username: "risk-clean", Password: "password", AffCode: "risk-clean", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	for _, user := range []*model.User{&target, &partner, &clean} {
+		require.NoError(t, db.Create(user).Error)
+	}
+	details, err := common.Marshal(model.UserRiskDetails{
+		SharedIp:   []model.UserRiskRelation{{UserId: partner.Id, Matches: []string{"203.0.113.10"}}},
+		SameSubnet: []model.UserRiskRelation{},
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.ReplaceUserRiskScores([]model.UserRiskScore{
+		{UserId: target.Id, Score: 10, SharedIpUsers: 1, IpCount: 1, UpdatedAt: 100, Details: string(details)},
+	}))
+
+	request := func(handler gin.HandlerFunc, target string, params gin.Params) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Params = params
+		c.Request = httptest.NewRequest(http.MethodGet, target, nil)
+		c.Set("role", common.RoleRootUser)
+		handler(c)
+		return recorder
+	}
+
+	var list struct {
+		Data struct {
+			Items []struct {
+				Username  string               `json:"username"`
+				RiskScore *model.UserRiskScore `json:"risk_score"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(request(SearchUsers, "/api/user/search?keyword=risk-", nil).Body.Bytes(), &list))
+	scores := map[string]int{}
+	for _, item := range list.Data.Items {
+		require.NotNil(t, item.RiskScore, item.Username)
+		scores[item.Username] = item.RiskScore.Score
+	}
+	assert.Equal(t, map[string]int{"risk-target": 10, "risk-partner": 0, "risk-clean": 0}, scores, "users without a row show zero")
+
+	var detail struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Score   model.UserRiskScore   `json:"score"`
+			Details model.UserRiskDetails `json:"details"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(request(GetUserRiskDetail, "/", gin.Params{{Key: "id", Value: strconv.Itoa(target.Id)}}).Body.Bytes(), &detail))
+	require.True(t, detail.Success)
+	assert.Equal(t, 10, detail.Data.Score.Score)
+	assert.Equal(t, []model.UserRiskRelation{{UserId: partner.Id, Username: "risk-partner", Matches: []string{"203.0.113.10"}}}, detail.Data.Details.SharedIp)
+
+	require.NoError(t, common.Unmarshal(request(GetUserRiskDetail, "/", gin.Params{{Key: "id", Value: strconv.Itoa(clean.Id)}}).Body.Bytes(), &detail))
+	assert.Equal(t, 0, detail.Data.Score.Score)
+	assert.Empty(t, detail.Data.Details.SharedIp)
+	assert.NotNil(t, detail.Data.Details.SameSubnet, "empty details serialize as lists")
+}
+
+func TestGetUserInviteesListsOnlyLiveInviteesNewestFirst(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.UserRiskScore{}))
+	inviter := model.User{Username: "inviter", Password: "password", AffCode: "inviter", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	require.NoError(t, db.Create(&inviter).Error)
+	other := model.User{Username: "other-inviter", Password: "password", AffCode: "other-inviter", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	require.NoError(t, db.Create(&other).Error)
+	var invitees []model.User
+	for i, inviterId := range []int{inviter.Id, inviter.Id, other.Id, inviter.Id} {
+		invitee := model.User{Username: fmt.Sprintf("invitee-%d", i), Password: "password", AffCode: fmt.Sprintf("invitee-%d", i), InviterId: inviterId, Status: common.UserStatusEnabled, Group: "default"}
+		require.NoError(t, db.Create(&invitee).Error)
+		invitees = append(invitees, invitee)
+	}
+	require.NoError(t, db.Delete(&model.User{}, invitees[1].Id).Error)
+	require.NoError(t, model.ReplaceUserRiskScores([]model.UserRiskScore{{UserId: invitees[3].Id, Score: 42}}))
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(inviter.Id)}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c.Set("role", common.RoleAdminUser)
+	GetUserInvitees(c)
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []model.UserInvitee `json:"items"`
+			Total int64               `json:"total"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	assert.EqualValues(t, 2, response.Data.Total, "deleted invitees and other inviters' invitees are excluded")
+	require.Len(t, response.Data.Items, 2)
+	assert.Equal(t, "invitee-3", response.Data.Items[0].Username)
+	assert.Equal(t, "invitee-0", response.Data.Items[1].Username)
+	require.NotNil(t, response.Data.Items[0].RiskScore)
+	require.NotNil(t, response.Data.Items[1].RiskScore, "invitees without a score row show zero")
+	assert.Equal(t, 42, response.Data.Items[0].RiskScore.Score)
+	assert.Equal(t, 0, response.Data.Items[1].RiskScore.Score)
+}

@@ -112,6 +112,7 @@ type User struct {
 	LastLoginAt          int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	AuthVersion          int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions     map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	RiskScore            *UserRiskScore             `json:"risk_score,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -1573,4 +1574,42 @@ func RootUserExists() bool {
 		return false
 	}
 	return true
+}
+
+// UserInvitee is the admin view of an account registered with someone's invite code.
+type UserInvitee struct {
+	Id          int            `json:"id"`
+	Username    string         `json:"username"`
+	DisplayName string         `json:"display_name"`
+	Status      int            `json:"status"`
+	CreatedAt   int64          `json:"created_at"`
+	RiskScore   *UserRiskScore `json:"risk_score" gorm:"-"`
+}
+
+// GetUserInvitees returns the newest accounts invited by inviterId and their total.
+func GetUserInvitees(inviterId int, limit int) ([]UserInvitee, int64, error) {
+	query := DB.Model(&User{}).Where("inviter_id = ?", inviterId)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	invitees := []UserInvitee{}
+	err := query.Select("id", "username", "display_name", "status", "created_at").
+		Order("id DESC").Limit(limit).Scan(&invitees).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	ids := make([]int, 0, len(invitees))
+	for _, invitee := range invitees {
+		ids = append(ids, invitee.Id)
+	}
+	scores, err := GetUserRiskScoresByIds(ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range invitees {
+		score := scores[invitees[i].Id]
+		invitees[i].RiskScore = &score
+	}
+	return invitees, total, nil
 }

@@ -1,7 +1,9 @@
 package model
 
 import (
+	"cmp"
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -143,6 +145,59 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
 	formatUserLogs(logs, 0)
 	return logs, err
+}
+
+type UserRecentIp struct {
+	Ip       string `json:"ip"`
+	LastSeen int64  `json:"last_seen"`
+}
+
+// recentIpLogWindowSeconds bounds the usage-log scan; audit rows are sparse and
+// indexed by (user_id, created_at), so they are read without a window.
+const recentIpLogWindowSeconds = 30 * 24 * 60 * 60
+
+// recentIpLogTypes are usage-log types whose IP is the user's own client.
+var recentIpLogTypes = []int{LogTypeConsume, LogTypeError, LogTypeLogin}
+
+// GetUserRecentIps returns the user's most recently seen distinct client IPs.
+// Audit rows are attributed to the acting user, so their IPs are the user's own.
+// Usage logs only carry an IP when the user enabled IP recording; top-up logs
+// are excluded because their IP belongs to the payment callback caller.
+func GetUserRecentIps(userId int, limit int) ([]UserRecentIp, error) {
+	var auditIps []UserRecentIp
+	err := LOG_DB.Model(&AuditLog{}).
+		Select("ip, MAX(created_at) AS last_seen").
+		Where("user_id = ? AND ip <> ''", userId).
+		Group("ip").Order("last_seen DESC").Limit(limit).
+		Scan(&auditIps).Error
+	if err != nil {
+		return nil, err
+	}
+	var logIps []UserRecentIp
+	err = LOG_DB.Model(&Log{}).
+		Select("ip, MAX(created_at) AS last_seen").
+		Where("user_id = ? AND ip <> '' AND type IN ? AND created_at >= ?", userId,
+			recentIpLogTypes, common.GetTimestamp()-recentIpLogWindowSeconds).
+		Group("ip").Order("last_seen DESC").Limit(limit).
+		Scan(&logIps).Error
+	if err != nil {
+		return nil, err
+	}
+	lastSeen := make(map[string]int64, len(auditIps)+len(logIps))
+	for _, item := range append(auditIps, logIps...) {
+		lastSeen[item.Ip] = max(lastSeen[item.Ip], item.LastSeen)
+	}
+	ips := make([]UserRecentIp, 0, len(lastSeen))
+	for ip, seen := range lastSeen {
+		ips = append(ips, UserRecentIp{Ip: ip, LastSeen: seen})
+	}
+	slices.SortFunc(ips, func(a, b UserRecentIp) int {
+		if a.LastSeen != b.LastSeen {
+			return cmp.Compare(b.LastSeen, a.LastSeen)
+		}
+		return strings.Compare(a.Ip, b.Ip)
+	})
+	return ips[:min(limit, len(ips))], nil
 }
 
 func RecordLog(userId int, logType int, content *common.Message) {

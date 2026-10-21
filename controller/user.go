@@ -344,6 +344,10 @@ func GetAllUsers(c *gin.Context) {
 		return
 	}
 
+	if err := model.AttachUserRiskScores(users); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 
@@ -374,6 +378,10 @@ func SearchUsers(c *gin.Context) {
 		return
 	}
 
+	if err := model.AttachUserRiskScores(users); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 	common.ApiSuccess(c, pageInfo)
@@ -407,6 +415,123 @@ func GetUser(c *gin.Context) {
 		"data":    user,
 	})
 	return
+}
+
+// GetUserRecentIps lets administrators review the latest client IPs of a user.
+func GetUserRecentIps(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user, err := model.GetUserById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !canManageTargetRole(c.GetInt("role"), user.Role) {
+		common.ApiErrorT(c, "No permission to access users of same or higher level")
+		return
+	}
+	ips, err := model.GetUserRecentIps(user.Id, 5)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    ips,
+	})
+}
+
+// userInviteesLimit bounds the invitee list shown to administrators; the total
+// is still returned so the UI can say when the list is truncated.
+const userInviteesLimit = 100
+
+// GetUserInvitees lists the accounts registered with a user's invite code.
+func GetUserInvitees(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user, err := model.GetUserById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !canManageTargetRole(c.GetInt("role"), user.Role) {
+		common.ApiErrorT(c, "No permission to access users of same or higher level")
+		return
+	}
+	invitees, total, err := model.GetUserInvitees(user.Id, userInviteesLimit)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"items": invitees,
+			"total": total,
+		},
+	})
+}
+
+// GetUserRiskDetail explains a user's stored risk score with the related
+// accounts and the IPs or IP ranges they have in common.
+func GetUserRiskDetail(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user, err := model.GetUserById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !canManageTargetRole(c.GetInt("role"), user.Role) {
+		common.ApiErrorT(c, "No permission to access users of same or higher level")
+		return
+	}
+	row, err := model.GetUserRiskScore(user.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	details := model.UserRiskDetails{SharedIp: []model.UserRiskRelation{}, SameSubnet: []model.UserRiskRelation{}}
+	if row.Details != "" {
+		if err := common.UnmarshalJsonStr(row.Details, &details); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	relatedIds := make([]int, 0, len(details.SharedIp)+len(details.SameSubnet))
+	for _, relation := range append(details.SharedIp, details.SameSubnet...) {
+		relatedIds = append(relatedIds, relation.UserId)
+	}
+	usernames, err := model.GetUsernamesByIds(relatedIds)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	for i := range details.SharedIp {
+		details.SharedIp[i].Username = usernames[details.SharedIp[i].UserId]
+	}
+	for i := range details.SameSubnet {
+		details.SameSubnet[i].Username = usernames[details.SameSubnet[i].UserId]
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"score":   row,
+			"details": details,
+		},
+	})
 }
 
 type TransferAffQuotaRequest struct {

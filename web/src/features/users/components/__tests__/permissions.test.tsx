@@ -74,6 +74,26 @@ function renderPermissions(viewerRole: number, allowed?: boolean) {
     if (url === '/api/group/') {
       return { data: { success: true, data: ['default'] } }
     }
+    if (url === `/api/user/${target.id}/recent_ips`) {
+      return { data: { success: true, data: [] } }
+    }
+    if (url === `/api/user/${target.id}/risk`) {
+      return {
+        data: {
+          success: true,
+          data: {
+            score: {
+              score: 0,
+              shared_ip_users: 0,
+              same_subnet_users: 0,
+              ip_count: 0,
+              updated_at: 0,
+            },
+            details: { shared_ip: [], same_subnet: [] },
+          },
+        },
+      }
+    }
     if (url === '/api/verify/methods') {
       return {
         data: {

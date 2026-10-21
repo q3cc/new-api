@@ -42,6 +42,13 @@ const defaultSecuritySettings: SecuritySettings = {
   'fetch_setting.allowed_ports': [],
   'fetch_setting.apply_ip_filter_for_domain': false,
   'token_setting.max_user_tokens': 1000,
+  'user_risk_setting.enabled': true,
+  'user_risk_setting.window_days': 30,
+  'user_risk_setting.shared_ip_score': 10,
+  'user_risk_setting.same_subnet_score': 2,
+  'user_risk_setting.multi_ip_threshold': 10,
+  'user_risk_setting.multi_ip_score': 1,
+  'user_risk_setting.max_score': 100,
 }
 
 export function SecuritySettings() {

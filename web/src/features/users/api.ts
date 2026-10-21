@@ -32,6 +32,9 @@ import type {
   ManageUserAction,
   ManageUserQuotaPayload,
   ApiResponse,
+  UserRecentIp,
+  UserRiskDetail,
+  UserInviteesResponse,
 } from './types'
 
 // A step-up proof is single-use, so the request carrying it must never be
@@ -100,6 +103,36 @@ export async function searchUsers(
  */
 export async function getUser(id: number): Promise<ApiResponse<User>> {
   const res = await api.get(`/api/user/${id}`)
+  return res.data
+}
+
+/**
+ * Get the user's most recently seen distinct client IPs (admin only)
+ */
+export async function getUserRecentIps(
+  id: number
+): Promise<ApiResponse<UserRecentIp[]>> {
+  const res = await api.get(`/api/user/${id}/recent_ips`)
+  return res.data
+}
+
+/**
+ * Get the stored risk score of a user with related accounts (admin only)
+ */
+export async function getUserRiskDetail(
+  id: number
+): Promise<ApiResponse<UserRiskDetail>> {
+  const res = await api.get(`/api/user/${id}/risk`)
+  return res.data
+}
+
+/**
+ * Get the accounts registered with a user's invite code (admin only)
+ */
+export async function getUserInvitees(
+  id: number
+): Promise<ApiResponse<UserInviteesResponse>> {
+  const res = await api.get(`/api/user/${id}/invitees`)
   return res.data
 }
 

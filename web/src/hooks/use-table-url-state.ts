@@ -31,7 +31,10 @@ const PAGE_SIZE_STORAGE_KEY = 'page-size'
 
 function getStoredPageSize(): number | undefined {
   try {
-    const n = parseInt(localStorage.getItem(PAGE_SIZE_STORAGE_KEY) ?? '', 10)
+    const n = Number.parseInt(
+      localStorage.getItem(PAGE_SIZE_STORAGE_KEY) ?? '',
+      10
+    )
     return n > 0 ? n : undefined // n > 0 also rejects NaN
   } catch {
     return undefined
@@ -186,6 +189,13 @@ export function useTableUrlState(
     return typeof raw === 'string' ? raw : ''
   })
 
+  // 与列筛选一致：URL 被外部导航改写（如跳转到指定用户）时同步搜索词
+  const urlGlobalFilter = (search as SearchRecord)[globalFilterKey]
+  useEffect(() => {
+    if (!globalFilterEnabled) return
+    setGlobalFilter(typeof urlGlobalFilter === 'string' ? urlGlobalFilter : '')
+  }, [globalFilterEnabled, urlGlobalFilter])
+
   const onGlobalFilterChange: OnChangeFn<string> | undefined =
     globalFilterEnabled
       ? (updater) => {
@@ -221,9 +231,8 @@ export function useTableUrlState(
         patch[cfg.searchKey] =
           value.trim() !== '' ? serialize(value) : undefined
       } else {
-        const value = Array.isArray(found?.value)
-          ? (found!.value as unknown[])
-          : []
+        const rawValue: unknown = found?.value
+        const value: unknown[] = Array.isArray(rawValue) ? rawValue : []
         patch[cfg.searchKey] = value.length > 0 ? serialize(value) : undefined
       }
     }

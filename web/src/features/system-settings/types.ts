@@ -411,6 +411,13 @@ export type SecuritySettings = {
   'fetch_setting.allowed_ports': number[]
   'fetch_setting.apply_ip_filter_for_domain': boolean
   'token_setting.max_user_tokens': number
+  'user_risk_setting.enabled': boolean
+  'user_risk_setting.window_days': number
+  'user_risk_setting.shared_ip_score': number
+  'user_risk_setting.same_subnet_score': number
+  'user_risk_setting.multi_ip_threshold': number
+  'user_risk_setting.multi_ip_score': number
+  'user_risk_setting.max_score': number
 }
 
 export type UpstreamChannel = {
