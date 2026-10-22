@@ -93,12 +93,71 @@ func TestLotteryActivityValidateRejectsInvalidRules(t *testing.T) {
 		{name: "drawn prize without winners", activity: LotteryActivity{Title: "P", Mode: LotteryModeParticipants, Status: LotteryStatusActive, TargetParticipants: 2, Prizes: []LotteryPrize{quotaPrize(0, 0)}}},
 		{name: "subscription prize without plan", activity: LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive, Prizes: []LotteryPrize{{Name: "Plan", Type: LotteryPrizeSubscription, Probability: 100}}}},
 		{name: "no prizes", activity: LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive}},
+		{name: "draw time in the past", activity: LotteryActivity{Title: "S", Mode: LotteryModeScheduled, Status: LotteryStatusActive, DrawTime: 1, Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
+		{name: "end time in the past", activity: LotteryActivity{Title: "P", Mode: LotteryModeParticipants, Status: LotteryStatusActive, TargetParticipants: 2, EndTime: 1, Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Error(t, tt.activity.Validate())
 		})
 	}
+}
+
+func TestListLotteryActivitiesShowsUsersRunningAndRecentFinishedActivities(t *testing.T) {
+	setupLotteryFixture(t)
+	now := common.GetTimestamp()
+	create := func(title string, activity LotteryActivity) {
+		activity.Title = title
+		require.NoError(t, DB.Omit("Prizes").Create(&activity).Error)
+	}
+	create("draft", LotteryActivity{Mode: LotteryModeWheel, Status: LotteryStatusDraft})
+	create("running wheel", LotteryActivity{Mode: LotteryModeWheel, Status: LotteryStatusActive, EndTime: now + 3600})
+	create("closed draw", LotteryActivity{Mode: LotteryModeScheduled, Status: LotteryStatusActive, EndTime: now - 60, DrawTime: now - 60})
+	create("ended wheel", LotteryActivity{Mode: LotteryModeWheel, Status: LotteryStatusActive, EndTime: now - 60})
+	create("cancelled unentered", LotteryActivity{Mode: LotteryModeWheel, Status: LotteryStatusCancelled})
+	create("cancelled entered", LotteryActivity{Mode: LotteryModeParticipants, Status: LotteryStatusCancelled, EntryCount: 1})
+	for i := range lotteryHistoryLimit {
+		create(fmt.Sprintf("drawn %02d", i), LotteryActivity{Mode: LotteryModeParticipants, Status: LotteryStatusDrawn})
+	}
+
+	activities, err := ListLotteryActivities(true)
+	require.NoError(t, err)
+	titles := make([]string, len(activities))
+	for i, activity := range activities {
+		titles[i] = activity.Title
+	}
+	// Running activities come first; a draw waiting for its draw is running.
+	assert.Equal(t, []string{"closed draw", "running wheel"}, titles[:2])
+	assert.Len(t, titles, 2+lotteryHistoryLimit)
+	assert.NotContains(t, titles, "draft")
+	assert.NotContains(t, titles, "cancelled unentered")
+	// The oldest finished activities fall outside the history limit.
+	assert.NotContains(t, titles, "ended wheel")
+	assert.NotContains(t, titles, "cancelled entered")
+
+	all, err := ListLotteryActivities(false)
+	require.NoError(t, err)
+	assert.Len(t, all, 6+lotteryHistoryLimit)
+}
+
+func TestListLotteryActivitiesKeepsCancelledEntriesVisible(t *testing.T) {
+	setupLotteryFixture(t)
+	now := common.GetTimestamp()
+	for _, activity := range []LotteryActivity{
+		{Title: "ended wheel", Mode: LotteryModeWheel, Status: LotteryStatusActive, EndTime: now - 60},
+		{Title: "cancelled entered", Mode: LotteryModeParticipants, Status: LotteryStatusCancelled, EntryCount: 1},
+		{Title: "cancelled unentered", Mode: LotteryModeWheel, Status: LotteryStatusCancelled},
+	} {
+		require.NoError(t, DB.Omit("Prizes").Create(&activity).Error)
+	}
+
+	activities, err := ListLotteryActivities(true)
+	require.NoError(t, err)
+	titles := make([]string, len(activities))
+	for i, activity := range activities {
+		titles[i] = activity.Title
+	}
+	assert.Equal(t, []string{"cancelled entered", "ended wheel"}, titles)
 }
 
 func TestSpinLotteryWheelEnforcesSpinLimitsAndStock(t *testing.T) {

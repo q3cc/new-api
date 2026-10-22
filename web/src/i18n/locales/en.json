@@ -7722,6 +7722,9 @@
     "Winners ({{count}})": "Winners ({{count}})",
     "Winners ({{count}}, latest {{shown}} shown)": "Winners ({{count}}, latest {{shown}} shown)",
     "Me": "Me",
-    "This activity is full; waiting for the draw": "This activity is full; waiting for the draw"
+    "This activity is full; waiting for the draw": "This activity is full; waiting for the draw",
+    "End time must be in the future": "End time must be in the future",
+    "Draw time must be in the future": "Draw time must be in the future",
+    "This activity was cancelled": "This activity was cancelled"
   }
 }

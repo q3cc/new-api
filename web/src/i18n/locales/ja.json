@@ -7722,6 +7722,9 @@
     "Winners ({{count}})": "当選者（{{count}}）",
     "Winners ({{count}}, latest {{shown}} shown)": "当選者（全 {{count}} 件、最新 {{shown}} 件を表示）",
     "Me": "自分",
-    "This activity is full; waiting for the draw": "定員に達しました。抽選をお待ちください"
+    "This activity is full; waiting for the draw": "定員に達しました。抽選をお待ちください",
+    "End time must be in the future": "終了日時は現在より後にしてください",
+    "Draw time must be in the future": "抽選日時は現在より後にしてください",
+    "This activity was cancelled": "このアクティビティはキャンセルされました"
   }
 }

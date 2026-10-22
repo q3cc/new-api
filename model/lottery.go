@@ -37,6 +37,11 @@ const (
 
 	maxLotteryPrizes        = 20
 	maxLotteryPrizeQuantity = 100000
+
+	// Users see every running activity but only the latest finished ones.
+	lotteryHistoryLimit = 20
+	// lotteryUserWinsLimit caps the wins listed in a user's activity state.
+	lotteryUserWinsLimit = 50
 )
 
 // LotteryActivity is one lottery. Wheel activities award on every spin;
@@ -155,6 +160,11 @@ func (a *LotteryActivity) Validate() error {
 	if a.EndTime > 0 && a.EndTime <= a.StartTime {
 		return common.NewMessage("End time must be later than start time")
 	}
+	// A past end or draw time would close or draw the activity at once.
+	now := common.GetTimestamp()
+	if a.EndTime > 0 && a.EndTime <= now {
+		return common.NewMessage("End time must be in the future")
+	}
 	if a.SpendEndTime > 0 && a.SpendEndTime <= a.SpendStartTime {
 		return common.NewMessage("Spending window end must be later than its start")
 	}
@@ -170,6 +180,9 @@ func (a *LotteryActivity) Validate() error {
 	case LotteryModeScheduled:
 		if a.DrawTime <= a.StartTime {
 			return common.NewMessage("Scheduled draws need a draw time later than the start time")
+		}
+		if a.DrawTime <= now {
+			return common.NewMessage("Draw time must be in the future")
 		}
 		if a.EndTime == 0 || a.EndTime > a.DrawTime {
 			a.EndTime = a.DrawTime
@@ -276,21 +289,32 @@ func GetLotteryActivity(id int) (*LotteryActivity, error) {
 	return &activities[0], nil
 }
 
-// ListLotteryActivities lists activities newest first; visibleOnly hides
-// drafts for users.
+// ListLotteryActivities lists activities newest first. For users
+// (visibleOnly) it returns every running activity followed by the latest
+// finished ones: drawn activities, wheels past their end time, and cancelled
+// activities that people had entered. Drafts are never shown to users.
 func ListLotteryActivities(visibleOnly bool) ([]LotteryActivity, error) {
-	query := DB.Order("id desc")
-	if visibleOnly {
-		query = query.Where("status IN ?", []string{LotteryStatusActive, LotteryStatusDrawn})
-	}
 	var activities []LotteryActivity
-	if err := query.Find(&activities).Error; err != nil {
+	if !visibleOnly {
+		if err := DB.Order("id desc").Find(&activities).Error; err != nil {
+			return nil, err
+		}
+		return activities, loadLotteryPrizes(DB, activities)
+	}
+	now := common.GetTimestamp()
+	if err := DB.Where("status = ?", LotteryStatusActive).
+		Where("mode <> ? OR end_time = 0 OR end_time >= ?", LotteryModeWheel, now).
+		Order("id desc").Find(&activities).Error; err != nil {
 		return nil, err
 	}
-	if err := loadLotteryPrizes(DB, activities); err != nil {
+	var history []LotteryActivity
+	if err := DB.Where("status = ? OR (status = ? AND entry_count > 0) OR (status = ? AND mode = ? AND end_time > 0 AND end_time < ?)",
+		LotteryStatusDrawn, LotteryStatusCancelled, LotteryStatusActive, LotteryModeWheel, now).
+		Order("id desc").Limit(lotteryHistoryLimit).Find(&history).Error; err != nil {
 		return nil, err
 	}
-	return activities, nil
+	activities = append(activities, history...)
+	return activities, loadLotteryPrizes(DB, activities)
 }
 
 func CreateLotteryActivity(activity *LotteryActivity) error {
@@ -429,21 +453,23 @@ func GetLotteryUserState(tx *gorm.DB, activity *LotteryActivity, userId int) (*L
 		state.Paid = paid
 		state.Eligible = paid+1e-9 >= activity.MinSpend
 	}
-	var entries []LotteryEntry
-	if err := tx.Where("activity_id = ? AND user_id = ?", activity.Id, userId).Order("id desc").Find(&entries).Error; err != nil {
+	// Counted rather than loaded: an unlimited wheel can hold many spins.
+	mine := func() *gorm.DB {
+		return tx.Model(&LotteryEntry{}).Where("activity_id = ? AND user_id = ?", activity.Id, userId)
+	}
+	var total, today int64
+	if err := mine().Count(&total).Error; err != nil {
 		return nil, err
 	}
-	today := lotteryToday()
-	state.Joined = len(entries) > 0
-	state.SpinsUsed = len(entries)
-	for _, entry := range entries {
-		if entry.SpinDate == today {
-			state.SpinsUsedToday++
-		}
-		if entry.PrizeId > 0 {
-			state.Wins = append(state.Wins, entry)
-		}
+	if err := mine().Where("spin_date = ?", lotteryToday()).Count(&today).Error; err != nil {
+		return nil, err
 	}
+	if err := mine().Where("prize_id > 0").Order("id desc").Limit(lotteryUserWinsLimit).Find(&state.Wins).Error; err != nil {
+		return nil, err
+	}
+	state.Joined = total > 0
+	state.SpinsUsed = int(total)
+	state.SpinsUsedToday = int(today)
 	return state, nil
 }
 

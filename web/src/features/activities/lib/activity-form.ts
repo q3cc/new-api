@@ -66,11 +66,18 @@ export function getActivityFormSchema(t: TFunction) {
       ) {
         issue(['end_time'], t('End time must be later than start time'))
       }
+      // A past end or draw time would close or draw the activity at once.
+      const now = new Date()
+      if (values.end_time && values.end_time <= now) {
+        issue(['end_time'], t('End time must be in the future'))
+      }
       if (values.mode === 'scheduled') {
         if (!values.draw_time) {
           issue(['draw_time'], t('Scheduled draws need a draw time'))
         } else if (values.start_time && values.draw_time <= values.start_time) {
           issue(['draw_time'], t('Draw time must be later than start time'))
+        } else if (values.draw_time <= now) {
+          issue(['draw_time'], t('Draw time must be in the future'))
         }
       }
       if (values.mode === 'participants' && values.target_participants < 1) {

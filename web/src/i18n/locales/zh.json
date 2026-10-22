@@ -7722,6 +7722,9 @@
     "Winners ({{count}})": "中奖名单（{{count}}）",
     "Winners ({{count}}, latest {{shown}} shown)": "中奖名单（共 {{count}} 人，显示最近 {{shown}} 条）",
     "Me": "我",
-    "This activity is full; waiting for the draw": "名额已满，等待开奖"
+    "This activity is full; waiting for the draw": "名额已满，等待开奖",
+    "End time must be in the future": "结束时间必须晚于当前时间",
+    "Draw time must be in the future": "开奖时间必须晚于当前时间",
+    "This activity was cancelled": "活动已取消"
   }
 }

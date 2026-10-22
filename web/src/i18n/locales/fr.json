@@ -7722,6 +7722,9 @@
     "Winners ({{count}})": "Gagnants ({{count}})",
     "Winners ({{count}}, latest {{shown}} shown)": "Gagnants ({{count}}, {{shown}} derniers affichés)",
     "Me": "Moi",
-    "This activity is full; waiting for the draw": "Cette activité est complète ; en attente du tirage"
+    "This activity is full; waiting for the draw": "Cette activité est complète ; en attente du tirage",
+    "End time must be in the future": "La date de fin doit être dans le futur",
+    "Draw time must be in the future": "La date du tirage doit être dans le futur",
+    "This activity was cancelled": "Cette activité a été annulée"
   }
 }

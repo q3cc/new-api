@@ -147,6 +147,17 @@ describe('ActivityCard', () => {
     useAuthStore.getState().auth.reset()
   })
 
+  it('tells entrants a cancelled activity was cancelled instead of offering to join', () => {
+    renderCard({
+      ...participantDraw({ eligible: true, joined: true }),
+      status: 'cancelled',
+    })
+
+    expect(screen.getByText('This activity was cancelled')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Joined' })).toBeNull()
+    expect(screen.queryByText('Current chance to win')).toBeNull()
+  })
+
   it('shows the result of a drawn activity the user joined', () => {
     renderCard({
       ...participantDraw({

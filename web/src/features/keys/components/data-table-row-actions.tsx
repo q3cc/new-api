@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { Row } from '@tanstack/react-table'
 import {
-  Check,
+  ClipboardCopy,
   Trash2,
   Edit,
   Power,
@@ -98,11 +98,10 @@ export function DataTableRowActions<TData>({
   const { chatPresets, serverAddress } = useChatPresets()
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
   const [isCopyingKelivo, setIsCopyingKelivo] = useState(false)
-  const { copiedText: copiedKelivo, copyToClipboard: copyKelivo } =
-    useCopyToClipboard({
-      successMessage: t('Copied'),
-      errorMessage: t('Copy failed'),
-    })
+  const { copyToClipboard: copyKelivo } = useCopyToClipboard({
+    successMessage: t('Copied'),
+    errorMessage: t('Copy failed'),
+  })
   const isRealKeyLoading = Boolean(loadingKeys[apiKey.id])
 
   const hasChatPresets = chatPresets.length > 0
@@ -188,10 +187,7 @@ export function DataTableRowActions<TData>({
     }
   }
 
-  const handleCopyKelivo = async (
-    event: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    event.stopPropagation()
+  const handleCopyKelivo = async () => {
     if (isCopyingKelivo || isRealKeyLoading) return
     setIsCopyingKelivo(true)
     try {
@@ -205,10 +201,6 @@ export function DataTableRowActions<TData>({
     }
   }
 
-  let kelivoIcon = <Copy className='size-4' />
-  if (isCopyingKelivo) kelivoIcon = <Loader2 className='size-4 animate-spin' />
-  else if (copiedKelivo) kelivoIcon = <Check className='text-success size-4' />
-
   let statusIcon = <Power className='size-4' />
   if (isTogglingStatus) {
     statusIcon = <Loader2 className='size-4 animate-spin' />
@@ -218,23 +210,6 @@ export function DataTableRowActions<TData>({
 
   return (
     <div className='-ml-1.5 flex items-center gap-1'>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant='ghost'
-              size='icon-sm'
-              onClick={handleCopyKelivo}
-              disabled={isCopyingKelivo || isRealKeyLoading}
-              aria-label={t('Copy Kelivo config')}
-              aria-busy={isCopyingKelivo}
-            />
-          }
-        >
-          {kelivoIcon}
-        </TooltipTrigger>
-        <TooltipContent>{t('Copy Kelivo config')}</TooltipContent>
-      </Tooltip>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -311,6 +286,15 @@ export function DataTableRowActions<TData>({
           {t('Copy Connection Info')}
           <DropdownMenuShortcut>
             <Link size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={isCopyingKelivo || isRealKeyLoading}
+          onClick={() => void handleCopyKelivo()}
+        >
+          {t('Copy Kelivo config')}
+          <DropdownMenuShortcut>
+            <ClipboardCopy size={16} />
           </DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

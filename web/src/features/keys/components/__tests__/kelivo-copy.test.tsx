@@ -75,17 +75,25 @@ afterEach(() => {
   localStorage.clear()
 })
 
-it('copies the real key as a Kelivo config directly from the action button', async () => {
+async function openKelivoItem(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Open menu' }))
+  return screen.findByRole('menuitem', { name: 'Copy Kelivo config' })
+}
+
+it('copies the real key as a Kelivo config from the row action menu', async () => {
   const user = userEvent.setup()
   const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
   const request = vi
     .spyOn(api, 'post')
     .mockResolvedValue({ data: { success: true, data: { key: 'real-key' } } })
   renderActions()
+  expect(
+    screen.queryByRole('button', { name: 'Copy Kelivo config' })
+  ).not.toBeInTheDocument()
   expect(request).not.toHaveBeenCalled()
-  const button = screen.getByRole('button', { name: 'Copy Kelivo config' })
-  button.focus()
-  await user.keyboard('{Enter}')
+
+  await user.click(await openKelivoItem(user))
+
   await waitFor(() => expect(write).toHaveBeenCalledOnce())
   expect(request).toHaveBeenCalledWith('/api/token/7/key')
   const text = write.mock.calls[0][0]
@@ -98,10 +106,11 @@ it('copies the real key as a Kelivo config directly from the action button', asy
     apiKey: 'sk-real-key',
     baseUrl: 'https://gateway.example/v1',
   })
+  expect(await screen.findByText('Copied')).toBeVisible()
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
 
-it('disables copying while fetching the real key and does not copy on failure', async () => {
+it('disables the menu item while fetching the real key and does not copy on failure', async () => {
   const user = userEvent.setup()
   const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
   let finish!: (value: { data: { success: boolean; message: string } }) => void
@@ -112,11 +121,17 @@ it('disables copying while fetching the real key and does not copy on failure', 
       })
   )
   renderActions()
-  const button = screen.getByRole('button', { name: 'Copy Kelivo config' })
-  await user.click(button)
-  expect(button).toBeDisabled()
+  await user.click(await openKelivoItem(user))
+
+  expect(await openKelivoItem(user)).toHaveAttribute('aria-disabled', 'true')
+  await user.keyboard('{Escape}')
   finish({ data: { success: false, message: 'Key unavailable' } })
-  await waitFor(() => expect(button).toBeEnabled())
+  expect(await screen.findByText('Key unavailable')).toBeVisible()
+
+  expect(await openKelivoItem(user)).not.toHaveAttribute(
+    'aria-disabled',
+    'true'
+  )
   expect(write).not.toHaveBeenCalled()
 })
 
@@ -135,7 +150,7 @@ it('reports clipboard failure without claiming success', async () => {
   })
   try {
     renderActions()
-    await user.click(screen.getByRole('button', { name: 'Copy Kelivo config' }))
+    await user.click(await openKelivoItem(user))
     expect(await screen.findByText('Copy failed')).toBeVisible()
     expect(screen.queryByText('Copied')).not.toBeInTheDocument()
   } finally {

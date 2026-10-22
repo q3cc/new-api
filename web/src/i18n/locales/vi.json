@@ -7722,6 +7722,9 @@
     "Winners ({{count}})": "Người trúng ({{count}})",
     "Winners ({{count}}, latest {{shown}} shown)": "Người trúng ({{count}}, hiển thị {{shown}} gần nhất)",
     "Me": "Tôi",
-    "This activity is full; waiting for the draw": "Hoạt động đã đủ người, đang chờ quay thưởng"
+    "This activity is full; waiting for the draw": "Hoạt động đã đủ người, đang chờ quay thưởng",
+    "End time must be in the future": "Thời gian kết thúc phải ở tương lai",
+    "Draw time must be in the future": "Thời gian quay thưởng phải ở tương lai",
+    "This activity was cancelled": "Hoạt động đã bị hủy"
   }
 }

@@ -70,6 +70,16 @@ describe('activity form schema', () => {
       message: 'Scheduled draws need a draw time',
     },
     {
+      name: 'a draw time in the past',
+      input: values({ mode: 'scheduled', draw_time: new Date(1_000) }),
+      message: 'Draw time must be in the future',
+    },
+    {
+      name: 'an end time in the past',
+      input: values({ end_time: new Date(1_000) }),
+      message: 'End time must be in the future',
+    },
+    {
       name: 'a participant draw without a target',
       input: values({ mode: 'participants', target_participants: 0 }),
       message: 'Participant-count draws need a participant target',

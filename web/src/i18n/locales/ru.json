@@ -7722,6 +7722,9 @@
     "Winners ({{count}})": "Победители ({{count}})",
     "Winners ({{count}}, latest {{shown}} shown)": "Победители ({{count}}, показаны последние {{shown}})",
     "Me": "Я",
-    "This activity is full; waiting for the draw": "Мест больше нет, ожидается розыгрыш"
+    "This activity is full; waiting for the draw": "Мест больше нет, ожидается розыгрыш",
+    "End time must be in the future": "Время окончания должно быть в будущем",
+    "Draw time must be in the future": "Время розыгрыша должно быть в будущем",
+    "This activity was cancelled": "Активность отменена"
   }
 }

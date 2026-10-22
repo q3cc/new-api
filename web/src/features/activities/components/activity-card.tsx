@@ -336,6 +336,11 @@ export function ActivityCard(props: ActivityCardProps) {
           {resultText ? (
             <p className='text-center font-medium'>{resultText}</p>
           ) : null}
+          {activity.status === 'cancelled' ? (
+            <p className='text-muted-foreground text-center font-medium'>
+              {t('This activity was cancelled')}
+            </p>
+          ) : null}
           {activity.status === 'drawn' ? (
             <p className='text-muted-foreground text-center text-xs'>
               {t('Drawn at {{time}}', {
