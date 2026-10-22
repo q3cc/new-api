@@ -138,6 +138,9 @@ func main() {
 	// User risk score task (hourly, from recent client IPs)
 	service.StartUserRiskScoreTask()
 
+	// Lottery draw task (every minute, scheduled and participant-count draws)
+	service.StartLotteryDrawTask()
+
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()

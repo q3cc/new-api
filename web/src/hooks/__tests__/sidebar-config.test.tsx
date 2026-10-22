@@ -83,7 +83,7 @@ describe('security sidebar visibility', () => {
       result.current
         .find((group) => group.id === 'personal')
         ?.items.map((item) => item.title)
-    ).toEqual(['Wallet', 'Profile', 'Security & Access'])
+    ).toEqual(['Activities', 'Wallet', 'Profile', 'Security & Access'])
     expect(
       result.current
         .flatMap((group) => group.items)
@@ -117,6 +117,30 @@ describe('security sidebar visibility', () => {
         .flatMap((group) => group.items)
         .some((item) => item.title === 'Security & Access')
     ).toBe(true)
+  })
+})
+
+describe('activities sidebar entry', () => {
+  it('old configurations show Activities right above Wallet', () => {
+    const { result } = sidebarFor({
+      personal: { enabled: true, topup: true },
+    })
+    const titles =
+      result.current
+        .find((group) => group.id === 'personal')
+        ?.items.map((item) => item.title) ?? []
+    expect(titles.indexOf('Activities')).toBe(titles.indexOf('Wallet') - 1)
+  })
+  it.each([
+    [{ personal: { enabled: true, activity: false } }, undefined],
+    [undefined, { personal: { enabled: true, activity: false } }],
+  ])('admin or user disablement hides Activities (%j, %j)', (admin, user) => {
+    const { result } = sidebarFor(admin, user)
+    expect(
+      result.current
+        .flatMap((group) => group.items)
+        .some((item) => item.title === 'Activities')
+    ).toBe(false)
   })
 })
 

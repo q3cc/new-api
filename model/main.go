@@ -385,6 +385,9 @@ func migrateDB() error {
 		&AuthzRole{},
 		&UserAccessToken{},
 		&UserRiskScore{},
+		&LotteryActivity{},
+		&LotteryPrize{},
+		&LotteryEntry{},
 	)
 	if err != nil {
 		return err

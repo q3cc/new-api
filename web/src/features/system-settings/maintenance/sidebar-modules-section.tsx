@@ -124,6 +124,10 @@ export function SidebarModulesSection({
       },
     },
     personal: {
+      activity: {
+        title: t('Activities'),
+        description: t('Lucky draws and prize activities.'),
+      },
       topup: {
         title: t('Wallet'),
         description: t('Top up balance and view billing history.'),

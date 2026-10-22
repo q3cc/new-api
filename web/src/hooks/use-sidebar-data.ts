@@ -24,6 +24,7 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
+  Gift,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -112,6 +113,11 @@ export function useSidebarData(): SidebarData {
         id: 'personal',
         title: t('Personal'),
         items: [
+          {
+            title: t('Activities'),
+            url: '/activities',
+            icon: Gift,
+          },
           {
             title: t('Wallet'),
             url: '/wallet',

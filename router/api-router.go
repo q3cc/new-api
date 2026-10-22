@@ -216,6 +216,27 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestCreemPay)
 			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestWaffoPancakePay)
 		}
+		lotteryRoute := apiRouter.Group("/lottery")
+		lotteryRoute.Use(middleware.UserAuth())
+		{
+			lotteryRoute.GET("/activities", controller.GetLotteryActivities)
+			lotteryRoute.POST("/activities/:id/join", middleware.CriticalRateLimit(), controller.JoinLotteryActivity)
+			lotteryRoute.POST("/activities/:id/spin", middleware.CriticalRateLimit(), controller.SpinLotteryWheel)
+			lotteryRoute.GET("/wins/self", controller.GetSelfLotteryWins)
+		}
+		lotteryAdminRoute := apiRouter.Group("/lottery/admin")
+		lotteryAdminRoute.Use(middleware.AdminAuth())
+		{
+			lotteryAdminRoute.GET("/activities", controller.AdminListLotteryActivities)
+			lotteryAdminRoute.POST("/activities", controller.AdminCreateLotteryActivity)
+			lotteryAdminRoute.PUT("/activities/:id", controller.AdminUpdateLotteryActivity)
+			lotteryAdminRoute.DELETE("/activities/:id", controller.AdminDeleteLotteryActivity)
+			lotteryAdminRoute.POST("/activities/:id/cancel", controller.AdminCancelLotteryActivity)
+			lotteryAdminRoute.POST("/activities/:id/draw", controller.AdminDrawLotteryActivity)
+			lotteryAdminRoute.GET("/activities/:id/entries", controller.AdminListLotteryEntries)
+			lotteryAdminRoute.POST("/entries/:id/deliver", controller.AdminDeliverLotteryEntry)
+		}
+
 		subscriptionAdminRoute := apiRouter.Group("/subscription/admin")
 		subscriptionAdminRoute.Use(middleware.AdminAuth())
 		{
