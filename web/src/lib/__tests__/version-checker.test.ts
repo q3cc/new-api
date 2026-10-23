@@ -64,8 +64,27 @@ const DEPLOYED_NEW_HTML = `
 function mockFetchHtml(html: string): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn().mockResolvedValue({
     ok: true,
+    headers: new Headers(),
     text: () => Promise.resolve(html),
   })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+/** Serves the given index.html bodies in order, each with an optional version header. */
+function mockFetchSequence(
+  responses: { html: string; version?: string }[]
+): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn()
+  for (const response of responses) {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(
+        response.version ? { 'X-New-Api-Version': response.version } : {}
+      ),
+      text: () => Promise.resolve(response.html),
+    })
+  }
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
@@ -142,6 +161,36 @@ describe('version-checker', () => {
       })
     })
 
+    it('启动前已由浏览器插件或第三方注入的脚本不会误判为新版本', async () => {
+      // Extensions inject their scripts before the app starts, so they are
+      // part of the snapshot but never of the deployed index.html.
+      for (const src of [
+        'chrome-extension://abcdefghijklmnopabcdefghijklmnop/inject.js',
+        'https://cdn.example.com/analytics.js',
+      ]) {
+        const script = document.createElement('script')
+        script.src = src
+        document.head.appendChild(script)
+      }
+      mockFetchHtml(DEPLOYED_SAME_HTML)
+      await expect(probeForNewVersion()).resolves.toEqual({
+        hasNewVersion: false,
+        reason: 'none',
+      })
+    })
+
+    it('注入了外部脚本时仍能发现入口脚本的更新', async () => {
+      const script = document.createElement('script')
+      script.src =
+        'chrome-extension://abcdefghijklmnopabcdefghijklmnop/inject.js'
+      document.head.appendChild(script)
+      mockFetchHtml(DEPLOYED_NEW_HTML)
+      await expect(probeForNewVersion()).resolves.toEqual({
+        hasNewVersion: true,
+        reason: 'assets',
+      })
+    })
+
     it('入口资源一致时判定为最新', async () => {
       mockFetchHtml(DEPLOYED_SAME_HTML)
       await expect(probeForNewVersion()).resolves.toEqual({
@@ -205,6 +254,79 @@ describe('version-checker', () => {
     })
   })
 
+  describe('按版本号检测', () => {
+    it('首次检测记录服务器版本号，之后版本号变化时提示有新版本', async () => {
+      mockFetchSequence([
+        { html: DEPLOYED_SAME_HTML, version: 'main-20261020-aaaa111' },
+        { html: DEPLOYED_SAME_HTML, version: 'main-20261023-bbbb222' },
+      ])
+      await expect(probeForNewVersion()).resolves.toEqual({
+        hasNewVersion: false,
+        reason: 'none',
+      })
+      await expect(probeForNewVersion()).resolves.toEqual({
+        hasNewVersion: true,
+        reason: 'version',
+        version: 'main-20261023-bbbb222',
+      })
+    })
+
+    it('版本号不变且入口脚本一致时判定为最新', async () => {
+      mockFetchSequence([
+        { html: DEPLOYED_SAME_HTML, version: 'main-20261020-aaaa111' },
+        { html: DEPLOYED_SAME_HTML, version: 'main-20261020-aaaa111' },
+      ])
+      await probeForNewVersion()
+      await expect(probeForNewVersion()).resolves.toEqual({
+        hasNewVersion: false,
+        reason: 'none',
+      })
+    })
+
+    it('版本号不变但入口脚本变化时仍能发现更新', async () => {
+      // A deployment that did not bump its version still renames its entries.
+      mockFetchSequence([
+        { html: DEPLOYED_SAME_HTML, version: 'v0.0.0' },
+        { html: DEPLOYED_NEW_HTML, version: 'v0.0.0' },
+      ])
+      await probeForNewVersion()
+      await expect(probeForNewVersion()).resolves.toEqual({
+        hasNewVersion: true,
+        reason: 'assets',
+      })
+    })
+
+    it('服务端不返回版本号时退回入口脚本对比', async () => {
+      mockFetchSequence([
+        { html: DEPLOYED_SAME_HTML },
+        { html: DEPLOYED_NEW_HTML },
+      ])
+      await expect(probeForNewVersion()).resolves.toEqual({
+        hasNewVersion: false,
+        reason: 'none',
+      })
+      await expect(probeForNewVersion()).resolves.toEqual({
+        hasNewVersion: true,
+        reason: 'assets',
+      })
+    })
+
+    it('提示中显示新的版本号', async () => {
+      const notify = vi.spyOn(toast, 'info')
+      mockFetchSequence([
+        { html: DEPLOYED_SAME_HTML, version: 'main-20261020-aaaa111' },
+        { html: DEPLOYED_SAME_HTML, version: 'main-20261023-bbbb222' },
+      ])
+      await checkVersionNow()
+      expect(notify).not.toHaveBeenCalled()
+      await checkVersionNow()
+      expect(notify).toHaveBeenCalledTimes(1)
+      expect(notify.mock.calls[0][0]).toBe(
+        'New version available: main-20261023-bbbb222'
+      )
+    })
+  })
+
   describe('checkVersionNow', () => {
     it('检测到新部署后只提示，用户点击刷新才导航', async () => {
       const notify = vi.spyOn(toast, 'info')
@@ -219,8 +341,9 @@ describe('version-checker', () => {
       expect(reload).not.toHaveBeenCalled()
       expect(notify).toHaveBeenCalledTimes(1)
       const action = notify.mock.calls[0][1]?.action
-      if (!action || typeof action !== 'object' || !('onClick' in action))
-        {throw new Error('Missing refresh action')}
+      if (!action || typeof action !== 'object' || !('onClick' in action)) {
+        throw new Error('Missing refresh action')
+      }
       action.onClick({} as never)
       await vi.advanceTimersByTimeAsync(0)
       expect(reload).toHaveBeenCalledTimes(1)
@@ -246,6 +369,7 @@ describe('version-checker', () => {
         'fetch',
         vi.fn().mockResolvedValue({
           ok: true,
+          headers: new Headers(),
           text: () =>
             new Promise<string>((resolve) => {
               resolveHtml = resolve
@@ -283,8 +407,9 @@ describe('version-checker', () => {
       await vi.advanceTimersByTimeAsync(1000)
       await checking
       const action = notify.mock.calls[0][1]?.action
-      if (!action || typeof action !== 'object' || !('onClick' in action))
-        {throw new Error('Missing refresh action')}
+      if (!action || typeof action !== 'object' || !('onClick' in action)) {
+        throw new Error('Missing refresh action')
+      }
       action.onClick({} as never)
       await vi.advanceTimersByTimeAsync(0)
 

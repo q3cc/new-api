@@ -24,21 +24,26 @@ import { toast } from 'sonner'
  *
  * When a new frontend deployment lands, browsers keep serving the previously
  * cached HTML and entry chunks to already-open tabs. Those tabs keep running
- * old code until the user hard-refreshes. This module polls the server for the
- * currently deployed entry assets and offers a refresh when they differ from
- * the ones this document loaded. Navigation requires an explicit user action.
+ * old code until the user hard-refreshes. This module polls the server's
+ * `index.html` and offers a refresh when a newer deployment is found.
+ * Navigation requires an explicit user action.
  *
- * Detection compares the entry script URLs of the deployed `index.html` with
- * a snapshot of script URLs taken before the application mounts. Rsbuild embeds a content
- * hash in every emitted filename, so any deploy that changes code changes those
- * URLs. `build-id` metadata is honoured as an additional signal when the server
- * injects it into the HTML.
+ * The server version comes first: every response carries it in the
+ * `X-New-Api-Version` header. The first probe records it, and a later probe
+ * that sees a different value reports an update.
+ *
+ * Servers that do not send the header, and deployments that keep the same
+ * version, fall back to the deployed build: a changed `build-id` meta, or an
+ * entry script in the deployed `index.html` that this document never loaded.
+ * Rsbuild embeds a content hash in every emitted filename, so any deploy that
+ * changes code renames those scripts.
  */
 
 const DEFAULT_CHECK_INTERVAL = 5 * 60 * 1000
 const DEFAULT_INITIAL_DELAY = 30 * 1000
 const INDEX_PATH = '/index.html'
 const UPDATE_TOAST_ID = 'frontend-update'
+const VERSION_HEADER = 'X-New-Api-Version'
 
 export interface VersionCheckerConfig {
   /** How often to poll, in milliseconds. Defaults to 5 minutes. */
@@ -62,14 +67,17 @@ export interface VersionCheckerConfig {
 export interface VersionProbeResult {
   /** Whether the deployed build differs from the one this document loaded. */
   hasNewVersion: boolean
-  /** What differed: entry assets, the build tag, or nothing. */
-  reason: 'assets' | 'build-id' | 'none' | 'unavailable'
+  /** What differed: the server version, entry assets, the build tag, or nothing. */
+  reason: 'version' | 'assets' | 'build-id' | 'none' | 'unavailable'
+  /** The newly deployed server version, when the version is what changed. */
+  version?: string
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let initialTimer: ReturnType<typeof setTimeout> | null = null
 let isChecking = false
 let loadedEntries: string[] | null = null
+let recordedVersion: string | null = null
 let updateNotified = false
 let generation = 0
 let stopVisibilityWatch: (() => void) | null = null
@@ -109,7 +117,8 @@ function normalizeUrl(url: string): string {
 }
 
 /**
- * Compare the deployed entry assets against the ones this document loaded.
+ * Compare the deployed server version, then the deployed entry assets, against
+ * the ones this document recorded.
  */
 export async function probeForNewVersion(
   indexPath: string = INDEX_PATH
@@ -126,6 +135,17 @@ export async function probeForNewVersion(
     })
     if (!response.ok) {
       return { hasNewVersion: false, reason: 'unavailable' }
+    }
+    const deployedVersion = response.headers.get(VERSION_HEADER)?.trim()
+    if (deployedVersion) {
+      recordedVersion ??= deployedVersion
+      if (deployedVersion !== recordedVersion) {
+        return {
+          hasNewVersion: true,
+          reason: 'version',
+          version: deployedVersion,
+        }
+      }
     }
     html = await response.text()
   } catch {
@@ -145,11 +165,11 @@ export async function probeForNewVersion(
     return { hasNewVersion: false, reason: 'unavailable' }
   }
 
-  const deployed = new Set(deployedEntries)
+  // A deploy renames the hashed entry scripts, so it is new only when some
+  // deployed entry was never loaded here. Extra scripts in this document, such
+  // as ones browser extensions inject before the app starts, are ignored.
   const loaded = new Set(baseline)
-  const sameSize = deployed.size === loaded.size
-  const sameEntries = sameSize && [...deployed].every((url) => loaded.has(url))
-  if (sameEntries) {
+  if (deployedEntries.every((url) => loaded.has(url))) {
     return { hasNewVersion: false, reason: 'none' }
   }
   return { hasNewVersion: true, reason: 'assets' }
@@ -193,7 +213,10 @@ async function runCheck(config: VersionCheckerConfig): Promise<void> {
     updateNotified = true
     const reload = config.reload ?? defaultReload
     const forceReload = config.forceReload ?? (() => window.location.reload())
-    toast.info(t('New version available'), {
+    const title = result.version
+      ? t('New version available: {{version}}', { version: result.version })
+      : t('New version available')
+    toast.info(title, {
       id: UPDATE_TOAST_ID,
       duration: Infinity,
       closeButton: true,
@@ -248,6 +271,7 @@ export function stopVersionChecker(): void {
   generation += 1
   isChecking = false
   loadedEntries = null
+  recordedVersion = null
   updateNotified = false
   toast.dismiss(UPDATE_TOAST_ID)
   if (initialTimer) {
