@@ -214,3 +214,92 @@ describe('activityFormToPayload', () => {
     expect(payload.prizes[0].probability).toBe(0)
   })
 })
+
+describe('leaderboard form', () => {
+  const leaderboard = (overrides: Partial<ActivityFormValues> = {}) =>
+    values({
+      mode: 'leaderboard',
+      end_time: new Date(Date.now() + 86_400_000),
+      ...overrides,
+    })
+
+  it('accepts a leaderboard with an end time', () => {
+    expect(issueMessages(leaderboard())).toEqual([])
+  })
+
+  it.each([
+    {
+      name: 'without an end time',
+      input: leaderboard({ end_time: undefined }),
+      message: 'Leaderboards need an end time',
+    },
+    {
+      name: 'with prizes covering more than 500 ranks',
+      input: leaderboard({
+        prizes: [
+          {
+            ...ACTIVITY_FORM_DEFAULT_VALUES.prizes[0],
+            name: 'A',
+            quantity: 300,
+          },
+          {
+            ...ACTIVITY_FORM_DEFAULT_VALUES.prizes[0],
+            name: 'B',
+            quantity: 201,
+          },
+        ],
+      }),
+      message: 'Leaderboard prizes can cover at most 500 ranks',
+    },
+    {
+      name: 'with a fractional invitation threshold',
+      input: leaderboard({ rank_metric: 'invites', rank_min_value: 1.5 }),
+      message: 'Invalid leaderboard threshold',
+    },
+  ])('rejects a leaderboard $name', ({ input, message }) => {
+    expect(issueMessages(input)).toContain(message)
+  })
+
+  it('stores a consumption threshold as quota and drops entry requirements', () => {
+    const payload = activityFormToPayload(
+      leaderboard({
+        rank_metric: 'consumption',
+        rank_min_value: 2,
+        min_spend: 10,
+        min_invites: 3,
+      })
+    )
+    expect(payload.rank_metric).toBe('consumption')
+    expect(payload.rank_min_value).toBe(1_000_000)
+    expect(payload.min_spend).toBe(0)
+    expect(payload.min_invites).toBe(0)
+  })
+
+  it('keeps a recharge threshold as money', () => {
+    const payload = activityFormToPayload(
+      leaderboard({ rank_metric: 'recharge', rank_min_value: 25 })
+    )
+    expect(payload.rank_min_value).toBe(25)
+  })
+
+  it('clears leaderboard rules for other modes', () => {
+    const payload = activityFormToPayload(
+      values({ mode: 'wheel', rank_metric: 'invites', rank_min_value: 5 })
+    )
+    expect(payload.rank_metric).toBe('')
+    expect(payload.rank_min_value).toBe(0)
+  })
+})
+
+describe('activity rules', () => {
+  it('rejects rules longer than the server accepts', () => {
+    expect(issueMessages(values({ rules: '规'.repeat(10_001) }))).toContain(
+      'Activity rules must be at most 10000 characters'
+    )
+  })
+
+  it('sends the rules without surrounding blank lines', () => {
+    const payload = activityFormToPayload(values({ rules: '\n## Prizes\n' }))
+    expect(payload.rules).toBe('## Prizes')
+  })
+})

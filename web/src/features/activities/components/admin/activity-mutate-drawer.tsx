@@ -70,6 +70,7 @@ import {
 } from '../../lib/activity-form'
 import type { LotteryActivity, LotteryMode } from '../../types'
 import { ActivityPrizesField } from './activity-prizes-field'
+import { LeaderboardRulesField } from './leaderboard-rules-field'
 
 type ActivityMutateDrawerProps = {
   open: boolean
@@ -93,6 +94,16 @@ export function ActivityMutateDrawer(props: ActivityMutateDrawerProps) {
     defaultValues: ACTIVITY_FORM_DEFAULT_VALUES,
   })
   const mode = useWatch({ control: form.control, name: 'mode' })
+  let endTimeHelp = t('Leave empty to keep the activity open.')
+  if (mode === 'scheduled') {
+    endTimeHelp = t(
+      'Entries close at this time or at the draw time, whichever is earlier.'
+    )
+  } else if (mode === 'leaderboard') {
+    endTimeHelp = t(
+      'Ranks are locked at this time; prizes are awarded after your review.'
+    )
+  }
   const minSpend = useWatch({ control: form.control, name: 'min_spend' })
   const minInvites = useWatch({ control: form.control, name: 'min_invites' })
 
@@ -181,6 +192,31 @@ export function ActivityMutateDrawer(props: ActivityMutateDrawerProps) {
                 />
                 <FormField
                   control={form.control}
+                  name='rules'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Activity rules')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          rows={8}
+                          className='font-mono text-xs'
+                          placeholder={t(
+                            '## How to take part\n- ...\n\n## Prizes\n- ...'
+                          )}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Markdown is supported. Users read it from the Activity rules button on the activity.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name='end_time'
                   render={({ field }) => (
                     <FormItem>
@@ -192,13 +228,7 @@ export function ActivityMutateDrawer(props: ActivityMutateDrawerProps) {
                           placeholder={t('No end time')}
                         />
                       </FormControl>
-                      <FormDescription>
-                        {mode === 'scheduled'
-                          ? t(
-                              'Entries close at this time or at the draw time, whichever is earlier.'
-                            )
-                          : t('Leave empty to keep the activity open.')}
-                      </FormDescription>
+                      <FormDescription>{endTimeHelp}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -412,157 +442,167 @@ export function ActivityMutateDrawer(props: ActivityMutateDrawerProps) {
                       />
                     </div>
                   ) : null}
+                  {mode === 'leaderboard' ? (
+                    <LeaderboardRulesField form={form} />
+                  ) : null}
                 </SideDrawerSection>
 
-                <SideDrawerSection>
-                  <SideDrawerSectionHeader title={t('Entry requirement')} />
-                  <FormField
-                    control={form.control}
-                    name='min_spend'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Minimum spending')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            min={0}
-                            step={0.01}
-                            value={field.value}
-                            name={field.name}
-                            ref={field.ref}
-                            onBlur={field.onBlur}
-                            onChange={(event) => {
-                              const parsed = Number.parseFloat(
-                                event.target.value
-                              )
-                              field.onChange(
-                                Number.isFinite(parsed)
-                                  ? Math.max(parsed, 0)
-                                  : 0
-                              )
-                            }}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Money paid in successful orders, subscription purchases included. 0 = no requirement.'
+                {/* A leaderboard ranks everyone; its threshold replaces this. */}
+                {mode !== 'leaderboard' ? (
+                  <SideDrawerSection>
+                    <SideDrawerSectionHeader title={t('Entry requirement')} />
+                    <FormField
+                      control={form.control}
+                      name='min_spend'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Minimum spending')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='number'
+                              min={0}
+                              step={0.01}
+                              value={field.value}
+                              name={field.name}
+                              ref={field.ref}
+                              onBlur={field.onBlur}
+                              onChange={(event) => {
+                                const parsed = Number.parseFloat(
+                                  event.target.value
+                                )
+                                field.onChange(
+                                  Number.isFinite(parsed)
+                                    ? Math.max(parsed, 0)
+                                    : 0
+                                )
+                              }}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Money paid in successful orders, subscription purchases included. 0 = no requirement.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    {minSpend > 0 ? (
+                      <div className='grid gap-3 sm:grid-cols-2'>
+                        <FormField
+                          control={form.control}
+                          name='spend_start_time'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Spending counted from')}
+                              </FormLabel>
+                              <FormControl>
+                                <DateTimePicker
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  placeholder={t('No start limit')}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
                           )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {minSpend > 0 ? (
-                    <div className='grid gap-3 sm:grid-cols-2'>
-                      <FormField
-                        control={form.control}
-                        name='spend_start_time'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('Spending counted from')}</FormLabel>
-                            <FormControl>
-                              <DateTimePicker
-                                value={field.value}
-                                onChange={field.onChange}
-                                placeholder={t('No start limit')}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name='spend_end_time'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('Spending counted until')}</FormLabel>
-                            <FormControl>
-                              <DateTimePicker
-                                value={field.value}
-                                onChange={field.onChange}
-                                placeholder={t('No end limit')}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  ) : null}
-                  <FormField
-                    control={form.control}
-                    name='min_invites'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Minimum invitations')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            min={0}
-                            max={LOTTERY_MAX_MIN_INVITES}
-                            step={1}
-                            value={field.value}
-                            name={field.name}
-                            ref={field.ref}
-                            onBlur={field.onBlur}
-                            onChange={(event) =>
-                              field.onChange(integerValue(event.target.value))
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Accounts the user invited that registered within the invitation window. Cancelled invitations do not count. 0 = no requirement.'
+                        />
+                        <FormField
+                          control={form.control}
+                          name='spend_end_time'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Spending counted until')}
+                              </FormLabel>
+                              <FormControl>
+                                <DateTimePicker
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  placeholder={t('No end limit')}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
                           )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {minInvites > 0 ? (
-                    <div className='grid gap-3 sm:grid-cols-2'>
-                      <FormField
-                        control={form.control}
-                        name='invite_start_time'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              {t('Invitations counted from')}
-                            </FormLabel>
-                            <FormControl>
-                              <DateTimePicker
-                                value={field.value}
-                                onChange={field.onChange}
-                                placeholder={t('No start limit')}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name='invite_end_time'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              {t('Invitations counted until')}
-                            </FormLabel>
-                            <FormControl>
-                              <DateTimePicker
-                                value={field.value}
-                                onChange={field.onChange}
-                                placeholder={t('No end limit')}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  ) : null}
-                </SideDrawerSection>
+                        />
+                      </div>
+                    ) : null}
+                    <FormField
+                      control={form.control}
+                      name='min_invites'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Minimum invitations')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='number'
+                              min={0}
+                              max={LOTTERY_MAX_MIN_INVITES}
+                              step={1}
+                              value={field.value}
+                              name={field.name}
+                              ref={field.ref}
+                              onBlur={field.onBlur}
+                              onChange={(event) =>
+                                field.onChange(integerValue(event.target.value))
+                              }
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Accounts the user invited that registered within the invitation window. Cancelled invitations do not count. 0 = no requirement.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    {minInvites > 0 ? (
+                      <div className='grid gap-3 sm:grid-cols-2'>
+                        <FormField
+                          control={form.control}
+                          name='invite_start_time'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Invitations counted from')}
+                              </FormLabel>
+                              <FormControl>
+                                <DateTimePicker
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  placeholder={t('No start limit')}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='invite_end_time'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Invitations counted until')}
+                              </FormLabel>
+                              <FormControl>
+                                <DateTimePicker
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  placeholder={t('No end limit')}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    ) : null}
+                  </SideDrawerSection>
+                ) : null}
 
                 <SideDrawerSection>
                   <SideDrawerSectionHeader title={t('Prizes')} />

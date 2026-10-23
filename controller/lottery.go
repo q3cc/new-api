@@ -13,18 +13,25 @@ const lotteryWinnerLimit = 50
 
 type lotteryActivityView struct {
 	model.LotteryActivity
-	Me          *model.LotteryUserState `json:"me"`
-	Winners     []model.LotteryWinner   `json:"winners"`
-	WinnerCount int64                   `json:"winner_count"`
+	Me          *model.LotteryUserState   `json:"me"`
+	Winners     []model.LotteryWinner     `json:"winners"`
+	WinnerCount int64                     `json:"winner_count"`
+	Leaderboard *model.LotteryLeaderboard `json:"leaderboard,omitempty"`
 }
 
 type lotteryEntryView struct {
 	model.LotteryEntry
 	Username string `json:"username"`
+	// PredictedPrize is the prize a locked leaderboard entry would receive.
+	PredictedPrize string `json:"predicted_prize,omitempty"`
 }
 
 type lotteryDeliverRequest struct {
 	Note string `json:"note"`
+}
+
+type lotteryDisqualifyRequest struct {
+	Disqualified bool `json:"disqualified"`
 }
 
 // positiveIdParam reads a positive integer path parameter.
@@ -58,12 +65,20 @@ func GetLotteryActivities(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
-		views = append(views, lotteryActivityView{
+		view := lotteryActivityView{
 			LotteryActivity: activities[i],
 			Me:              state,
 			Winners:         winners,
 			WinnerCount:     winnerCount,
-		})
+		}
+		if activities[i].Mode == model.LotteryModeLeaderboard {
+			view.Leaderboard, err = model.GetLotteryLeaderboard(&activities[i], userId)
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+		}
+		views = append(views, view)
 	}
 	common.ApiSuccess(c, views)
 }
@@ -178,6 +193,19 @@ func AdminDrawLotteryActivity(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if activity.Mode == model.LotteryModeLeaderboard {
+		// A leaderboard is awarded once it has ended and its ranks are locked.
+		if activity.Status == model.LotteryStatusActive {
+			common.ApiErrorT(c, "Leaderboards can be awarded after they end")
+			return
+		}
+		if err := model.AwardLeaderboard(id); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, nil)
+		return
+	}
 	if activity.Mode == model.LotteryModeWheel || activity.Status != model.LotteryStatusActive {
 		common.ApiErrorT(c, "Only active scheduled or participant-count activities can be drawn")
 		return
@@ -194,11 +222,24 @@ func AdminListLotteryEntries(c *gin.Context) {
 	if !ok {
 		return
 	}
-	pageInfo := common.GetPageQuery(c)
-	entries, total, err := model.ListLotteryEntries(id, c.Query("winners") == "true", pageInfo)
+	activity, err := model.GetLotteryActivity(id)
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	isLeaderboard := activity.Mode == model.LotteryModeLeaderboard
+	pageInfo := common.GetPageQuery(c)
+	entries, total, err := model.ListLotteryEntries(id, c.Query("winners") == "true", isLeaderboard, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	var predicted map[int]model.LotteryPrize
+	if isLeaderboard && activity.Status == model.LotteryStatusRanked {
+		if predicted, err = model.PredictLeaderboardPrizes(id); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	userIds := make([]int, 0, len(entries))
 	for _, entry := range entries {
@@ -211,7 +252,7 @@ func AdminListLotteryEntries(c *gin.Context) {
 	}
 	views := make([]lotteryEntryView, len(entries))
 	for i, entry := range entries {
-		views[i] = lotteryEntryView{LotteryEntry: entry, Username: names[entry.UserId]}
+		views[i] = lotteryEntryView{LotteryEntry: entry, Username: names[entry.UserId], PredictedPrize: predicted[entry.Id].Name}
 	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(views)
@@ -244,6 +285,25 @@ func AdminDeliverLotteryEntry(c *gin.Context) {
 		err = model.DeliverLotteryEntry(id)
 	}
 	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+// AdminSetLotteryEntryDisqualified excludes a locked leaderboard entry from
+// the prizes, or lets it back in, before they are awarded.
+func AdminSetLotteryEntryDisqualified(c *gin.Context) {
+	id, ok := positiveIdParam(c, "id")
+	if !ok {
+		return
+	}
+	var req lotteryDisqualifyRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := model.SetLeaderboardEntryDisqualified(id, req.Disqualified); err != nil {
 		common.ApiError(c, err)
 		return
 	}

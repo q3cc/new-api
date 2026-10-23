@@ -34,6 +34,7 @@ function participantDraw(
     id: 4,
     title: 'Launch party',
     description: 'Ten seats',
+    rules: '',
     mode: 'participants',
     status: 'active',
     start_time: 0,
@@ -46,6 +47,8 @@ function participantDraw(
     min_invites: 0,
     invite_start_time: 0,
     invite_end_time: 0,
+    rank_metric: '',
+    rank_min_value: 0,
     wheel_total_limit: 0,
     wheel_daily_limit: 0,
     entry_count: 3,
@@ -202,6 +205,9 @@ describe('ActivityCard', () => {
             delivery_status: 'pending',
             delivery_note: '',
             delivered_at: 0,
+            rank: 0,
+            score: 0,
+            disqualified: false,
             created_at: 0,
           },
         ],
@@ -212,5 +218,110 @@ describe('ActivityCard', () => {
     expect(screen.getByText('You won Mug')).toBeInTheDocument()
     expect(screen.getByText('Pending delivery')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
+  })
+})
+
+function leaderboard(
+  overrides: Partial<LotteryActivityView> = {},
+  board: Partial<NonNullable<LotteryActivityView['leaderboard']>> = {}
+): LotteryActivityView {
+  const base = participantDraw({ eligible: true })
+  const prize = base.prizes[0]
+  return {
+    ...base,
+    mode: 'leaderboard',
+    status: 'active',
+    start_time: NOW - 100,
+    end_time: NOW + 1000,
+    min_spend: 0,
+    rank_metric: 'recharge',
+    rank_min_value: 10,
+    prizes: [
+      { ...prize, id: 11, name: 'Gold', quantity: 1 },
+      { ...prize, id: 12, name: 'Silver', quantity: 2 },
+    ],
+    leaderboard: {
+      rows: [
+        { user_id: 7, display_name: 'Alice', rank: 1, score: 50 },
+        { user_id: 9, display_name: '', rank: 2, score: 30 },
+      ],
+      ranked: 2,
+      final: false,
+      me: { rank: 0, score: 4, excluded: false },
+      ...board,
+    },
+    ...overrides,
+  }
+}
+
+describe('ActivityCard rules', () => {
+  it('opens the Markdown rules from the Activity rules button', async () => {
+    const user = userEvent.setup()
+    renderCard({
+      ...participantDraw(),
+      rules: '## How to take part\n- Pay **20** to join',
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Activity rules' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByRole('heading', { name: 'How to take part' })
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText('20').tagName).toBe('STRONG')
+  })
+
+  it('offers no rules button when there are no rules', () => {
+    renderCard(participantDraw())
+
+    expect(screen.queryByRole('button', { name: 'Activity rules' })).toBeNull()
+  })
+})
+
+describe('ActivityCard leaderboard', () => {
+  it('lists the ranks each prize covers and how far an unranked viewer is from the threshold', () => {
+    renderCard(leaderboard())
+
+    expect(screen.getByText('Ranked by Recharge')).toBeInTheDocument()
+    expect(screen.getByText('At least 10 to be ranked')).toBeInTheDocument()
+    const prizes = screen.getByRole('list', { name: 'Prizes' })
+    expect(within(prizes).getByText('Rank 1')).toBeInTheDocument()
+    expect(within(prizes).getByText('Ranks 2–3')).toBeInTheDocument()
+    expect(screen.getByText('Alice')).toBeInTheDocument()
+    expect(screen.queryByText('#7')).toBeNull()
+    expect(screen.getByText('#9')).toBeInTheDocument()
+    expect(screen.getByText('Not ranked')).toBeInTheDocument()
+    expect(screen.getByText('6 more to be ranked')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
+  })
+
+  it('marks the viewer on a locked board waiting for the awards', () => {
+    renderCard(
+      leaderboard(
+        { status: 'ranked', end_time: NOW - 10 },
+        { final: true, me: { rank: 2, score: 30, excluded: false } }
+      )
+    )
+
+    const myRow = screen.getByText('#9').closest('tr')
+    if (!myRow) throw new Error('The viewer must be listed in a row')
+    expect(myRow).toHaveAttribute('aria-current', 'true')
+    expect(within(myRow).getByText('You')).toBeInTheDocument()
+    expect(screen.getByText('Alice').closest('tr')).not.toHaveAttribute(
+      'aria-current'
+    )
+    expect(
+      screen.getByText('Ranks are locked; waiting for the awards')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Final ranks of 2 users')).toBeInTheDocument()
+    expect(screen.queryByText(/more to be ranked/)).toBeNull()
+  })
+
+  it('tells administrators they are not ranked', () => {
+    renderCard(leaderboard({}, { me: { rank: 0, score: 0, excluded: true } }))
+
+    expect(
+      screen.getByText('Administrators and disabled accounts are not ranked')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/more to be ranked/)).toBeNull()
   })
 })

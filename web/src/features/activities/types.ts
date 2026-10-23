@@ -22,9 +22,18 @@ export type ApiResponse<T = unknown> = {
   data?: T
 }
 
-export type LotteryMode = 'wheel' | 'scheduled' | 'participants'
+export type LotteryMode = 'wheel' | 'scheduled' | 'participants' | 'leaderboard'
 
-export type LotteryStatus = 'draft' | 'active' | 'drawn' | 'cancelled'
+/** What a leaderboard ranks users by. */
+export type LotteryRankMetric = 'invites' | 'consumption' | 'recharge'
+
+/** `ranked` is a leaderboard whose ranks are locked, waiting for the awards. */
+export type LotteryStatus =
+  | 'draft'
+  | 'active'
+  | 'ranked'
+  | 'drawn'
+  | 'cancelled'
 
 export type LotteryPrizeType = 'manual' | 'quota' | 'subscription'
 
@@ -49,6 +58,8 @@ export type LotteryActivity = {
   id: number
   title: string
   description: string
+  /** Full activity rules in Markdown; empty when there are none. */
+  rules: string
   mode: LotteryMode
   status: LotteryStatus
   start_time: number
@@ -62,6 +73,10 @@ export type LotteryActivity = {
   min_invites: number
   invite_start_time: number
   invite_end_time: number
+  /** Leaderboards only; empty for other modes. */
+  rank_metric: LotteryRankMetric | ''
+  /** Score needed to be ranked: accounts, quota or paid money by metric. */
+  rank_min_value: number
   wheel_total_limit: number
   wheel_daily_limit: number
   entry_count: number
@@ -83,6 +98,29 @@ export type LotteryEntry = {
   delivery_note: string
   delivered_at: number
   created_at: number
+  /** Locked leaderboard rank and score. */
+  rank: number
+  score: number
+  disqualified: boolean
+}
+
+/** One ranked user, shown by nickname. */
+export type LeaderboardRow = {
+  user_id: number
+  /** Public nickname; empty when the user has none. */
+  display_name: string
+  rank: number
+  score: number
+}
+
+export type LotteryLeaderboard = {
+  rows: LeaderboardRow[]
+  /** How many users are on the board. */
+  ranked: number
+  /** True once the ranks are locked. */
+  final: boolean
+  /** The viewer's standing; rank is 0 when not ranked. */
+  me: { rank: number; score: number; excluded: boolean }
 }
 
 export type LotteryUserState = {
@@ -109,6 +147,8 @@ export type LotteryActivityView = LotteryActivity & {
   /** Latest wins, newest first; capped by the server. */
   winners: LotteryWinner[]
   winner_count: number
+  /** Present for leaderboards. */
+  leaderboard?: LotteryLeaderboard
 }
 
 export type LotteryWin = LotteryEntry & {
@@ -117,6 +157,8 @@ export type LotteryWin = LotteryEntry & {
 
 export type LotteryAdminEntry = LotteryEntry & {
   username: string
+  /** Prize a locked leaderboard entry would receive. */
+  predicted_prize?: string
 }
 
 export type LotteryEntryPage = {
@@ -135,6 +177,7 @@ export type LotteryActivityPayload = Pick<
   LotteryActivity,
   | 'title'
   | 'description'
+  | 'rules'
   | 'mode'
   | 'status'
   | 'start_time'
@@ -147,6 +190,8 @@ export type LotteryActivityPayload = Pick<
   | 'min_invites'
   | 'invite_start_time'
   | 'invite_end_time'
+  | 'rank_metric'
+  | 'rank_min_value'
   | 'wheel_total_limit'
   | 'wheel_daily_limit'
 > & {

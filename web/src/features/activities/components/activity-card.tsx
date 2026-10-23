@@ -38,11 +38,18 @@ import {
   LOTTERY_MODES,
   LOTTERY_PRIZE_TYPES,
   LOTTERY_PROBABILITY_SCALE,
+  LOTTERY_RANK_METRICS,
   LOTTERY_STATUSES,
 } from '../constants'
 import { getLiveOdds } from '../lib/activity-odds'
 import { getActivityAvailability } from '../lib/activity-state'
+import {
+  formatLeaderboardScore,
+  leaderboardRankRanges,
+} from '../lib/leaderboard'
 import type { LotteryActivityView, LotteryEntry, LotteryPrize } from '../types'
+import { ActivityLeaderboard } from './activity-leaderboard'
+import { ActivityRules } from './activity-rules'
 import { ActivityWinners } from './activity-winners'
 import { LuckyWheel } from './lucky-wheel'
 
@@ -91,6 +98,8 @@ export function ActivityCard(props: ActivityCardProps) {
   const percent = (chance: number) => `${formatNumber(chance * 100, locale)}%`
   const status = LOTTERY_STATUSES[activity.status]
   const isWheel = activity.mode === 'wheel'
+  const isLeaderboard = activity.mode === 'leaderboard'
+  const rankRanges = isLeaderboard ? leaderboardRankRanges(activity.prizes) : []
 
   let spinsText: string | null = null
   if (isWheel) {
@@ -127,7 +136,8 @@ export function ActivityCard(props: ActivityCardProps) {
         <CardDescription>
           {t(LOTTERY_MODES[activity.mode].labelKey)}
         </CardDescription>
-        <CardAction>
+        <CardAction className='flex items-center gap-2'>
+          <ActivityRules title={activity.title} rules={activity.rules ?? ''} />
           <StatusBadge
             label={t(status.labelKey)}
             variant={status.variant}
@@ -161,7 +171,7 @@ export function ActivityCard(props: ActivityCardProps) {
                 ) : null}
               </dd>
             </div>
-            {!isWheel ? (
+            {!isWheel && !isLeaderboard ? (
               <div className='flex items-start gap-2'>
                 <dt className='sr-only'>{t('Participants')}</dt>
                 <Users
@@ -185,6 +195,28 @@ export function ActivityCard(props: ActivityCardProps) {
                 aria-hidden='true'
               />
               <dd className='min-w-0 space-y-1'>
+                {isLeaderboard && activity.rank_metric ? (
+                  <div>
+                    <span>
+                      {t('Ranked by {{metric}}', {
+                        metric: t(
+                          LOTTERY_RANK_METRICS[activity.rank_metric].labelKey
+                        ),
+                      })}
+                    </span>
+                    <span className='text-muted-foreground block'>
+                      {activity.rank_min_value > 0
+                        ? t('At least {{value}} to be ranked', {
+                            value: formatLeaderboardScore(
+                              activity.rank_metric,
+                              activity.rank_min_value,
+                              locale
+                            ),
+                          })
+                        : t('No threshold')}
+                    </span>
+                  </div>
+                ) : null}
                 {activity.min_spend > 0 ? (
                   <div>
                     <span>
@@ -245,7 +277,9 @@ export function ActivityCard(props: ActivityCardProps) {
                     </span>
                   </div>
                 ) : null}
-                {activity.min_spend <= 0 && activity.min_invites <= 0
+                {!isLeaderboard &&
+                activity.min_spend <= 0 &&
+                activity.min_invites <= 0
                   ? t('No requirement')
                   : null}
               </dd>
@@ -253,10 +287,17 @@ export function ActivityCard(props: ActivityCardProps) {
           </dl>
 
           <ul className='grid gap-2 sm:grid-cols-2' aria-label={t('Prizes')}>
-            {activity.prizes.map((prize) => {
+            {activity.prizes.map((prize, index) => {
               let quantityText = t('{{count}} winners', {
                 count: prize.quantity,
               })
+              if (isLeaderboard) {
+                const range = rankRanges[index]
+                quantityText =
+                  range.from === range.to
+                    ? t('Rank {{rank}}', { rank: range.from })
+                    : t('Ranks {{from}}–{{to}}', range)
+              }
               if (isWheel) {
                 quantityText =
                   prize.quantity > 0
@@ -330,6 +371,7 @@ export function ActivityCard(props: ActivityCardProps) {
           ) : null}
         </div>
         <div className='bg-muted/30 flex flex-col items-stretch justify-center gap-2 rounded-lg border p-4'>
+          {isLeaderboard ? <ActivityLeaderboard activity={activity} /> : null}
           {showWheel ? (
             <LuckyWheel
               prizes={activity.prizes}

@@ -3,9 +3,12 @@ package model
 import (
 	"crypto/rand"
 	"errors"
+	"math"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -17,10 +20,14 @@ const (
 	LotteryModeWheel        = "wheel"
 	LotteryModeScheduled    = "scheduled"
 	LotteryModeParticipants = "participants"
+	LotteryModeLeaderboard  = "leaderboard"
 
-	LotteryStatusDraft     = "draft"
-	LotteryStatusActive    = "active"
-	LotteryStatusDrawn     = "drawn"
+	LotteryStatusDraft  = "draft"
+	LotteryStatusActive = "active"
+	LotteryStatusDrawn  = "drawn"
+	// LotteryStatusRanked is a leaderboard whose final ranks are locked and
+	// wait for an administrator to award the prizes.
+	LotteryStatusRanked    = "ranked"
 	LotteryStatusCancelled = "cancelled"
 
 	LotteryPrizeManual       = "manual"
@@ -36,6 +43,7 @@ const (
 	LotteryProbabilityScale = 10000
 
 	maxLotteryPrizes        = 20
+	maxLotteryRulesLength   = 10000
 	maxLotteryPrizeQuantity = 100000
 
 	// Users see every running activity but only the latest finished ones.
@@ -51,8 +59,10 @@ type LotteryActivity struct {
 	Id          int    `json:"id"`
 	Title       string `json:"title" gorm:"type:varchar(128);not null"`
 	Description string `json:"description" gorm:"type:text"`
-	Mode        string `json:"mode" gorm:"type:varchar(16);not null"`
-	Status      string `json:"status" gorm:"type:varchar(16);not null;index"`
+	// Rules are the full activity rules in Markdown, shown on request.
+	Rules  string `json:"rules" gorm:"type:text"`
+	Mode   string `json:"mode" gorm:"type:varchar(16);not null"`
+	Status string `json:"status" gorm:"type:varchar(16);not null;index"`
 
 	// Entries are accepted in [StartTime, EndTime]; 0 leaves that side open.
 	StartTime int64 `json:"start_time" gorm:"bigint;default:0"`
@@ -73,6 +83,12 @@ type LotteryActivity struct {
 	MinInvites      int   `json:"min_invites" gorm:"type:int;default:0"`
 	InviteStartTime int64 `json:"invite_start_time" gorm:"bigint;default:0"`
 	InviteEndTime   int64 `json:"invite_end_time" gorm:"bigint;default:0"`
+
+	// RankMetric is what a leaderboard ranks users by, and RankMinValue the
+	// score a user needs to be ranked at all, in that metric's unit: invited
+	// accounts, consumed quota, or paid money.
+	RankMetric   string  `json:"rank_metric" gorm:"type:varchar(16);default:''"`
+	RankMinValue float64 `json:"rank_min_value" gorm:"type:decimal(20,4);not null;default:0"`
 
 	// Spins allowed per user for wheel activities; 0 means unlimited.
 	WheelTotalLimit int `json:"wheel_total_limit" gorm:"type:int;default:0"`
@@ -116,6 +132,13 @@ type LotteryEntry struct {
 	DeliveryNote   string `json:"delivery_note" gorm:"type:varchar(255);default:''"`
 	DeliveredAt    int64  `json:"delivered_at" gorm:"bigint;default:0"`
 	CreatedAt      int64  `json:"created_at" gorm:"bigint"`
+
+	// Leaderboard entries record the locked rank and score. A disqualified
+	// entry gets no prize and the entries after it move up.
+	// "rank" is reserved in MySQL 8, so the column is named ranking.
+	Rank         int     `json:"rank" gorm:"column:ranking;type:int;default:0"`
+	Score        float64 `json:"score" gorm:"type:decimal(20,4);not null;default:0"`
+	Disqualified bool    `json:"disqualified"`
 }
 
 func (a *LotteryActivity) BeforeCreate(tx *gorm.DB) error {
@@ -160,6 +183,10 @@ func (a *LotteryActivity) Validate() error {
 	if a.Status != LotteryStatusDraft && a.Status != LotteryStatusActive {
 		return common.NewMessage("Invalid activity status")
 	}
+	a.Rules = strings.TrimSpace(a.Rules)
+	if utf8.RuneCountInString(a.Rules) > maxLotteryRulesLength {
+		return common.NewMessage("Activity rules must be at most 10000 characters")
+	}
 	if a.StartTime < 0 || a.EndTime < 0 || a.DrawTime < 0 || a.SpendStartTime < 0 || a.SpendEndTime < 0 ||
 		a.InviteStartTime < 0 || a.InviteEndTime < 0 {
 		return common.NewMessage("Invalid activity time")
@@ -184,6 +211,9 @@ func (a *LotteryActivity) Validate() error {
 	if a.MinInvites < 0 || a.MinInvites > 100000 {
 		return common.NewMessage("Invalid minimum invitations")
 	}
+	if a.Mode != LotteryModeLeaderboard {
+		a.RankMetric, a.RankMinValue = "", 0
+	}
 	a.TargetParticipants = max(a.TargetParticipants, 0)
 	a.WheelTotalLimit = max(a.WheelTotalLimit, 0)
 	a.WheelDailyLimit = max(a.WheelDailyLimit, 0)
@@ -206,13 +236,28 @@ func (a *LotteryActivity) Validate() error {
 			return common.NewMessage("Participant-count draws need a participant target")
 		}
 		a.DrawTime, a.WheelTotalLimit, a.WheelDailyLimit = 0, 0, 0
+	case LotteryModeLeaderboard:
+		if a.EndTime == 0 {
+			return common.NewMessage("Leaderboards need an end time")
+		}
+		if !slices.Contains(lotteryRankMetrics, a.RankMetric) {
+			return common.NewMessage("Invalid ranking metric")
+		}
+		if math.IsNaN(a.RankMinValue) || a.RankMinValue < 0 || a.RankMinValue > maxLeaderboardMinValue {
+			return common.NewMessage("Invalid leaderboard threshold")
+		}
+		// A leaderboard ranks everyone; its threshold replaces the entry
+		// requirements of the other modes.
+		a.DrawTime, a.TargetParticipants, a.WheelTotalLimit, a.WheelDailyLimit = 0, 0, 0, 0
+		a.MinSpend, a.SpendStartTime, a.SpendEndTime = 0, 0, 0
+		a.MinInvites, a.InviteStartTime, a.InviteEndTime = 0, 0, 0
 	default:
 		return common.NewMessage("Invalid lottery mode")
 	}
 	if len(a.Prizes) == 0 || len(a.Prizes) > maxLotteryPrizes {
 		return common.NewMessage("An activity needs 1 to 20 prizes")
 	}
-	probability := 0
+	probability, ranks := 0, 0
 	for i := range a.Prizes {
 		prize := &a.Prizes[i]
 		prize.Name = strings.TrimSpace(prize.Name)
@@ -253,8 +298,12 @@ func (a *LotteryActivity) Validate() error {
 		} else {
 			prize.Probability = 0
 		}
+		ranks += prize.Quantity
 		prize.SortOrder = i
 		prize.Awarded = 0
+	}
+	if a.Mode == LotteryModeLeaderboard && ranks > maxLeaderboardRanks {
+		return common.NewMessage("Leaderboard prizes can cover at most 500 ranks")
 	}
 	if probability > LotteryProbabilityScale {
 		return common.NewMessage("Prize probabilities add up to more than 100%")
@@ -315,8 +364,8 @@ func ListLotteryActivities(visibleOnly bool) ([]LotteryActivity, error) {
 		return activities, loadLotteryPrizes(DB, activities)
 	}
 	now := common.GetTimestamp()
-	if err := DB.Where("status = ?", LotteryStatusActive).
-		Where("mode <> ? OR end_time = 0 OR end_time >= ?", LotteryModeWheel, now).
+	if err := DB.Where("(status = ? AND (mode <> ? OR end_time = 0 OR end_time >= ?)) OR status = ?",
+		LotteryStatusActive, LotteryModeWheel, now, LotteryStatusRanked).
 		Order("id desc").Find(&activities).Error; err != nil {
 		return nil, err
 	}
@@ -348,8 +397,8 @@ func CreateLotteryActivity(activity *LotteryActivity) error {
 }
 
 // UpdateLotteryActivity saves an edited activity. Once anyone has entered,
-// only the title, description and end time may change, so entrants keep the
-// rules they joined under.
+// only the title, description, rules text and end time may change, so
+// entrants keep the mechanics they joined under.
 func UpdateLotteryActivity(update *LotteryActivity) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var current LotteryActivity
@@ -367,6 +416,10 @@ func UpdateLotteryActivity(update *LotteryActivity) error {
 			if title == "" || len(title) > 128 {
 				return common.NewMessage("Activity title is required and must be at most 128 characters")
 			}
+			rules := strings.TrimSpace(update.Rules)
+			if utf8.RuneCountInString(rules) > maxLotteryRulesLength {
+				return common.NewMessage("Activity rules must be at most 10000 characters")
+			}
 			if update.EndTime < 0 || (update.EndTime > 0 && update.EndTime <= current.StartTime) {
 				return common.NewMessage("End time must be later than start time")
 			}
@@ -376,6 +429,7 @@ func UpdateLotteryActivity(update *LotteryActivity) error {
 			return tx.Model(&current).Updates(map[string]any{
 				"title":       title,
 				"description": update.Description,
+				"rules":       rules,
 				"end_time":    update.EndTime,
 			}).Error
 		}
@@ -383,9 +437,10 @@ func UpdateLotteryActivity(update *LotteryActivity) error {
 			return err
 		}
 		if err := tx.Model(&current).Select(
-			"title", "description", "mode", "status", "start_time", "end_time", "draw_time",
+			"title", "description", "rules", "mode", "status", "start_time", "end_time", "draw_time",
 			"target_participants", "min_spend", "spend_start_time", "spend_end_time",
 			"min_invites", "invite_start_time", "invite_end_time",
+			"rank_metric", "rank_min_value",
 			"wheel_total_limit", "wheel_daily_limit",
 		).Updates(update).Error; err != nil {
 			return err
@@ -415,17 +470,18 @@ func DeleteLotteryActivity(id int) error {
 	})
 }
 
-// CancelLotteryActivity stops an activity that has not been drawn. Prizes
-// already won on a wheel stay with their winners.
+// CancelLotteryActivity stops an activity that has not been drawn, including
+// a leaderboard waiting for its awards. Prizes already won on a wheel stay
+// with their winners.
 func CancelLotteryActivity(id int) error {
 	result := DB.Model(&LotteryActivity{}).
-		Where("id = ? AND status IN ?", id, []string{LotteryStatusDraft, LotteryStatusActive}).
+		Where("id = ? AND status IN ?", id, []string{LotteryStatusDraft, LotteryStatusActive, LotteryStatusRanked}).
 		Updates(map[string]any{"status": LotteryStatusCancelled, "updated_at": common.GetTimestamp()})
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected != 1 {
-		return common.NewMessage("Only draft or active activities can be cancelled")
+		return common.NewMessage("Only activities that have not been drawn can be cancelled")
 	}
 	return nil
 }
@@ -527,7 +583,7 @@ func (s *LotteryUserState) requirementError(activity *LotteryActivity) error {
 // nobody can join between the last entry and the draw.
 func beginLotteryEntry(tx *gorm.DB, activityId int, mode string) (*LotteryActivity, error) {
 	result := tx.Model(&LotteryActivity{}).
-		Where("id = ? AND status = ?", activityId, LotteryStatusActive).
+		Where("id = ? AND status = ? AND mode <> ?", activityId, LotteryStatusActive, LotteryModeLeaderboard).
 		Where("mode <> ? OR entry_count < target_participants", LotteryModeParticipants).
 		Update("entry_count", gorm.Expr("entry_count + 1"))
 	if result.Error != nil {
@@ -665,7 +721,8 @@ func DrawLotteryActivity(activityId int) error {
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		now := common.GetTimestamp()
 		result := tx.Model(&LotteryActivity{}).
-			Where("id = ? AND status = ? AND mode <> ?", activityId, LotteryStatusActive, LotteryModeWheel).
+			Where("id = ? AND status = ? AND mode IN ?", activityId, LotteryStatusActive,
+				[]string{LotteryModeScheduled, LotteryModeParticipants}).
 			Updates(map[string]any{"status": LotteryStatusDrawn, "drawn_at": now, "updated_at": now})
 		if result.Error != nil {
 			return result.Error
@@ -814,7 +871,8 @@ func MarkLotteryEntryDelivered(entryId int, note string) error {
 }
 
 // ListLotteryEntries pages through an activity's entries for admins.
-func ListLotteryEntries(activityId int, winnersOnly bool, pageInfo *common.PageInfo) ([]LotteryEntry, int64, error) {
+// Leaderboard entries are listed by rank.
+func ListLotteryEntries(activityId int, winnersOnly bool, byRank bool, pageInfo *common.PageInfo) ([]LotteryEntry, int64, error) {
 	query := DB.Model(&LotteryEntry{}).Where("activity_id = ?", activityId)
 	if winnersOnly {
 		query = query.Where("prize_id > 0")
@@ -824,7 +882,11 @@ func ListLotteryEntries(activityId int, winnersOnly bool, pageInfo *common.PageI
 		return nil, 0, err
 	}
 	var entries []LotteryEntry
-	err := query.Order("prize_id = 0, id desc").Offset(pageInfo.GetStartIdx()).Limit(pageInfo.GetPageSize()).Find(&entries).Error
+	order := "prize_id = 0, id desc"
+	if byRank {
+		order = "ranking asc, id asc"
+	}
+	err := query.Order(order).Offset(pageInfo.GetStartIdx()).Limit(pageInfo.GetPageSize()).Find(&entries).Error
 	return entries, total, err
 }
 
@@ -882,10 +944,21 @@ func ListUserLotteryWins(userId int, limit int) ([]LotteryWin, error) {
 }
 
 // RunDueLotteryDraws draws scheduled activities whose draw time has passed
-// and participant-count activities that reached their target or ended, then
-// retries automatic prizes left pending by an interrupted delivery.
+// and participant-count activities that reached their target or ended, locks
+// the ranks of ended leaderboards, then retries automatic prizes left pending
+// by an interrupted delivery.
 func RunDueLotteryDraws() error {
 	now := common.GetTimestamp()
+	var ended []LotteryActivity
+	if err := DB.Select("id").Where("status = ? AND mode = ? AND end_time > 0 AND end_time <= ?",
+		LotteryStatusActive, LotteryModeLeaderboard, now).Find(&ended).Error; err != nil {
+		return err
+	}
+	for _, activity := range ended {
+		if err := LockLeaderboard(activity.Id); err != nil {
+			common.SysError(common.LogText("leaderboard lock of activity %d failed: %v", activity.Id, err))
+		}
+	}
 	var due []LotteryActivity
 	err := DB.Select("id").Where("status = ?", LotteryStatusActive).
 		Where("(mode = ? AND draw_time > 0 AND draw_time <= ?) OR (mode = ? AND (entry_count >= target_participants OR (end_time > 0 AND end_time <= ?)))",

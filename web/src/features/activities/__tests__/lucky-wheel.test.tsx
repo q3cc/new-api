@@ -49,6 +49,9 @@ const winningEntry: LotteryEntry = {
   delivery_status: 'delivered',
   delivery_note: '',
   delivered_at: 0,
+  rank: 0,
+  score: 0,
+  disqualified: false,
   created_at: 0,
 }
 

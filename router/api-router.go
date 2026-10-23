@@ -236,6 +236,7 @@ func SetApiRouter(router *gin.Engine) {
 			lotteryAdminRoute.POST("/activities/:id/draw", controller.AdminDrawLotteryActivity)
 			lotteryAdminRoute.GET("/activities/:id/entries", controller.AdminListLotteryEntries)
 			lotteryAdminRoute.POST("/entries/:id/deliver", controller.AdminDeliverLotteryEntry)
+			lotteryAdminRoute.POST("/entries/:id/disqualify", controller.AdminSetLotteryEntryDisqualified)
 		}
 		affiliateRoute := apiRouter.Group("/affiliate")
 		affiliateRoute.Use(middleware.AdminAuth())

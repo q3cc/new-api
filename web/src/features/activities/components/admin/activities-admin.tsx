@@ -48,7 +48,7 @@ import { ActivityEntriesDialog } from './activity-entries-dialog'
 import { ActivityMutateDrawer } from './activity-mutate-drawer'
 
 type PendingAction = {
-  kind: 'draw' | 'cancel' | 'delete'
+  kind: 'draw' | 'award' | 'cancel' | 'delete'
   activity: LotteryActivity
 }
 
@@ -57,6 +57,8 @@ const ACTION_REQUESTS: Record<
   (id: number) => Promise<ApiResponse>
 > = {
   draw: drawActivity,
+  // A locked leaderboard is awarded through the draw endpoint.
+  award: drawActivity,
   cancel: cancelActivity,
   delete: deleteActivity,
 }
@@ -158,6 +160,7 @@ export function ActivitiesAdmin() {
       cell: (activity) => {
         const editable =
           activity.status === 'draft' || activity.status === 'active'
+        const isLeaderboard = activity.mode === 'leaderboard'
         return (
           <div className='flex justify-end gap-1'>
             <Button
@@ -174,7 +177,7 @@ export function ActivitiesAdmin() {
               >
                 {t('Edit')}
               </DropdownMenuItem>
-              {activity.mode !== 'wheel' ? (
+              {activity.mode !== 'wheel' && !isLeaderboard ? (
                 <DropdownMenuItem
                   onClick={() => setPending({ kind: 'draw', activity })}
                   disabled={activity.status !== 'active'}
@@ -182,9 +185,17 @@ export function ActivitiesAdmin() {
                   {t('Draw now')}
                 </DropdownMenuItem>
               ) : null}
+              {isLeaderboard ? (
+                <DropdownMenuItem
+                  onClick={() => setPending({ kind: 'award', activity })}
+                  disabled={activity.status !== 'ranked'}
+                >
+                  {t('Award prizes')}
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem
                 onClick={() => setPending({ kind: 'cancel', activity })}
-                disabled={!editable}
+                disabled={!editable && activity.status !== 'ranked'}
               >
                 {t('Cancel activity')}
               </DropdownMenuItem>
@@ -210,6 +221,13 @@ export function ActivitiesAdmin() {
       title: t('Draw this activity now?'),
       desc: t(
         'Winners are picked from the current entries and prizes are delivered right away.'
+      ),
+      destructive: false,
+    },
+    award: {
+      title: t('Award the prizes of this leaderboard?'),
+      desc: t(
+        'Prizes go to the qualified users in rank order; balance and subscription prizes are delivered right away.'
       ),
       destructive: false,
     },

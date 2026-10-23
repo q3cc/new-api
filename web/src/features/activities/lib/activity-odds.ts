@@ -38,7 +38,12 @@ export type LiveOdds = {
  * odds left.
  */
 export function getLiveOdds(activity: LotteryActivityView): LiveOdds | null {
-  if (activity.status === 'drawn' || activity.status === 'cancelled') {
+  // A leaderboard awards by rank, not by chance.
+  if (
+    activity.mode === 'leaderboard' ||
+    activity.status === 'drawn' ||
+    activity.status === 'cancelled'
+  ) {
     return null
   }
   const byPrize = new Map<number, number>()

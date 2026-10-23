@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -97,6 +98,11 @@ func TestLotteryActivityValidateRejectsInvalidRules(t *testing.T) {
 		{name: "end time in the past", activity: LotteryActivity{Title: "P", Mode: LotteryModeParticipants, Status: LotteryStatusActive, TargetParticipants: 2, EndTime: 1, Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
 		{name: "invitation window ending before it starts", activity: LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive, MinInvites: 1, InviteStartTime: 5000, InviteEndTime: 1000, Prizes: []LotteryPrize{quotaPrize(0, 0)}}},
 		{name: "negative minimum invitations", activity: LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive, MinInvites: -1, Prizes: []LotteryPrize{quotaPrize(0, 0)}}},
+		{name: "rules over 10000 characters", activity: LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive, Rules: strings.Repeat("规", 10001), Prizes: []LotteryPrize{quotaPrize(0, 0)}}},
+		{name: "leaderboard without end time", activity: LotteryActivity{Title: "L", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, RankMetric: LotteryRankRecharge, Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
+		{name: "leaderboard with an unknown metric", activity: LotteryActivity{Title: "L", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, EndTime: 4102444800, RankMetric: "logins", Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
+		{name: "leaderboard prizes beyond 500 ranks", activity: LotteryActivity{Title: "L", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, EndTime: 4102444800, RankMetric: LotteryRankRecharge, Prizes: []LotteryPrize{quotaPrize(0, 300), quotaPrize(0, 201)}}},
+		{name: "leaderboard with a negative threshold", activity: LotteryActivity{Title: "L", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, EndTime: 4102444800, RankMetric: LotteryRankRecharge, RankMinValue: -1, Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -413,13 +419,14 @@ func TestLotteryActivityRulesLockAfterFirstEntry(t *testing.T) {
 	require.NoError(t, err)
 
 	update := &LotteryActivity{
-		Id: activity.Id, Title: "Renamed", Mode: LotteryModeParticipants, Status: LotteryStatusActive, TargetParticipants: 9,
+		Id: activity.Id, Title: "Renamed", Rules: "## Updated rules", Mode: LotteryModeParticipants, Status: LotteryStatusActive, TargetParticipants: 9,
 		Prizes: []LotteryPrize{{Name: "Other", Type: LotteryPrizeManual, Quantity: 1}},
 	}
 	require.NoError(t, UpdateLotteryActivity(update))
 	stored, err := GetLotteryActivity(activity.Id)
 	require.NoError(t, err)
 	assert.Equal(t, "Renamed", stored.Title)
+	assert.Equal(t, "## Updated rules", stored.Rules, "the rules text can still be corrected")
 	assert.Equal(t, LotteryModeWheel, stored.Mode)
 	require.Len(t, stored.Prizes, 1)
 	assert.Equal(t, "Credit", stored.Prizes[0].Name)
@@ -428,4 +435,148 @@ func TestLotteryActivityRulesLockAfterFirstEntry(t *testing.T) {
 	require.NoError(t, CancelLotteryActivity(activity.Id))
 	_, err = SpinLotteryWheel(activity.Id, createLotteryUser(t, "late_spinner"))
 	assert.ErrorContains(t, err, "not open")
+}
+
+func TestLeaderboardRankingByMetric(t *testing.T) {
+	setupLotteryFixture(t)
+	alice := createLotteryUser(t, "rank_alice")
+	bob := createLotteryUser(t, "rank_bob")
+	carol := createLotteryUser(t, "rank_carol")
+	admin := &User{Username: "rank_admin", Password: "password", Role: common.RoleAdminUser, Status: common.UserStatusEnabled, AffCode: "rank_admin"}
+	require.NoError(t, DB.Create(admin).Error)
+	disabled := &User{Username: "rank_disabled", Password: "password", Status: common.UserStatusDisabled, AffCode: "rank_disabled"}
+	require.NoError(t, DB.Create(disabled).Error)
+	invite := func(inviterId int, name string, createdAt int64) *User {
+		user := &User{Username: name, Password: "password", Status: common.UserStatusEnabled, AffCode: name, InviterId: inviterId, CreatedAt: createdAt}
+		require.NoError(t, DB.Create(user).Error)
+		return user
+	}
+	consume := func(userId int, logType int, quota int, createdAt int64) {
+		require.NoError(t, DB.Create(&Log{UserId: userId, Type: logType, Quota: quota, CreatedAt: createdAt}).Error)
+	}
+
+	// Recharge: equal totals rank whoever reached them first higher.
+	createPaidOrder(t, alice, 30, common.TopUpStatusSuccess, 2000)
+	createPaidOrder(t, bob, 30, common.TopUpStatusSuccess, 1500)
+	createPaidOrder(t, carol, 3, common.TopUpStatusSuccess, 2000)
+	createPaidOrder(t, alice, 100, common.TopUpStatusSuccess, 6000)
+	createPaidOrder(t, alice, 100, common.TopUpStatusPending, 2000)
+	createPaidOrder(t, admin.Id, 500, common.TopUpStatusSuccess, 2000)
+	createPaidOrder(t, disabled.Id, 500, common.TopUpStatusSuccess, 2000)
+	// Invitations: deleted invitees and accounts outside the window do not count.
+	invite(alice, "inv_a1", 2000)
+	invite(alice, "inv_a2", 3000)
+	require.NoError(t, DB.Delete(invite(alice, "inv_a3", 3500)).Error)
+	invite(alice, "inv_a4", 9000)
+	invite(bob, "inv_b1", 1500)
+	invite(bob, "inv_b2", 2500)
+	invite(carol, "inv_c1", 2000)
+	for i := range 5 {
+		invite(admin.Id, fmt.Sprintf("inv_admin_%d", i), 2000)
+	}
+	// Consumption: only consume logs inside the window count.
+	consume(alice, LogTypeConsume, 500, 2000)
+	consume(bob, LogTypeConsume, 300, 2500)
+	consume(carol, LogTypeConsume, 50, 2000)
+	consume(carol, LogTypeTopup, 100000, 2000)
+	consume(bob, LogTypeConsume, 100000, 9000)
+
+	tests := []struct {
+		metric    string
+		threshold float64
+		want      []LeaderboardRow
+		carol     float64
+	}{
+		{metric: LotteryRankRecharge, threshold: 5, want: []LeaderboardRow{{UserId: bob, Rank: 1, Score: 30}, {UserId: alice, Rank: 2, Score: 30}}, carol: 3},
+		{metric: LotteryRankInvites, threshold: 2, want: []LeaderboardRow{{UserId: bob, Rank: 1, Score: 2}, {UserId: alice, Rank: 2, Score: 2}}, carol: 1},
+		{metric: LotteryRankConsumption, threshold: 100, want: []LeaderboardRow{{UserId: alice, Rank: 1, Score: 500}, {UserId: bob, Rank: 2, Score: 300}}, carol: 50},
+	}
+	for _, tt := range tests {
+		t.Run(tt.metric, func(t *testing.T) {
+			activity := &LotteryActivity{Id: 900, Mode: LotteryModeLeaderboard, Status: LotteryStatusActive,
+				StartTime: 1000, EndTime: 5000, RankMetric: tt.metric, RankMinValue: tt.threshold}
+			rows, err := LeaderboardRanking(activity, 10)
+			require.NoError(t, err)
+			for i := range rows {
+				rows[i].ReachedAt = 0
+			}
+			assert.Equal(t, tt.want, rows)
+
+			leaderboardCache.Delete(activity.Id)
+			board, err := GetLotteryLeaderboard(activity, carol)
+			require.NoError(t, err)
+			assert.Zero(t, board.Me.Rank, "below the threshold is not ranked")
+			assert.InDelta(t, tt.carol, board.Me.Score, 1e-9, "an unranked user still sees their score")
+			board, err = GetLotteryLeaderboard(activity, admin.Id)
+			require.NoError(t, err)
+			assert.True(t, board.Me.Excluded, "administrators are not ranked")
+		})
+	}
+}
+
+func TestLeaderboardLocksRanksAndAwardsQualifiedEntries(t *testing.T) {
+	setupLotteryFixture(t)
+	users := []int{createLotteryUser(t, "lb_1"), createLotteryUser(t, "lb_2"), createLotteryUser(t, "lb_3"), createLotteryUser(t, "lb_4")}
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", users[0]).Update("display_name", "Nick lb_1").Error)
+	for i, userId := range users {
+		createPaidOrder(t, userId, float64(40-10*i), common.TopUpStatusSuccess, 2000)
+	}
+	activity := &LotteryActivity{Title: "Recharge board", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive,
+		StartTime: 1000, EndTime: common.GetTimestamp() + 3600, RankMetric: LotteryRankRecharge,
+		Prizes: []LotteryPrize{
+			{Name: "First", Type: LotteryPrizeQuota, Quota: 100, Quantity: 1},
+			{Name: "Runner-up", Type: LotteryPrizeQuota, Quota: 50, Quantity: 2},
+		}}
+	require.NoError(t, CreateLotteryActivity(activity))
+
+	require.Error(t, SetLeaderboardEntryDisqualified(1, true), "nothing can be disqualified while running")
+	assert.Error(t, JoinLotteryActivity(activity.Id, users[0]), "leaderboards take no entries")
+
+	// The end time passes; the minute task locks the ranks once.
+	require.NoError(t, DB.Model(&LotteryActivity{}).Where("id = ?", activity.Id).Update("end_time", common.GetTimestamp()-1).Error)
+	require.NoError(t, RunDueLotteryDraws())
+	require.NoError(t, LockLeaderboard(activity.Id))
+	var entries []LotteryEntry
+	require.NoError(t, DB.Where("activity_id = ?", activity.Id).Order("ranking").Find(&entries).Error)
+	require.Len(t, entries, 4)
+	for i, entry := range entries {
+		assert.Equal(t, users[i], entry.UserId)
+		assert.Equal(t, i+1, entry.Rank)
+		assert.InDelta(t, float64(40-10*i), entry.Score, 1e-9)
+	}
+	stored, err := GetLotteryActivity(activity.Id)
+	require.NoError(t, err)
+	assert.Equal(t, LotteryStatusRanked, stored.Status)
+	wins, err := ListUserLotteryWins(users[0], 10)
+	require.NoError(t, err)
+	assert.Empty(t, wins, "nothing is won before the awards")
+
+	// Disqualifying second place moves fourth place into the prizes.
+	secondPlace := entries[1]
+	require.NoError(t, SetLeaderboardEntryDisqualified(secondPlace.Id, true))
+	predicted, err := PredictLeaderboardPrizes(activity.Id)
+	require.NoError(t, err)
+	predictedNames := map[int]string{}
+	for entryId, prize := range predicted {
+		predictedNames[entryId] = prize.Name
+	}
+	assert.Equal(t, map[int]string{entries[0].Id: "First", entries[2].Id: "Runner-up", entries[3].Id: "Runner-up"}, predictedNames)
+	board, err := GetLotteryLeaderboard(stored, users[3])
+	require.NoError(t, err)
+	assert.True(t, board.Final)
+	assert.Equal(t, []int{users[0], users[2], users[3]}, []int{board.Rows[0].UserId, board.Rows[1].UserId, board.Rows[2].UserId})
+	assert.Equal(t, "Nick lb_1", board.Rows[0].DisplayName, "public rows name users by nickname")
+	assert.Equal(t, 3, board.Me.Rank, "ranks close up over disqualified entries")
+
+	require.NoError(t, AwardLeaderboard(activity.Id))
+	assert.Equal(t, 100, userQuota(t, users[0]))
+	assert.Equal(t, 0, userQuota(t, users[1]))
+	assert.Equal(t, 50, userQuota(t, users[2]))
+	assert.Equal(t, 50, userQuota(t, users[3]))
+	assert.Error(t, AwardLeaderboard(activity.Id), "prizes are awarded once")
+	assert.Error(t, SetLeaderboardEntryDisqualified(secondPlace.Id, false), "qualifications are fixed after the awards")
+	wins, err = ListUserLotteryWins(users[3], 10)
+	require.NoError(t, err)
+	require.Len(t, wins, 1)
+	assert.Equal(t, LotteryDeliveryDelivered, wins[0].DeliveryStatus)
 }

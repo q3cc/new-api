@@ -22,6 +22,7 @@ import type {
   LotteryDeliveryStatus,
   LotteryMode,
   LotteryPrizeType,
+  LotteryRankMetric,
   LotteryStatus,
 } from './types'
 
@@ -29,7 +30,23 @@ export const LOTTERY_MODES: Record<LotteryMode, { labelKey: string }> = {
   wheel: { labelKey: 'Lucky wheel' },
   scheduled: { labelKey: 'Scheduled draw' },
   participants: { labelKey: 'Participant-count draw' },
+  leaderboard: { labelKey: 'Leaderboard' },
 }
+
+export const LOTTERY_RANK_METRICS: Record<
+  LotteryRankMetric,
+  { labelKey: string }
+> = {
+  invites: { labelKey: 'Invites' },
+  consumption: { labelKey: 'Consumption' },
+  recharge: { labelKey: 'Recharge' },
+}
+
+/** Longest activity rules the server accepts. */
+export const LOTTERY_MAX_RULES_LENGTH = 10_000
+
+/** Upper bound the server accepts for the ranks leaderboard prizes cover. */
+export const LOTTERY_MAX_LEADERBOARD_RANKS = 500
 
 export const LOTTERY_STATUSES: Record<
   LotteryStatus,
@@ -37,6 +54,7 @@ export const LOTTERY_STATUSES: Record<
 > = {
   draft: { labelKey: 'Draft', variant: 'neutral' },
   active: { labelKey: 'Active', variant: 'success' },
+  ranked: { labelKey: 'Awaiting awards', variant: 'warning' },
   drawn: { labelKey: 'Drawn', variant: 'info' },
   cancelled: { labelKey: 'Cancelled', variant: 'danger' },
 }

@@ -76,6 +76,24 @@ export function getActivityAvailability(
       blockedReason: 'This activity has not started yet',
     }
   }
+  if (activity.mode === 'leaderboard') {
+    // Everyone is ranked automatically, so there is nothing to join.
+    if (activity.status === 'ranked') {
+      return {
+        ...result,
+        phase: 'closed',
+        action: null,
+        blockedReason: 'Ranks are locked; waiting for the awards',
+      }
+    }
+    const ended = activity.end_time > 0 && nowSeconds > activity.end_time
+    return {
+      ...result,
+      phase: ended ? 'closed' : 'open',
+      action: null,
+      blockedReason: ended ? 'This leaderboard has ended' : null,
+    }
+  }
   if (activity.end_time > 0 && nowSeconds > activity.end_time) {
     return {
       ...result,

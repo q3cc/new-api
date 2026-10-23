@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import {
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -44,6 +45,7 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { LOTTERY_MAX_PRIZES, LOTTERY_PRIZE_TYPES } from '../../constants'
 import { EMPTY_PRIZE, type ActivityFormValues } from '../../lib/activity-form'
+import { leaderboardRankRanges, type RankRange } from '../../lib/leaderboard'
 import type { LotteryPrizeType } from '../../types'
 
 type ActivityPrizesFieldProps = {
@@ -59,6 +61,8 @@ function PrizeRow(props: {
   control: Control<ActivityFormValues>
   index: number
   isWheel: boolean
+  /** Ranks this prize covers on a leaderboard. */
+  rankRange?: RankRange
   planOptions: { value: string; label: string }[]
   plansLoading: boolean
   onRemove: () => void
@@ -70,6 +74,16 @@ function PrizeRow(props: {
     name: `prizes.${props.index}.type`,
   })
   const prefix = `prizes.${props.index}` as const
+  let quantityLabel = props.isWheel ? t('Stock (0 = unlimited)') : t('Winners')
+  let rankText: string | null = null
+  if (props.rankRange) {
+    quantityLabel = t('Ranks covered')
+    if (props.rankRange.from === props.rankRange.to) {
+      rankText = t('Rank {{rank}}', { rank: props.rankRange.from })
+    } else if (props.rankRange.to > props.rankRange.from) {
+      rankText = t('Ranks {{from}}–{{to}}', props.rankRange)
+    }
+  }
 
   return (
     <li className='grid gap-3 rounded-md border p-3'>
@@ -190,9 +204,7 @@ function PrizeRow(props: {
           name={`${prefix}.quantity`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>
-                {props.isWheel ? t('Stock (0 = unlimited)') : t('Winners')}
-              </FormLabel>
+              <FormLabel>{quantityLabel}</FormLabel>
               <FormControl>
                 <Input
                   type='number'
@@ -207,6 +219,7 @@ function PrizeRow(props: {
                   }
                 />
               </FormControl>
+              {rankText ? <FormDescription>{rankText}</FormDescription> : null}
               <FormMessage />
             </FormItem>
           )}
@@ -262,6 +275,8 @@ export function ActivityPrizesField(props: ActivityPrizesFieldProps) {
       label: record.plan.title,
     }))
   const isWheel = mode === 'wheel'
+  const rankRanges =
+    mode === 'leaderboard' ? leaderboardRankRanges(prizes) : null
   const totalProbability = prizes.reduce(
     (sum, prize) => sum + (prize.probability_percent || 0),
     0
@@ -277,6 +292,7 @@ export function ActivityPrizesField(props: ActivityPrizesFieldProps) {
             control={props.form.control}
             index={index}
             isWheel={isWheel}
+            rankRange={rankRanges?.[index]}
             planOptions={planOptions}
             plansLoading={plansLoading}
             onRemove={() => remove(index)}

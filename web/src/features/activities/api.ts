@@ -125,3 +125,14 @@ export async function deliverEntry(
   })
   return res.data
 }
+
+/** Excludes a locked leaderboard entry from the prizes, or lets it back in. */
+export async function setEntryDisqualified(
+  id: number,
+  disqualified: boolean
+): Promise<ApiResponse> {
+  const res = await api.post(`/api/lottery/admin/entries/${id}/disqualify`, {
+    disqualified,
+  })
+  return res.data
+}

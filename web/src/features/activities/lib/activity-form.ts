@@ -22,11 +22,17 @@ import { z } from 'zod'
 import { parseQuotaFromDollars, quotaUnitsToEditableAmount } from '@/lib/format'
 
 import {
+  LOTTERY_MAX_LEADERBOARD_RANKS,
   LOTTERY_MAX_MIN_INVITES,
   LOTTERY_MAX_PRIZES,
+  LOTTERY_MAX_RULES_LENGTH,
   LOTTERY_PROBABILITY_SCALE,
 } from '../constants'
-import type { LotteryActivity, LotteryActivityPayload } from '../types'
+import type {
+  LotteryActivity,
+  LotteryActivityPayload,
+  LotteryRankMetric,
+} from '../types'
 
 const prizeSchema = z.object({
   name: z.string(),
@@ -47,7 +53,8 @@ export function getActivityFormSchema(t: TFunction) {
         .min(1, t('Activity title is required'))
         .max(128, t('Activity title must be at most 128 characters')),
       description: z.string(),
-      mode: z.enum(['wheel', 'scheduled', 'participants']),
+      rules: z.string(),
+      mode: z.enum(['wheel', 'scheduled', 'participants', 'leaderboard']),
       status: z.enum(['draft', 'active']),
       start_time: z.date().optional(),
       end_time: z.date().optional(),
@@ -59,6 +66,9 @@ export function getActivityFormSchema(t: TFunction) {
       min_invites: z.number().int().min(0),
       invite_start_time: z.date().optional(),
       invite_end_time: z.date().optional(),
+      rank_metric: z.enum(['invites', 'consumption', 'recharge']),
+      /** Threshold as entered: accounts, dollars of consumption, or money. */
+      rank_min_value: z.number().min(0),
       wheel_total_limit: z.number().int().min(0),
       wheel_daily_limit: z.number().int().min(0),
       prizes: z.array(prizeSchema),
@@ -85,6 +95,27 @@ export function getActivityFormSchema(t: TFunction) {
           issue(['draw_time'], t('Draw time must be later than start time'))
         } else if (values.draw_time <= now) {
           issue(['draw_time'], t('Draw time must be in the future'))
+        }
+      }
+      if (values.rules.length > LOTTERY_MAX_RULES_LENGTH) {
+        issue(['rules'], t('Activity rules must be at most 10000 characters'))
+      }
+      if (values.mode === 'leaderboard') {
+        if (!values.end_time) {
+          issue(['end_time'], t('Leaderboards need an end time'))
+        }
+        if (
+          values.rank_metric === 'invites' &&
+          !Number.isInteger(values.rank_min_value)
+        ) {
+          issue(['rank_min_value'], t('Invalid leaderboard threshold'))
+        }
+        const ranks = values.prizes.reduce(
+          (total, prize) => total + prize.quantity,
+          0
+        )
+        if (ranks > LOTTERY_MAX_LEADERBOARD_RANKS) {
+          issue(['prizes'], t('Leaderboard prizes can cover at most 500 ranks'))
         }
       }
       if (values.mode === 'participants' && values.target_participants < 1) {
@@ -171,6 +202,7 @@ export const EMPTY_PRIZE: ActivityPrizeFormValues = {
 export const ACTIVITY_FORM_DEFAULT_VALUES: ActivityFormValues = {
   title: '',
   description: '',
+  rules: '',
   mode: 'wheel',
   status: 'active',
   start_time: undefined,
@@ -183,6 +215,8 @@ export const ACTIVITY_FORM_DEFAULT_VALUES: ActivityFormValues = {
   min_invites: 0,
   invite_start_time: undefined,
   invite_end_time: undefined,
+  rank_metric: 'recharge',
+  rank_min_value: 0,
   wheel_total_limit: 1,
   wheel_daily_limit: 0,
   prizes: [{ ...EMPTY_PRIZE }],
@@ -196,12 +230,25 @@ function toDate(seconds: number): Date | undefined {
   return seconds > 0 ? new Date(seconds * 1000) : undefined
 }
 
+/** The stored threshold of a metric: consumption is kept as quota. */
+function rankMinValueToPayload(
+  metric: LotteryRankMetric,
+  value: number
+): number {
+  return metric === 'consumption' ? parseQuotaFromDollars(value) : value
+}
+
 export function activityFormToPayload(
   values: ActivityFormValues
 ): LotteryActivityPayload {
+  // A leaderboard ranks everyone; its threshold replaces entry requirements.
+  const leaderboard = values.mode === 'leaderboard'
+  const minSpend = leaderboard ? 0 : values.min_spend
+  const minInvites = leaderboard ? 0 : values.min_invites
   return {
     title: values.title.trim(),
     description: values.description,
+    rules: values.rules.trim(),
     mode: values.mode,
     status: values.status,
     start_time: toSeconds(values.start_time),
@@ -209,15 +256,16 @@ export function activityFormToPayload(
     draw_time: values.mode === 'scheduled' ? toSeconds(values.draw_time) : 0,
     target_participants:
       values.mode === 'participants' ? values.target_participants : 0,
-    min_spend: values.min_spend,
-    spend_start_time:
-      values.min_spend > 0 ? toSeconds(values.spend_start_time) : 0,
-    spend_end_time: values.min_spend > 0 ? toSeconds(values.spend_end_time) : 0,
-    min_invites: values.min_invites,
-    invite_start_time:
-      values.min_invites > 0 ? toSeconds(values.invite_start_time) : 0,
-    invite_end_time:
-      values.min_invites > 0 ? toSeconds(values.invite_end_time) : 0,
+    min_spend: minSpend,
+    spend_start_time: minSpend > 0 ? toSeconds(values.spend_start_time) : 0,
+    spend_end_time: minSpend > 0 ? toSeconds(values.spend_end_time) : 0,
+    min_invites: minInvites,
+    invite_start_time: minInvites > 0 ? toSeconds(values.invite_start_time) : 0,
+    invite_end_time: minInvites > 0 ? toSeconds(values.invite_end_time) : 0,
+    rank_metric: leaderboard ? values.rank_metric : '',
+    rank_min_value: leaderboard
+      ? rankMinValueToPayload(values.rank_metric, values.rank_min_value)
+      : 0,
     wheel_total_limit: values.mode === 'wheel' ? values.wheel_total_limit : 0,
     wheel_daily_limit: values.mode === 'wheel' ? values.wheel_daily_limit : 0,
     prizes: values.prizes.map((prize) => ({
@@ -243,6 +291,7 @@ export function activityToFormValues(
   return {
     title: activity.title,
     description: activity.description,
+    rules: activity.rules ?? '',
     mode: activity.mode,
     status: activity.status === 'draft' ? 'draft' : 'active',
     start_time: toDate(activity.start_time),
@@ -255,6 +304,11 @@ export function activityToFormValues(
     min_invites: activity.min_invites,
     invite_start_time: toDate(activity.invite_start_time),
     invite_end_time: toDate(activity.invite_end_time),
+    rank_metric: activity.rank_metric || 'recharge',
+    rank_min_value:
+      activity.rank_metric === 'consumption'
+        ? quotaUnitsToEditableAmount(activity.rank_min_value)
+        : activity.rank_min_value,
     wheel_total_limit: activity.wheel_total_limit,
     wheel_daily_limit: activity.wheel_daily_limit,
     prizes: activity.prizes.map((prize) => ({
