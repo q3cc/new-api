@@ -46,6 +46,8 @@ function Fixture() {
       <SettingsPageProvider actionsContainer={container}>
         <AffiliateRebateSection
           defaultValues={{
+            QuotaForInviter: 500_000,
+            QuotaForInvitee: 0,
             'affiliate_rebate_setting.enabled': true,
             'affiliate_rebate_setting.rate_percent': 10,
             'affiliate_rebate_setting.confirm_days': 7,
@@ -98,6 +100,27 @@ test('saving a decimal rebate rate submits only that setting key as a number', a
     expect(api.put).toHaveBeenCalledWith('/api/option/', {
       key: 'affiliate_rebate_setting.rate_percent',
       value: 12.5,
+    })
+  )
+  expect(api.put).toHaveBeenCalledTimes(1)
+})
+
+test('changing the inviter reward saves it under its original option key', async () => {
+  await renderSettings()
+  const field = screen.getByRole('spinbutton', { name: 'Inviter Reward' })
+  expect(field).toHaveValue(500_000)
+
+  fireEvent.change(field, { target: { value: '1000' } })
+  const save = screen.getByRole('button', {
+    name: 'Save referral rebate settings',
+  })
+  await waitFor(() => expect(save).toBeEnabled())
+  fireEvent.click(save)
+
+  await waitFor(() =>
+    expect(api.put).toHaveBeenCalledWith('/api/option/', {
+      key: 'QuotaForInviter',
+      value: 1000,
     })
   )
   expect(api.put).toHaveBeenCalledTimes(1)

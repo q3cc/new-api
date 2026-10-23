@@ -7785,7 +7785,7 @@
     "Rebates from payments of users you invited. Each one is credited to your referral rewards after its confirmation period.": "招待したユーザーの支払いによるリベートです。確認期間の経過後、紹介報酬に付与されます。",
     "No rebates yet": "リベートはまだありません",
     "Referral Rebates": "紹介リベート",
-    "Referral rebates require compliance confirmation in Payment Gateway settings.": "紹介リベートを有効にするには、決済ゲートウェイ設定でコンプライアンス確認が必要です。",
+    "Referral rebates and non-zero invitation rewards require compliance confirmation in Payment Gateway settings.": "紹介リベートと 0 以外の招待報酬を使うには、決済ゲートウェイ設定でコンプライアンスの確認が必要です。",
     "Save referral rebate settings": "紹介リベート設定を保存",
     "Enable referral rebates": "紹介リベートを有効にする",
     "Inviters earn a share of every online top-up and subscription paid by the users they invited.": "招待したユーザーがオンラインでチャージやサブスクリプションを支払うたびに、招待者はその一部を受け取ります。",

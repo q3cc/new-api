@@ -7785,7 +7785,7 @@
     "Rebates from payments of users you invited. Each one is credited to your referral rewards after its confirmation period.": "Remises issues des paiements des utilisateurs que vous avez invités. Chacune est ajoutée à vos récompenses de parrainage après sa période de confirmation.",
     "No rebates yet": "Aucune remise pour le moment",
     "Referral Rebates": "Remises de parrainage",
-    "Referral rebates require compliance confirmation in Payment Gateway settings.": "Les remises de parrainage nécessitent la confirmation de conformité dans les paramètres de la passerelle de paiement.",
+    "Referral rebates and non-zero invitation rewards require compliance confirmation in Payment Gateway settings.": "Les remises de parrainage et les récompenses d'invitation non nulles nécessitent la confirmation de conformité dans les paramètres de la passerelle de paiement.",
     "Save referral rebate settings": "Enregistrer les paramètres de remise de parrainage",
     "Enable referral rebates": "Activer les remises de parrainage",
     "Inviters earn a share of every online top-up and subscription paid by the users they invited.": "Les parrains reçoivent une part de chaque recharge en ligne et de chaque abonnement payés par les utilisateurs qu'ils ont invités.",

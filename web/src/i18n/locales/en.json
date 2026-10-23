@@ -7785,7 +7785,7 @@
     "Rebates from payments of users you invited. Each one is credited to your referral rewards after its confirmation period.": "Rebates from payments of users you invited. Each one is credited to your referral rewards after its confirmation period.",
     "No rebates yet": "No rebates yet",
     "Referral Rebates": "Referral Rebates",
-    "Referral rebates require compliance confirmation in Payment Gateway settings.": "Referral rebates require compliance confirmation in Payment Gateway settings.",
+    "Referral rebates and non-zero invitation rewards require compliance confirmation in Payment Gateway settings.": "Referral rebates and non-zero invitation rewards require compliance confirmation in Payment Gateway settings.",
     "Save referral rebate settings": "Save referral rebate settings",
     "Enable referral rebates": "Enable referral rebates",
     "Inviters earn a share of every online top-up and subscription paid by the users they invited.": "Inviters earn a share of every online top-up and subscription paid by the users they invited.",

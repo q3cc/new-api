@@ -7785,7 +7785,7 @@
     "Rebates from payments of users you invited. Each one is credited to your referral rewards after its confirmation period.": "Hoàn tiền từ các khoản thanh toán của người dùng bạn mời. Mỗi khoản được cộng vào phần thưởng giới thiệu sau thời gian xác nhận.",
     "No rebates yet": "Chưa có hoàn tiền",
     "Referral Rebates": "Hoàn tiền giới thiệu",
-    "Referral rebates require compliance confirmation in Payment Gateway settings.": "Hoàn tiền giới thiệu cần xác nhận tuân thủ trong cài đặt cổng thanh toán.",
+    "Referral rebates and non-zero invitation rewards require compliance confirmation in Payment Gateway settings.": "Hoàn tiền giới thiệu và phần thưởng mời khác 0 cần xác nhận tuân thủ trong cài đặt cổng thanh toán.",
     "Save referral rebate settings": "Lưu cài đặt hoàn tiền giới thiệu",
     "Enable referral rebates": "Bật hoàn tiền giới thiệu",
     "Inviters earn a share of every online top-up and subscription paid by the users they invited.": "Người mời nhận một phần của mỗi lần nạp tiền trực tuyến và gói đăng ký do người được mời thanh toán.",

@@ -7785,7 +7785,7 @@
     "Rebates from payments of users you invited. Each one is credited to your referral rewards after its confirmation period.": "Вознаграждения с платежей приглашённых вами пользователей. Каждое зачисляется в реферальные награды после периода подтверждения.",
     "No rebates yet": "Вознаграждений пока нет",
     "Referral Rebates": "Реферальные вознаграждения",
-    "Referral rebates require compliance confirmation in Payment Gateway settings.": "Для реферальных вознаграждений требуется подтверждение соответствия в настройках платёжного шлюза.",
+    "Referral rebates and non-zero invitation rewards require compliance confirmation in Payment Gateway settings.": "Реферальные вознаграждения и ненулевые бонусы за приглашения требуют подтверждения соответствия в настройках платёжного шлюза.",
     "Save referral rebate settings": "Сохранить настройки реферальных вознаграждений",
     "Enable referral rebates": "Включить реферальные вознаграждения",
     "Inviters earn a share of every online top-up and subscription paid by the users they invited.": "Пригласившие получают долю с каждого онлайн-пополнения и подписки, оплаченных приглашёнными пользователями.",

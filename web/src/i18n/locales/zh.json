@@ -7785,7 +7785,7 @@
     "Rebates from payments of users you invited. Each one is credited to your referral rewards after its confirmation period.": "来自你邀请用户付款的返利，每笔在确认期结束后计入邀请奖励。",
     "No rebates yet": "暂无返利",
     "Referral Rebates": "推荐返利",
-    "Referral rebates require compliance confirmation in Payment Gateway settings.": "开启推荐返利需要先在支付网关设置中确认合规条款。",
+    "Referral rebates and non-zero invitation rewards require compliance confirmation in Payment Gateway settings.": "推荐返利和非零的邀请奖励需要先在支付网关设置中确认合规条款。",
     "Save referral rebate settings": "保存推荐返利设置",
     "Enable referral rebates": "启用推荐返利",
     "Inviters earn a share of every online top-up and subscription paid by the users they invited.": "被邀请用户每次在线充值或购买订阅，邀请人都可获得一定比例的返利。",

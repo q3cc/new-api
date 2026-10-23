@@ -33,7 +33,9 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import { formatQuota } from '@/lib/format'
 
 import {
   SettingsForm,
@@ -46,6 +48,9 @@ import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 
 const affiliateRebateSchema = z.object({
+  // One-off quota granted when an invited user registers.
+  inviter_reward: z.number().int().min(0),
+  invitee_reward: z.number().int().min(0),
   enabled: z.boolean(),
   // Kept as typed so decimals like "1." can be entered, then coerced.
   rate_percent: z.coerce
@@ -67,14 +72,26 @@ const affiliateRebateSchema = z.object({
 
 type AffiliateRebateFormValues = z.infer<typeof affiliateRebateSchema>
 type AffiliateRebateField = keyof AffiliateRebateFormValues
+type AffiliateRewardField = 'inviter_reward' | 'invitee_reward'
 type AffiliateRebateNumberField = Exclude<
   AffiliateRebateField,
-  'enabled' | 'cancel_shared_ip'
+  'enabled' | 'cancel_shared_ip' | AffiliateRewardField
 >
+
+// The invitation rewards keep their original top-level option keys.
+const OPTION_KEYS = {
+  inviter_reward: 'QuotaForInviter',
+  invitee_reward: 'QuotaForInvitee',
+  enabled: 'affiliate_rebate_setting.enabled',
+  rate_percent: 'affiliate_rebate_setting.rate_percent',
+  confirm_days: 'affiliate_rebate_setting.confirm_days',
+  risk_review_score: 'affiliate_rebate_setting.risk_review_score',
+  cancel_shared_ip: 'affiliate_rebate_setting.cancel_shared_ip',
+} as const satisfies Record<AffiliateRebateField, string>
 
 export type AffiliateRebateSettingValues = {
   [
-    K in AffiliateRebateField as `affiliate_rebate_setting.${K}`
+    K in AffiliateRebateField as (typeof OPTION_KEYS)[K]
   ]: AffiliateRebateFormValues[K]
 }
 
@@ -82,6 +99,8 @@ function toFormValues(
   defaults: AffiliateRebateSettingValues
 ): AffiliateRebateFormValues {
   return {
+    inviter_reward: defaults.QuotaForInviter,
+    invitee_reward: defaults.QuotaForInvitee,
     enabled: defaults['affiliate_rebate_setting.enabled'],
     rate_percent: defaults['affiliate_rebate_setting.rate_percent'],
     confirm_days: defaults['affiliate_rebate_setting.confirm_days'],
@@ -99,6 +118,28 @@ export function AffiliateRebateSection(props: AffiliateRebateSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const complianceConfirmed = props.complianceConfirmed ?? true
+  const rewardFields: Array<{
+    name: AffiliateRewardField
+    label: string
+    describe: (formattedQuota: string) => string
+  }> = [
+    {
+      name: 'inviter_reward',
+      label: t('Inviter Reward'),
+      describe: (formattedQuota) =>
+        t('Quota given to users who invite others ({{formattedQuota}})', {
+          formattedQuota,
+        }),
+    },
+    {
+      name: 'invitee_reward',
+      label: t('Invitee Reward'),
+      describe: (formattedQuota) =>
+        t('Quota given to invited users ({{formattedQuota}})', {
+          formattedQuota,
+        }),
+    },
+  ]
   const numberFields: Array<{
     name: AffiliateRebateNumberField
     label: string
@@ -154,7 +195,7 @@ export function AffiliateRebateSection(props: AffiliateRebateSectionProps) {
     for (const name of Object.keys(values) as AffiliateRebateField[]) {
       if (values[name] !== initial[name]) {
         await updateOption.mutateAsync({
-          key: `affiliate_rebate_setting.${name}`,
+          key: OPTION_KEYS[name],
           value: values[name],
         })
       }
@@ -168,7 +209,7 @@ export function AffiliateRebateSection(props: AffiliateRebateSectionProps) {
         <Alert variant='destructive'>
           <AlertDescription>
             {t(
-              'Referral rebates require compliance confirmation in Payment Gateway settings.'
+              'Referral rebates and non-zero invitation rewards require compliance confirmation in Payment Gateway settings.'
             )}
           </AlertDescription>
         </Alert>
@@ -181,6 +222,36 @@ export function AffiliateRebateSection(props: AffiliateRebateSectionProps) {
             isSaveDisabled={!form.formState.isDirty}
             saveLabel='Save referral rebate settings'
           />
+          <SettingsFormGrid>
+            {rewardFields.map((item) => (
+              <FormField
+                key={item.name}
+                control={form.control}
+                name={item.name}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{item.label}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={0}
+                        step={1}
+                        {...field}
+                        onChange={(e) =>
+                          field.onChange(Number.parseInt(e.target.value) || 0)
+                        }
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {item.describe(formatQuota(field.value))}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ))}
+          </SettingsFormGrid>
+          <Separator />
           <FormField
             control={form.control}
             name='enabled'
