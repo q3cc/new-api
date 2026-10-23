@@ -7812,6 +7812,11 @@
     "Rejected by administrator": "管理者により却下",
     "Invitee risk score is too high": "被招待者のリスクスコアが高すぎます",
     "Inviter or invitee is disabled or deleted": "招待者または被招待者が無効化または削除されています",
-    "The invitation has been cancelled": "招待は取り消されました"
+    "The invitation has been cancelled": "招待は取り消されました",
+    "This conversation no longer exists": "この会話はもう存在しません",
+    "It may have been deleted in another tab or on another device.": "別のタブまたは別のデバイスで削除された可能性があります。",
+    "Start a new conversation": "新しい会話を始める",
+    "Open latest conversation": "最新の会話を開く",
+    "This conversation was deleted elsewhere. Save it as a new conversation to keep these messages.": "この会話は別の場所で削除されました。これらのメッセージを残すには、新しい会話として保存してください。"
   }
 }

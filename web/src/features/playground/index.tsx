@@ -20,6 +20,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   Loader2Icon,
+  MessageSquareOffIcon,
   PanelLeftIcon,
   PencilIcon,
   SparklesIcon,
@@ -28,6 +29,7 @@ import {
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
@@ -46,7 +48,10 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
-import { getServerErrorMessage } from '@/lib/server-error-message'
+import {
+  getServerErrorMessage,
+  getServerErrorStatus,
+} from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { ConversationDialogs } from './components/conversation-dialogs'
@@ -95,6 +100,9 @@ function PlaygroundWorkspace(props: { owner: number }) {
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null)
   const [retry, setRetry] = useState(0)
   const blankConversation = useRef<Promise<string | undefined> | null>(null)
+  // The last conversation that failed to open; it is not reopened until the
+  // user retries or picks another one, so a list refresh does not flicker it.
+  const failedOpen = useRef<{ id: number; retry: number } | null>(null)
   const entries = Object.values(snapshot.entries)
   const current = snapshot.entries[activeKey]
   const generatingReply = current?.row.document.messages.some(
@@ -140,6 +148,10 @@ function PlaygroundWorkspace(props: { owner: number }) {
       }
       return
     }
+    if (failedOpen.current?.id === id && failedOpen.current.retry === retry) {
+      return
+    }
+    failedOpen.current = null
     const existing = Object.values(workspace.getSnapshot().entries).find(
       (entry) => entry.row.id === id
     )
@@ -162,7 +174,15 @@ function PlaygroundWorkspace(props: { owner: number }) {
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) setOpenError(error)
+        if (cancelled) return
+        failedOpen.current = { id, retry }
+        setOpenError(error)
+        // Deleted elsewhere: drop it from a list that may still show it.
+        if (getServerErrorStatus(error) === 404) {
+          void queryClient.invalidateQueries({
+            queryKey: ['playground-conversations', props.owner],
+          })
+        }
       })
       .finally(() => {
         if (!cancelled) setOpening(false)
@@ -172,6 +192,8 @@ function PlaygroundWorkspace(props: { owner: number }) {
     }
   }, [
     workspace,
+    queryClient,
+    props.owner,
     snapshot.ready,
     search.conversation,
     firstId,
@@ -213,6 +235,10 @@ function PlaygroundWorkspace(props: { owner: number }) {
     void navigate({ search: id ? { conversation: id } : {} })
     setMobileOpen(false)
   }
+  const openedMissing = getServerErrorStatus(openError) === 404
+  const latestId = list.data?.items.find(
+    (item) => item.id !== search.conversation
+  )?.id
   function select(id: number) {
     setMobileOpen(false)
     void navigate({ search: { conversation: id } })
@@ -278,9 +304,10 @@ function PlaygroundWorkspace(props: { owner: number }) {
             <PanelLeftIcon aria-hidden='true' />
           </Button>
           <span className='min-w-0 flex-1 truncate'>
-            {current?.row.title === 'Imported conversation'
-              ? t('Imported conversation')
-              : current?.row.title || t('New conversation')}
+            {current &&
+              (current.row.title === 'Imported conversation'
+                ? t('Imported conversation')
+                : current.row.title || t('New conversation'))}
           </span>
           {current?.saving && (
             <span role='status' className='text-muted-foreground text-xs'>
@@ -425,7 +452,28 @@ function PlaygroundWorkspace(props: { owner: number }) {
           </p>
         )}
         {(!snapshot.ready || opening) && <LoadingState />}
-        {!!openError && (
+        {openedMissing && (
+          <EmptyState
+            icon={MessageSquareOffIcon}
+            title={t('This conversation no longer exists')}
+            description={t(
+              'It may have been deleted in another tab or on another device.'
+            )}
+            action={
+              <>
+                <Button onClick={() => void create()}>
+                  {t('Start a new conversation')}
+                </Button>
+                {latestId !== undefined && (
+                  <Button variant='outline' onClick={() => select(latestId)}>
+                    {t('Open latest conversation')}
+                  </Button>
+                )}
+              </>
+            }
+          />
+        )}
+        {!!openError && !openedMissing && (
           <ErrorState
             description={getServerErrorMessage(
               openError,

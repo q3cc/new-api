@@ -7812,6 +7812,11 @@
     "Rejected by administrator": "Отклонено администратором",
     "Invitee risk score is too high": "Слишком высокая оценка риска приглашённого",
     "Inviter or invitee is disabled or deleted": "Пригласивший или приглашённый отключён или удалён",
-    "The invitation has been cancelled": "Приглашение отменено"
+    "The invitation has been cancelled": "Приглашение отменено",
+    "This conversation no longer exists": "Этой беседы больше нет",
+    "It may have been deleted in another tab or on another device.": "Возможно, её удалили в другой вкладке или на другом устройстве.",
+    "Start a new conversation": "Начать новую беседу",
+    "Open latest conversation": "Открыть последнюю беседу",
+    "This conversation was deleted elsewhere. Save it as a new conversation to keep these messages.": "Эта беседа была удалена в другом месте. Сохраните её как новую беседу, чтобы не потерять эти сообщения."
   }
 }

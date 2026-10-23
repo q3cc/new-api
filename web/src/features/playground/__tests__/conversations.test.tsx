@@ -34,6 +34,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
+import { AxiosError, AxiosHeaders } from 'axios'
 import { StrictMode } from 'react'
 import { afterEach, assert, beforeEach, expect, it, vi } from 'vitest'
 
@@ -71,6 +72,22 @@ function row(id: number, title: string): SavedConversation {
   document.draft = `draft ${title}`
   document.titleGeneration = title ? 'manual' : 'awaiting_reply'
   return { id, title, revision: 1, create_time: id, update_time: id, document }
+}
+// The server's answer for a conversation that was deleted.
+function notFound() {
+  return new AxiosError(
+    'Conversation not found',
+    'ERR_BAD_REQUEST',
+    undefined,
+    undefined,
+    {
+      data: { success: false, message: 'Conversation not found' },
+      status: 404,
+      statusText: 'Not Found',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    }
+  )
 }
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
@@ -140,7 +157,7 @@ beforeEach(() => {
       }
     }
     const item = records.get(Number(url?.split('/').at(-1)))
-    if (!item) throw new Error('Conversation not found')
+    if (!item) throw notFound()
     return { data: { success: true, data: structuredClone(item) } }
   })
   vi.spyOn(api, 'put').mockImplementation(async (url, body) => {
@@ -154,7 +171,8 @@ beforeEach(() => {
     }
     const write = JSON.parse(body as string) as ConversationWrite
     const id = Number(url?.split('/').at(-1))
-    const previous = records.get(id) ?? row(id, '')
+    const previous = records.get(id)
+    if (!previous) throw notFound()
     const value = {
       ...previous,
       title: write.title,
@@ -513,7 +531,7 @@ it.each(['conversation', 'default', 'legacy'])(
   }
 )
 
-it('switches saved reply versions and keeps messages left aligned', async () => {
+it('switches saved reply versions and shows the question on the right and the reply on the left', async () => {
   const first = records.get(1)
   assert(first)
   first.document.messages = [
@@ -541,9 +559,13 @@ it('switches saved reply versions and keeps messages left aligned', async () => 
   await waitFor(() =>
     expect(records.get(1)?.document.messages[1].selectedVersionId).toBe('a1')
   )
-  for (const content of ['Version question', 'First answer']) {
-    expect(screen.getByText(content).closest('.text-left')).not.toBeNull()
-  }
+  // Bubbles sit on their sides while their text stays left aligned.
+  expect(
+    screen.getByText('Version question').closest('.text-left')
+  ).toHaveClass('items-end')
+  expect(screen.getByText('First answer').closest('.text-left')).toHaveClass(
+    'items-start'
+  )
   view.unmount()
   renderPlayground()
   expect(await screen.findByText('First answer')).toBeVisible()
@@ -619,6 +641,73 @@ it('opens an empty conversation when there is no server history', async () => {
         )
       ).toBe(true),
     { timeout: 4000 }
+  )
+})
+
+it('explains a deleted conversation opened from the URL and offers the latest remaining one', async () => {
+  records.delete(2)
+  const view = renderPlayground('?conversation=2')
+  expect(
+    await screen.findByText('This conversation no longer exists')
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Retry' })
+  ).not.toBeInTheDocument()
+  // The header names no conversation while none is open.
+  expect(
+    screen.queryByText('New conversation', { selector: 'header span' })
+  ).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Open latest conversation' })
+  )
+  await screen.findByDisplayValue('draft Alpha')
+  expect(view.router.state.location.search).toMatchObject({ conversation: 1 })
+})
+
+it('starts a new conversation from a deleted one when no other conversation remains', async () => {
+  records.clear()
+  renderPlayground('?conversation=2')
+  await screen.findByText('This conversation no longer exists')
+  expect(
+    screen.queryByRole('button', { name: 'Open latest conversation' })
+  ).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Start a new conversation' })
+  )
+  expect(await screen.findByPlaceholderText('Ask anything')).toHaveValue('')
+  expect(
+    screen.queryByText('This conversation no longer exists')
+  ).not.toBeInTheDocument()
+})
+
+it('offers only saving as new when the open conversation was deleted elsewhere', async () => {
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  records.delete(1)
+  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+    target: { value: 'keep this prompt' },
+  })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent(
+    'This conversation was deleted elsewhere. Save it as a new conversation to keep these messages.'
+  )
+  expect(within(alert).queryByRole('button', { name: 'Retry' })).toBeNull()
+  expect(
+    within(alert).queryByRole('button', { name: 'Load latest conversation' })
+  ).toBeNull()
+  expect(completions).toHaveLength(0)
+  fireEvent.click(
+    within(alert).getByRole('button', { name: 'Save as new conversation' })
+  )
+  await waitFor(() =>
+    expect(
+      [...records.values()].some((record) =>
+        record.document.messages.some(
+          (message) => message.versions[0]?.content === 'keep this prompt'
+        )
+      )
+    ).toBe(true)
   )
 })
 

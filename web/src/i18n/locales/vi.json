@@ -7812,6 +7812,11 @@
     "Rejected by administrator": "Bị quản trị viên từ chối",
     "Invitee risk score is too high": "Điểm rủi ro của người được mời quá cao",
     "Inviter or invitee is disabled or deleted": "Người mời hoặc người được mời đã bị vô hiệu hóa hoặc xóa",
-    "The invitation has been cancelled": "Lời mời đã bị hủy"
+    "The invitation has been cancelled": "Lời mời đã bị hủy",
+    "This conversation no longer exists": "Cuộc trò chuyện này không còn tồn tại",
+    "It may have been deleted in another tab or on another device.": "Có thể nó đã bị xóa ở một thẻ khác hoặc trên thiết bị khác.",
+    "Start a new conversation": "Bắt đầu cuộc trò chuyện mới",
+    "Open latest conversation": "Mở cuộc trò chuyện gần nhất",
+    "This conversation was deleted elsewhere. Save it as a new conversation to keep these messages.": "Cuộc trò chuyện này đã bị xóa ở nơi khác. Hãy lưu thành cuộc trò chuyện mới để giữ lại các tin nhắn này."
   }
 }

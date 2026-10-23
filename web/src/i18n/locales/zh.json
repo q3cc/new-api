@@ -7812,6 +7812,11 @@
     "Rejected by administrator": "管理员驳回",
     "Invitee risk score is too high": "被邀请人风险分过高",
     "Inviter or invitee is disabled or deleted": "邀请人或被邀请人已被禁用或删除",
-    "The invitation has been cancelled": "邀请关系已取消"
+    "The invitation has been cancelled": "邀请关系已取消",
+    "This conversation no longer exists": "该会话已不存在",
+    "It may have been deleted in another tab or on another device.": "它可能已在其他标签页或设备上被删除。",
+    "Start a new conversation": "开始新会话",
+    "Open latest conversation": "打开最近的会话",
+    "This conversation was deleted elsewhere. Save it as a new conversation to keep these messages.": "此会话已在其他地方删除。另存为新会话即可保留这些消息。"
   }
 }

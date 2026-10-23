@@ -32,8 +32,7 @@ export function getMessageAlignment(
   return message.from === MESSAGE_ROLES.USER ? 'right' : 'left'
 }
 
+// Only the bubble moves; its text stays left aligned so long messages read well.
 export function getMessageAlignmentClass(alignment: MessageAlignment): string {
-  return alignment === 'right'
-    ? 'items-end text-right'
-    : 'items-start text-left'
+  return alignment === 'right' ? 'items-end text-left' : 'items-start text-left'
 }

@@ -7812,6 +7812,11 @@
     "Rejected by administrator": "Rejected by administrator",
     "Invitee risk score is too high": "Invitee risk score is too high",
     "Inviter or invitee is disabled or deleted": "Inviter or invitee is disabled or deleted",
-    "The invitation has been cancelled": "The invitation has been cancelled"
+    "The invitation has been cancelled": "The invitation has been cancelled",
+    "This conversation no longer exists": "This conversation no longer exists",
+    "It may have been deleted in another tab or on another device.": "It may have been deleted in another tab or on another device.",
+    "Start a new conversation": "Start a new conversation",
+    "Open latest conversation": "Open latest conversation",
+    "This conversation was deleted elsewhere. Save it as a new conversation to keep these messages.": "This conversation was deleted elsewhere. Save it as a new conversation to keep these messages."
   }
 }

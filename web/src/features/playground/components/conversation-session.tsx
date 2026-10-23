@@ -252,8 +252,8 @@ function ConversationView(props: ViewProps) {
     updateConfig,
   })
   const error = props.entry.error
-  const conflict =
-    isAxiosError(error) && [404, 409].includes(error.response?.status ?? 0)
+  const status = isAxiosError(error) ? error.response?.status : undefined
+  const deleted = status === 404
   // Compressing only helps when there are older turns to summarize; a single
   // over-long message gets an explanation instead of a button.
   const canCompressContext = shouldCompress(document, 1, 1)
@@ -309,13 +309,18 @@ function ConversationView(props: ViewProps) {
           role='alert'
         >
           <span>
-            {getServerErrorMessage(error, t('Failed to save conversation'))}
+            {deleted
+              ? t(
+                  'This conversation was deleted elsewhere. Save it as a new conversation to keep these messages.'
+                )
+              : getServerErrorMessage(error, t('Failed to save conversation'))}
           </span>
-          {conflict ? (
+          {status === 409 && (
             <Button size='sm' variant='outline' onClick={props.onReload}>
               {t('Load latest conversation')}
             </Button>
-          ) : (
+          )}
+          {status !== 409 && !deleted && (
             <Button
               size='sm'
               variant='outline'

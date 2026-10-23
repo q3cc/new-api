@@ -7812,6 +7812,11 @@
     "Rejected by administrator": "Rejeté par un administrateur",
     "Invitee risk score is too high": "Le score de risque de l'invité est trop élevé",
     "Inviter or invitee is disabled or deleted": "Le parrain ou l'invité est désactivé ou supprimé",
-    "The invitation has been cancelled": "L'invitation a été annulée"
+    "The invitation has been cancelled": "L'invitation a été annulée",
+    "This conversation no longer exists": "Cette conversation n'existe plus",
+    "It may have been deleted in another tab or on another device.": "Elle a peut-être été supprimée dans un autre onglet ou sur un autre appareil.",
+    "Start a new conversation": "Démarrer une nouvelle conversation",
+    "Open latest conversation": "Ouvrir la conversation la plus récente",
+    "This conversation was deleted elsewhere. Save it as a new conversation to keep these messages.": "Cette conversation a été supprimée ailleurs. Enregistrez-la comme nouvelle conversation pour conserver ces messages."
   }
 }
