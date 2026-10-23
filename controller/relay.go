@@ -23,6 +23,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -50,6 +51,8 @@ func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIErro
 		err = relay.ResponsesHelper(c, info)
 	case relayconstant.RelayModeAlphaSearch:
 		err = relay.AlphaSearchHelper(c, info)
+	case relayconstant.RelayModeToolsSearch, relayconstant.RelayModeToolsFetch:
+		err = relay.DeepSeekToolsHelper(c, info)
 	default:
 		err = relay.TextHelper(c, info)
 	}
@@ -93,6 +96,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			logger.LogError(c, common.LogText("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			upstreamURLs := common.UpstreamAddresses(c)
+			if relayFormat != types.RelayFormatOpenAIRealtime && c.Writer.Written() &&
+				strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
+				writeRelayStreamError(c, relayFormat, newAPIError)
+				return
+			}
+			if relayFormat != types.RelayFormatOpenAIRealtime {
+				c.Header("Content-Type", "application/json; charset=utf-8")
+			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError(upstreamURLs...))
@@ -132,6 +143,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			panic(recovered)
 		}
 	}()
+
+	generalSettings := operation_setting.GetGeneralSetting()
+	if relayFormat == types.RelayFormatClaude && relayInfo.IsStream && generalSettings.PingIntervalEnabled {
+		stopKeepAlive := helper.StartStreamKeepAlive(c, time.Duration(generalSettings.PingIntervalSeconds)*time.Second)
+		defer stopKeepAlive()
+	}
 
 	if newAPIError = relay.PrepareRequestBilling(c, relayInfo); newAPIError != nil {
 		return
@@ -215,9 +232,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 }
 
-// A started SSE response must stay SSE, including its terminal error. Before
-// any bytes are sent, return an ordinary non-2xx JSON error instead.
+// writeRelayError answers a failed relay in the client's own shape. A started
+// SSE response stays SSE, including its terminal error; before any bytes are
+// sent it is an ordinary non-2xx JSON error.
 func writeRelayError(c *gin.Context, relayFormat types.RelayFormat, apiErr *types.NewAPIError, upstreamURLs ...string) {
+	if c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
+		writeRelayStreamError(c, relayFormat, apiErr)
+		return
+	}
 	payload := gin.H{"error": apiErr.ToOpenAIError(upstreamURLs...)}
 	if relayFormat == types.RelayFormatClaude {
 		payload = gin.H{"type": "error", "error": apiErr.ToClaudeError(upstreamURLs...)}
@@ -226,18 +248,31 @@ func writeRelayError(c *gin.Context, relayFormat types.RelayFormat, apiErr *type
 	if relayFormat == types.RelayFormatGemini {
 		payload = gin.H{"error": apiErr.ToGeminiError(upstreamURLs...)}
 	}
-	if c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
-		if relayFormat == types.RelayFormatClaude {
-			c.SSEvent("error", payload)
-			_ = helper.FlushWriter(c)
-		} else {
-			_ = helper.ObjectData(c, payload)
-		}
-		return
-	}
 	c.Header("Content-Type", "application/json; charset=utf-8")
 	c.Writer.Header().Del("Transfer-Encoding")
 	c.JSON(apiErr.StatusCode, payload)
+}
+
+func writeRelayStreamError(c *gin.Context, format types.RelayFormat, apiError *types.NewAPIError) {
+	// 心跳提交响应头后，最终错误继续通过同一个流返回。
+	status, _ := common.GetContextKeyType[*relaycommon.StreamStatus](c, constant.ContextKeyResponseStreamStatus)
+	if status == nil {
+		status = relaycommon.NewStreamStatus()
+		common.SetContextKey(c, constant.ContextKeyResponseStreamStatus, status)
+	}
+	status.MarkFailed(string(apiError.GetErrorCode()), string(apiError.GetErrorType()), apiError.StatusCode)
+	upstreamURLs := common.UpstreamAddresses(c)
+	if format == types.RelayFormatClaude {
+		_ = helper.ClaudeData(c, dto.ClaudeResponse{Type: "error", Error: apiError.ToClaudeError(upstreamURLs...)})
+		return
+	}
+	// Gemini streams end without [DONE] and carry google.rpc.Status errors.
+	if format == types.RelayFormatGemini {
+		_ = helper.ObjectData(c, gin.H{"error": apiError.ToGeminiError(upstreamURLs...)})
+		return
+	}
+	_ = helper.ObjectData(c, gin.H{"error": apiError.ToOpenAIError(upstreamURLs...)})
+	helper.Done(c)
 }
 
 // CountClaudeTokens implements Anthropic's token-counting utility endpoint.

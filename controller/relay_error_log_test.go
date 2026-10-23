@@ -79,14 +79,17 @@ func TestChatStreamFailureDoesNotCompleteOrEstimateUsage(t *testing.T) {
 			}
 			writeRelayError(ctx, types.RelayFormatOpenAI, apiErr)
 			if strings.HasPrefix(tc.body, content) {
+				// Output already reached the client: the error ends the stream.
 				assert.Equal(t, http.StatusOK, recorder.Code)
 				assert.Contains(t, recorder.Body.String(), `data: {"error":`)
+				assert.Equal(t, 1, strings.Count(recorder.Body.String(), "[DONE]"))
+				assert.Less(t, strings.Index(recorder.Body.String(), `data: {"error":`), strings.Index(recorder.Body.String(), "[DONE]"))
 			} else if !strings.Contains(recorder.Body.String(), "data:") {
 				assert.Equal(t, http.StatusBadGateway, recorder.Code)
 				assert.Equal(t, "application/json; charset=utf-8", recorder.Header().Get("Content-Type"))
 				assert.Empty(t, recorder.Header().Get("Transfer-Encoding"))
+				assert.NotContains(t, recorder.Body.String(), "[DONE]")
 			}
-			assert.NotContains(t, recorder.Body.String(), "[DONE]")
 			assert.NotContains(t, recorder.Body.String(), `"prompt_tokens":200000`)
 		})
 	}
@@ -168,10 +171,16 @@ func TestRelayStreamErrorUsesClientProtocol(t *testing.T) {
 			assert.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
 			body := recorder.Body.String()
 			assert.Contains(t, body, "stream failed")
-			assert.NotContains(t, body, "[DONE]")
-			assert.Equal(t, 2, strings.Count(body, "data:"))
+			// OpenAI streams end with [DONE] after the error; Claude and
+			// Gemini streams have no such terminator.
+			if format == types.RelayFormatOpenAI {
+				assert.Equal(t, 1, strings.Count(body, "[DONE]"))
+			} else {
+				assert.NotContains(t, body, "[DONE]")
+				assert.Equal(t, 2, strings.Count(body, "data:"))
+			}
 			if format == types.RelayFormatClaude {
-				assert.Contains(t, body, "event:error\n")
+				assert.Contains(t, body, "event: error\n")
 				assert.Contains(t, body, `"type":"error"`)
 			}
 			if format == types.RelayFormatGemini {
@@ -209,11 +218,12 @@ type streamBillingRecorder struct {
 	settles, refunds int
 }
 
-func (b *streamBillingRecorder) Settle(int) error       { b.settles++; return nil }
-func (b *streamBillingRecorder) Refund(*gin.Context)    { b.refunds++ }
-func (*streamBillingRecorder) NeedsRefund() bool        { return true }
-func (*streamBillingRecorder) GetPreConsumedQuota() int { return 100 }
-func (*streamBillingRecorder) Reserve(int) error        { return nil }
+func (b *streamBillingRecorder) Settle(int) error            { b.settles++; return nil }
+func (b *streamBillingRecorder) Refund(*gin.Context)         { b.refunds++ }
+func (*streamBillingRecorder) NeedsRefund() bool             { return true }
+func (*streamBillingRecorder) GetPreConsumedQuota() int      { return 100 }
+func (*streamBillingRecorder) Reserve(int) error             { return nil }
+func (*streamBillingRecorder) ReserveBeforeSubmit(int) error { return nil }
 
 func TestTextRelayStreamErrorRefundsWithoutSettlement(t *testing.T) {
 	service.InitHttpClient()

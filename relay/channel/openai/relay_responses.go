@@ -143,13 +143,24 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			return
 		}
 		for _, buffered := range pending {
-			sendResponsesStreamData(c, buffered.event, buffered.data)
 			accumulator.Observe(&buffered.event, common.StringToByteSlice(buffered.data))
+			if err := helper.ResponseChunkData(c, buffered.event, buffered.data); err != nil {
+				sr.Stop(err)
+				return
+			}
 		}
 		pending = nil
-		sendResponsesStreamData(c, event, data)
 		accumulator.Observe(&event, common.StringToByteSlice(data))
+		if err := helper.ResponseChunkData(c, event, data); err != nil {
+			sr.Stop(err)
+			return
+		}
 		if streamErr != nil {
+			sr.Done()
+			return
+		}
+		if (event.Type == "response.completed" || event.Type == "response.done") &&
+			event.Response != nil && info.StreamStatus.ResponseOutcome() == string(relaycommon.ResponseOutcomeCompleted) {
 			sr.Done()
 		}
 	})
@@ -176,8 +187,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	// An interrupted startup without an explicit failure retains the existing
 	// forwarding and accounting contract.
 	for _, buffered := range pending {
-		sendResponsesStreamData(c, buffered.event, buffered.data)
 		accumulator.Observe(&buffered.event, common.StringToByteSlice(buffered.data))
+		if err := helper.ResponseChunkData(c, buffered.event, buffered.data); err != nil {
+			break
+		}
 	}
 	return accumulator.Finish(), nil
 }

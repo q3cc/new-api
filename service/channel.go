@@ -27,16 +27,6 @@ func shouldCloseActiveWebSocketsAfterDisable(channelId int) bool {
 	return channel.Status != common.ChannelStatusEnabled
 }
 
-// RootUserLanguage returns the saved language of the root user, who receives
-// channel notices; it is empty when the root user saved none.
-func RootUserLanguage() string {
-	root := model.GetRootUser()
-	if root == nil {
-		return ""
-	}
-	return root.GetSetting().Language
-}
-
 // disable & notify
 func DisableChannel(channelError types.ChannelError, reason string) {
 	common.SysLog(common.LogText("channel %q (#%d) failed, disabling it, reason: %s", channelError.ChannelName, channelError.ChannelId, common.LocalLogPreview(reason)))
@@ -54,11 +44,10 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 		}
 		// Notifications must not delay failover after the status is persisted.
 		gopool.Go(func() {
-			lang := RootUserLanguage()
 			params := map[string]any{"Name": channelError.ChannelName, "Id": channelError.ChannelId, "Reason": reason}
-			subject := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params)
-			content := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
-			NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
+			NotifyChannelWatchers(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), func(lang string) (string, string) {
+				return i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params), i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
+			})
 		})
 	}
 }
@@ -66,11 +55,10 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 func EnableChannel(channelId int, usingKey string, channelName string) {
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "")
 	if success {
-		lang := RootUserLanguage()
 		params := map[string]any{"Name": channelName, "Id": channelId}
-		subject := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledSubject, params)
-		content := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledContent, params)
-		NotifyRootUser(formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)
+		NotifyChannelWatchers(formatNotifyType(channelId, common.ChannelStatusEnabled), func(lang string) (string, string) {
+			return i18n.Translate(lang, i18n.MsgChannelNotifyEnabledSubject, params), i18n.Translate(lang, i18n.MsgChannelNotifyEnabledContent, params)
+		})
 	}
 }
 

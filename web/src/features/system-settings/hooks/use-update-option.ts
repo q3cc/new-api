@@ -47,6 +47,8 @@ const STATUS_RELATED_KEYS = new Set([
   'passkey.rp_id',
   'passkey.legacy_rp_ids',
   'passkey.origins',
+  'QuotaRemindEnabled',
+  'QuotaRemindThreshold',
 ])
 
 const GROUP_RELATED_KEYS = new Set([
