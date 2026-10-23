@@ -25,6 +25,18 @@ type DevAuthSession = {
   username: string
 }
 
+// The preview login never contacts the server, so it is opt-in: a normal
+// development server signs in to the real backend. Set
+// VITE_DEV_AUTH_PREVIEW=true to preview the console without a backend.
+function isDevAuthPreviewEnabled(): boolean {
+  return (
+    import.meta.env.DEV &&
+    import.meta.env.MODE === 'development' &&
+    import.meta.env.VITE_DEV_AUTH_PREVIEW === 'true' &&
+    typeof window !== 'undefined'
+  )
+}
+
 function createDevUser(username: string): AuthUser {
   const displayName = username.trim()
   return {
@@ -46,13 +58,7 @@ function createDevUser(username: string): AuthUser {
 }
 
 export function getDevAuthUser(): AuthUser | null {
-  if (
-    !import.meta.env.DEV ||
-    import.meta.env.MODE !== 'development' ||
-    typeof window === 'undefined'
-  ) {
-    return null
-  }
+  if (!isDevAuthPreviewEnabled()) return null
 
   try {
     const saved = window.localStorage.getItem(DEV_AUTH_STORAGE_KEY)
@@ -72,13 +78,7 @@ export function getDevAuthUser(): AuthUser | null {
 }
 
 export function startDevAuthSession(username: string): AuthUser | null {
-  if (
-    !import.meta.env.DEV ||
-    import.meta.env.MODE !== 'development' ||
-    typeof window === 'undefined'
-  ) {
-    return null
-  }
+  if (!isDevAuthPreviewEnabled()) return null
 
   const user = createDevUser(username)
   const session: DevAuthSession = { username: user.username }

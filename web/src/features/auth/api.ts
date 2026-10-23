@@ -58,8 +58,7 @@ import type {
 
 // User login with username and password
 export async function login(payload: LoginPayload): Promise<LoginResponse> {
-  if (import.meta.env.DEV && import.meta.env.MODE === 'development') {
-    startDevAuthSession(payload.username)
+  if (startDevAuthSession(payload.username)) {
     const bundle = getDevAuthBundle()
     if (bundle) return { success: true, message: '', data: bundle }
   }
