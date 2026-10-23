@@ -357,6 +357,11 @@ export type BillingSettings = {
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
+  'affiliate_rebate_setting.enabled': boolean
+  'affiliate_rebate_setting.rate_percent': number
+  'affiliate_rebate_setting.confirm_days': number
+  'affiliate_rebate_setting.risk_review_score': number
+  'affiliate_rebate_setting.cancel_shared_ip': boolean
 }
 
 export type OperationsSettings = {

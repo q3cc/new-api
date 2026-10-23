@@ -120,6 +120,15 @@ func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[st
 	return ErrTopUpQuotaLimitExceeded
 }
 
+// creditPaidTopUpTx credits a paid top-up to its user and records the rebate
+// the user's inviter earns from it.
+func creditPaidTopUpTx(tx *gorm.DB, topUp *TopUp, creditedQuota int, updates map[string]any) error {
+	if err := creditTopUpQuota(tx, topUp.UserId, creditedQuota, updates); err != nil {
+		return err
+	}
+	return recordAffiliateRebateTx(tx, topUp.UserId, topUp.TradeNo, AffiliateRebateSourceTopUp, creditedQuota)
+}
+
 func (topUp *TopUp) Update() error {
 	var err error
 	err = DB.Save(topUp).Error
@@ -221,7 +230,7 @@ func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string, v
 		if err := tx.Save(topUp).Error; err != nil {
 			return err
 		}
-		return creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil)
+		return creditPaidTopUpTx(tx, topUp, quotaToAdd, nil)
 	})
 	if err != nil {
 		if !errors.Is(err, ErrTopUpNotFound) && !errors.Is(err, ErrPaymentMethodMismatch) && !errors.Is(err, ErrTopUpStatusInvalid) {
@@ -279,7 +288,7 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 		if err != nil || quota <= 0 {
 			return ErrInvalidTopUpQuota
 		}
-		return creditTopUpQuota(tx, topUp.UserId, quota, map[string]any{
+		return creditPaidTopUpTx(tx, topUp, quota, map[string]any{
 			"stripe_customer": customerId,
 		})
 	})
@@ -379,7 +388,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		}
 
 		// 增加用户额度（立即写库，保持一致性）
-		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {
+		if err := creditPaidTopUpTx(tx, topUp, quotaToAdd, nil); err != nil {
 			return err
 		}
 
@@ -459,7 +468,7 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 			}
 		}
 
-		return creditTopUpQuota(tx, topUp.UserId, quota, updateFields)
+		return creditPaidTopUpTx(tx, topUp, quota, updateFields)
 	})
 
 	if err != nil {
@@ -517,7 +526,7 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 			return err
 		}
 
-		return creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil)
+		return creditPaidTopUpTx(tx, topUp, quotaToAdd, nil)
 	})
 
 	if err != nil {
@@ -577,7 +586,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 			return err
 		}
 
-		return creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil)
+		return creditPaidTopUpTx(tx, topUp, quotaToAdd, nil)
 	})
 
 	if err != nil {

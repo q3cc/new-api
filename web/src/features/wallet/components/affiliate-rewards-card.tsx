@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Share2 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
@@ -25,9 +26,13 @@ import { Card, CardContent } from '@/components/ui/card'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatQuota } from '@/lib/format'
+import { toIntlLocale } from '@/i18n/languages'
+import { formatNumber, formatQuota } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
+import { useAffiliateRebates } from '../hooks/use-affiliate'
 import type { UserWalletData } from '../types'
+import { AffiliateRebatesDialog } from './dialogs/affiliate-rebates-dialog'
 
 interface AffiliateRewardsCardProps {
   user: UserWalletData | null
@@ -44,7 +49,10 @@ export function AffiliateRewardsCard({
   complianceConfirmed = true,
   loading,
 }: AffiliateRewardsCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const [rebatesOpen, setRebatesOpen] = useState(false)
+  const { data: rebates } = useAffiliateRebates()
   if (loading) {
     return (
       <Card data-card-hover='false' className='bg-muted/20 py-0'>
@@ -61,6 +69,15 @@ export function AffiliateRewardsCard({
   }
 
   const hasRewards = (user?.aff_quota ?? 0) > 0
+  const rebatesEnabled = rebates?.enabled === true
+  const stats = [
+    [t('Transferable'), formatQuota(user?.aff_quota ?? 0)],
+    ...(rebatesEnabled
+      ? [[t('Confirming'), formatQuota(rebates.pending_quota)]]
+      : []),
+    [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
+    [t('Invites'), String(user?.aff_count ?? 0)],
+  ]
 
   return (
     <Card data-card-hover='false' className='bg-muted/20 py-0'>
@@ -81,12 +98,13 @@ export function AffiliateRewardsCard({
           </div>
         </div>
 
-        <div className='grid grid-cols-3 gap-1.5 text-center'>
-          {[
-            [t('Pending'), formatQuota(user?.aff_quota ?? 0)],
-            [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
-            [t('Invites'), String(user?.aff_count ?? 0)],
-          ].map(([label, value]) => (
+        <div
+          className={cn(
+            'grid gap-1.5 text-center',
+            rebatesEnabled ? 'grid-cols-4' : 'grid-cols-3'
+          )}
+        >
+          {stats.map(([label, value]) => (
             <div key={label}>
               <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
                 {label}
@@ -123,6 +141,27 @@ export function AffiliateRewardsCard({
             </Button>
           )}
         </div>
+        {rebatesEnabled ? (
+          <div className='flex flex-wrap items-center justify-between gap-2 lg:col-span-3'>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'You earn {{rate}}% of every payment made by users you invite, credited after {{days}} days.',
+                {
+                  rate: formatNumber(rebates.rate_percent, locale),
+                  days: rebates.confirm_days,
+                }
+              )}
+            </p>
+            <Button
+              variant='outline'
+              size='sm'
+              className='h-8 shrink-0'
+              onClick={() => setRebatesOpen(true)}
+            >
+              {t('Rebate details')}
+            </Button>
+          </div>
+        ) : null}
         {!complianceConfirmed ? (
           <p className='text-muted-foreground text-xs lg:col-span-3'>
             {t(
@@ -131,6 +170,12 @@ export function AffiliateRewardsCard({
           </p>
         ) : null}
       </CardContent>
+      {rebatesEnabled ? (
+        <AffiliateRebatesDialog
+          open={rebatesOpen}
+          onOpenChange={setRebatesOpen}
+        />
+      ) : null}
     </Card>
   )
 }

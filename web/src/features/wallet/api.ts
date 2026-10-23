@@ -31,6 +31,7 @@ import type {
   StripePaymentResponse,
   AffiliateCodeResponse,
   AffiliateTransferResponse,
+  AffiliateRebatesResponse,
   BillingHistoryResponse,
   CompleteOrderRequest,
   CreemPaymentRequest,
@@ -201,6 +202,24 @@ export async function requestWaffoPancakePayment(
  */
 export async function getAffiliateCode(): Promise<AffiliateCodeResponse> {
   const res = await api.get('/api/user/aff')
+  return res.data
+}
+
+export const walletQueryKeys = {
+  affiliateRebates: (page: number, pageSize: number) =>
+    ['wallet', 'affiliate-rebates', page, pageSize] as const,
+}
+
+/**
+ * Get the caller's referral rebates and the amount still confirming
+ */
+export async function getAffiliateRebates(
+  page: number,
+  pageSize: number
+): Promise<AffiliateRebatesResponse> {
+  const res = await api.get('/api/user/aff/rebates', {
+    params: { p: page, page_size: pageSize },
+  })
   return res.data
 }
 

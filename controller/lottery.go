@@ -27,7 +27,8 @@ type lotteryDeliverRequest struct {
 	Note string `json:"note"`
 }
 
-func lotteryIdParam(c *gin.Context, name string) (int, bool) {
+// positiveIdParam reads a positive integer path parameter.
+func positiveIdParam(c *gin.Context, name string) (int, bool) {
 	id, err := strconv.Atoi(c.Param(name))
 	if err != nil || id <= 0 {
 		common.ApiErrorT(c, "Invalid parameters")
@@ -68,7 +69,7 @@ func GetLotteryActivities(c *gin.Context) {
 }
 
 func JoinLotteryActivity(c *gin.Context) {
-	id, ok := lotteryIdParam(c, "id")
+	id, ok := positiveIdParam(c, "id")
 	if !ok {
 		return
 	}
@@ -80,7 +81,7 @@ func JoinLotteryActivity(c *gin.Context) {
 }
 
 func SpinLotteryWheel(c *gin.Context) {
-	id, ok := lotteryIdParam(c, "id")
+	id, ok := positiveIdParam(c, "id")
 	if !ok {
 		return
 	}
@@ -126,7 +127,7 @@ func AdminCreateLotteryActivity(c *gin.Context) {
 }
 
 func AdminUpdateLotteryActivity(c *gin.Context) {
-	id, ok := lotteryIdParam(c, "id")
+	id, ok := positiveIdParam(c, "id")
 	if !ok {
 		return
 	}
@@ -144,7 +145,7 @@ func AdminUpdateLotteryActivity(c *gin.Context) {
 }
 
 func AdminDeleteLotteryActivity(c *gin.Context) {
-	id, ok := lotteryIdParam(c, "id")
+	id, ok := positiveIdParam(c, "id")
 	if !ok {
 		return
 	}
@@ -156,7 +157,7 @@ func AdminDeleteLotteryActivity(c *gin.Context) {
 }
 
 func AdminCancelLotteryActivity(c *gin.Context) {
-	id, ok := lotteryIdParam(c, "id")
+	id, ok := positiveIdParam(c, "id")
 	if !ok {
 		return
 	}
@@ -168,7 +169,7 @@ func AdminCancelLotteryActivity(c *gin.Context) {
 }
 
 func AdminDrawLotteryActivity(c *gin.Context) {
-	id, ok := lotteryIdParam(c, "id")
+	id, ok := positiveIdParam(c, "id")
 	if !ok {
 		return
 	}
@@ -189,7 +190,7 @@ func AdminDrawLotteryActivity(c *gin.Context) {
 }
 
 func AdminListLotteryEntries(c *gin.Context) {
-	id, ok := lotteryIdParam(c, "id")
+	id, ok := positiveIdParam(c, "id")
 	if !ok {
 		return
 	}
@@ -220,7 +221,7 @@ func AdminListLotteryEntries(c *gin.Context) {
 // AdminDeliverLotteryEntry marks a manual prize as handed out, or retries the
 // delivery of a balance or subscription prize.
 func AdminDeliverLotteryEntry(c *gin.Context) {
-	id, ok := lotteryIdParam(c, "id")
+	id, ok := positiveIdParam(c, "id")
 	if !ok {
 		return
 	}

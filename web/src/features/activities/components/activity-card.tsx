@@ -184,9 +184,9 @@ export function ActivityCard(props: ActivityCardProps) {
                 className='text-muted-foreground mt-0.5 size-4 shrink-0'
                 aria-hidden='true'
               />
-              <dd className='min-w-0'>
+              <dd className='min-w-0 space-y-1'>
                 {activity.min_spend > 0 ? (
-                  <>
+                  <div>
                     <span>
                       {t('Paid at least {{amount}}', {
                         amount: formatNumber(activity.min_spend, locale),
@@ -203,7 +203,9 @@ export function ActivityCard(props: ActivityCardProps) {
                     </span>
                     <span
                       className={
-                        activity.me.eligible ? 'text-success' : 'text-warning'
+                        activity.me.paid + 1e-9 >= activity.min_spend
+                          ? 'text-success'
+                          : 'text-warning'
                       }
                     >
                       {t('You paid {{paid}} of {{required}}', {
@@ -211,10 +213,41 @@ export function ActivityCard(props: ActivityCardProps) {
                         required: formatNumber(activity.min_spend, locale),
                       })}
                     </span>
-                  </>
-                ) : (
-                  t('No requirement')
-                )}
+                  </div>
+                ) : null}
+                {activity.min_invites > 0 ? (
+                  <div>
+                    <span>
+                      {t('Invited at least {{count}} users', {
+                        count: activity.min_invites,
+                      })}
+                    </span>
+                    <span className='text-muted-foreground block'>
+                      {t('Invitation window: {{window}}', {
+                        window: windowText(
+                          activity.invite_start_time,
+                          activity.invite_end_time,
+                          t
+                        ),
+                      })}
+                    </span>
+                    <span
+                      className={
+                        activity.me.invited >= activity.min_invites
+                          ? 'text-success'
+                          : 'text-warning'
+                      }
+                    >
+                      {t('Invited {{invited}} / {{required}}', {
+                        invited: formatNumber(activity.me.invited, locale),
+                        required: formatNumber(activity.min_invites, locale),
+                      })}
+                    </span>
+                  </div>
+                ) : null}
+                {activity.min_spend <= 0 && activity.min_invites <= 0
+                  ? t('No requirement')
+                  : null}
               </dd>
             </div>
           </dl>

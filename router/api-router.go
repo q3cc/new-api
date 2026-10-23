@@ -139,6 +139,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/passkey/verify/finish", middleware.UserCriticalRateLimit("security-verification"), middleware.DisableCache(), controller.PasskeyVerifyFinish)
 				selfRoute.DELETE("/passkey", middleware.DisableCache(), controller.PasskeyDelete)
 				selfRoute.GET("/aff", controller.GetAffCode)
+				selfRoute.GET("/aff/rebates", controller.GetSelfAffiliateRebates)
 				selfRoute.GET("/topup/info", controller.GetTopUpInfo)
 				selfRoute.GET("/topup/self", controller.GetUserTopUps)
 				selfRoute.GET("/topup/status", controller.GetTopUpStatus)
@@ -235,6 +236,18 @@ func SetApiRouter(router *gin.Engine) {
 			lotteryAdminRoute.POST("/activities/:id/draw", controller.AdminDrawLotteryActivity)
 			lotteryAdminRoute.GET("/activities/:id/entries", controller.AdminListLotteryEntries)
 			lotteryAdminRoute.POST("/entries/:id/deliver", controller.AdminDeliverLotteryEntry)
+		}
+		affiliateRoute := apiRouter.Group("/affiliate")
+		affiliateRoute.Use(middleware.AdminAuth())
+		{
+			affiliateRoute.GET("/summary", controller.GetAffiliateSummary)
+			affiliateRoute.GET("/invites", controller.GetAffiliateInvites)
+			affiliateRoute.POST("/invites/:id/cancel", controller.CancelAffiliateInvite)
+			affiliateRoute.GET("/invite-logs", controller.GetAffiliateInviteLogs)
+			affiliateRoute.POST("/invite-logs/:id/restore", controller.RestoreAffiliateInvite)
+			affiliateRoute.GET("/rebates", controller.GetAffiliateRebates)
+			affiliateRoute.POST("/rebates/:id/approve", controller.ApproveAffiliateRebate)
+			affiliateRoute.POST("/rebates/:id/reject", controller.RejectAffiliateRebate)
 		}
 
 		subscriptionAdminRoute := apiRouter.Group("/subscription/admin")

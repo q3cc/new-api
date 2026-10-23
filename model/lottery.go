@@ -68,6 +68,12 @@ type LotteryActivity struct {
 	SpendStartTime int64   `json:"spend_start_time" gorm:"bigint;default:0"`
 	SpendEndTime   int64   `json:"spend_end_time" gorm:"bigint;default:0"`
 
+	// MinInvites is how many accounts a user must have invited that
+	// registered within the invite window; 0 means no requirement.
+	MinInvites      int   `json:"min_invites" gorm:"type:int;default:0"`
+	InviteStartTime int64 `json:"invite_start_time" gorm:"bigint;default:0"`
+	InviteEndTime   int64 `json:"invite_end_time" gorm:"bigint;default:0"`
+
 	// Spins allowed per user for wheel activities; 0 means unlimited.
 	WheelTotalLimit int `json:"wheel_total_limit" gorm:"type:int;default:0"`
 	WheelDailyLimit int `json:"wheel_daily_limit" gorm:"type:int;default:0"`
@@ -154,7 +160,8 @@ func (a *LotteryActivity) Validate() error {
 	if a.Status != LotteryStatusDraft && a.Status != LotteryStatusActive {
 		return common.NewMessage("Invalid activity status")
 	}
-	if a.StartTime < 0 || a.EndTime < 0 || a.DrawTime < 0 || a.SpendStartTime < 0 || a.SpendEndTime < 0 {
+	if a.StartTime < 0 || a.EndTime < 0 || a.DrawTime < 0 || a.SpendStartTime < 0 || a.SpendEndTime < 0 ||
+		a.InviteStartTime < 0 || a.InviteEndTime < 0 {
 		return common.NewMessage("Invalid activity time")
 	}
 	if a.EndTime > 0 && a.EndTime <= a.StartTime {
@@ -170,6 +177,12 @@ func (a *LotteryActivity) Validate() error {
 	}
 	if a.MinSpend < 0 || a.MinSpend > 1e9 {
 		return common.NewMessage("Invalid minimum spending")
+	}
+	if a.InviteEndTime > 0 && a.InviteEndTime <= a.InviteStartTime {
+		return common.NewMessage("Invitation window end must be later than its start")
+	}
+	if a.MinInvites < 0 || a.MinInvites > 100000 {
+		return common.NewMessage("Invalid minimum invitations")
 	}
 	a.TargetParticipants = max(a.TargetParticipants, 0)
 	a.WheelTotalLimit = max(a.WheelTotalLimit, 0)
@@ -372,6 +385,7 @@ func UpdateLotteryActivity(update *LotteryActivity) error {
 		if err := tx.Model(&current).Select(
 			"title", "description", "mode", "status", "start_time", "end_time", "draw_time",
 			"target_participants", "min_spend", "spend_start_time", "spend_end_time",
+			"min_invites", "invite_start_time", "invite_end_time",
 			"wheel_total_limit", "wheel_daily_limit",
 		).Updates(update).Error; err != nil {
 			return err
@@ -433,9 +447,26 @@ func SumUserPaidMoney(tx *gorm.DB, userId int, from int64, to int64) (float64, e
 	return total, err
 }
 
+// CountUserInvitees counts the accounts a user currently invites that
+// registered within [from, to]; 0 leaves that side open. Cancelled
+// invitations and deleted accounts do not count.
+func CountUserInvitees(tx *gorm.DB, inviterId int, from int64, to int64) (int64, error) {
+	query := tx.Model(&User{}).Where("inviter_id = ?", inviterId)
+	if from > 0 {
+		query = query.Where("created_at >= ?", from)
+	}
+	if to > 0 {
+		query = query.Where("created_at <= ?", to)
+	}
+	var count int64
+	err := query.Count(&count).Error
+	return count, err
+}
+
 // LotteryUserState is what a user sees of their own standing in an activity.
 type LotteryUserState struct {
 	Paid           float64        `json:"paid"`
+	Invited        int64          `json:"invited"`
 	Eligible       bool           `json:"eligible"`
 	Joined         bool           `json:"joined"`
 	SpinsUsed      int            `json:"spins_used"`
@@ -452,6 +483,14 @@ func GetLotteryUserState(tx *gorm.DB, activity *LotteryActivity, userId int) (*L
 		}
 		state.Paid = paid
 		state.Eligible = paid+1e-9 >= activity.MinSpend
+	}
+	if activity.MinInvites > 0 {
+		invited, err := CountUserInvitees(tx, userId, activity.InviteStartTime, activity.InviteEndTime)
+		if err != nil {
+			return nil, err
+		}
+		state.Invited = invited
+		state.Eligible = state.Eligible && invited >= int64(activity.MinInvites)
 	}
 	// Counted rather than loaded: an unlimited wheel can hold many spins.
 	mine := func() *gorm.DB {
@@ -471,6 +510,14 @@ func GetLotteryUserState(tx *gorm.DB, activity *LotteryActivity, userId int) (*L
 	state.SpinsUsed = int(total)
 	state.SpinsUsedToday = int(today)
 	return state, nil
+}
+
+// requirementError names the requirement an ineligible user misses.
+func (s *LotteryUserState) requirementError(activity *LotteryActivity) error {
+	if activity.MinSpend > 0 && s.Paid+1e-9 < activity.MinSpend {
+		return common.NewMessage("You do not meet the spending requirement of this activity")
+	}
+	return common.NewMessage("You do not meet the invitation requirement of this activity")
 }
 
 // beginLotteryEntry takes the activity's entry slot inside tx and checks that
@@ -528,7 +575,7 @@ func JoinLotteryActivity(activityId int, userId int) error {
 			return common.NewMessage("You have already joined this activity")
 		}
 		if !state.Eligible {
-			return common.NewMessage("You do not meet the spending requirement of this activity")
+			return state.requirementError(activity)
 		}
 		if err := tx.Create(&LotteryEntry{ActivityId: activityId, UserId: userId, DeliveryStatus: LotteryDeliveryNone}).Error; err != nil {
 			return err
@@ -561,7 +608,7 @@ func SpinLotteryWheel(activityId int, userId int) (*LotteryEntry, error) {
 			return err
 		}
 		if !state.Eligible {
-			return common.NewMessage("You do not meet the spending requirement of this activity")
+			return state.requirementError(activity)
 		}
 		if activity.WheelTotalLimit > 0 && state.SpinsUsed >= activity.WheelTotalLimit {
 			return common.NewMessage("You have used all your spins for this activity")

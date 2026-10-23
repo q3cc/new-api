@@ -35,22 +35,30 @@ type UserIpPair struct {
 // ListUserIpPairs returns the distinct (user, IP) pairs seen since the given
 // timestamp, using the same sources as GetUserRecentIps.
 func ListUserIpPairs(since int64) ([]UserIpPair, error) {
+	return listUserIpPairs(since, nil)
+}
+
+// ListUserIpPairsForUsers is ListUserIpPairs limited to the given users.
+func ListUserIpPairsForUsers(userIds []int, since int64) ([]UserIpPair, error) {
+	if len(userIds) == 0 {
+		return nil, nil
+	}
+	return listUserIpPairs(since, userIds)
+}
+
+func listUserIpPairs(since int64, userIds []int) ([]UserIpPair, error) {
+	auditQuery := LOG_DB.Model(&AuditLog{}).Where("created_at >= ? AND ip <> ''", since)
+	logQuery := LOG_DB.Model(&Log{}).Where("created_at >= ? AND ip <> '' AND type IN ?", since, recentIpLogTypes)
+	if userIds != nil {
+		auditQuery = auditQuery.Where("user_id IN ?", userIds)
+		logQuery = logQuery.Where("user_id IN ?", userIds)
+	}
 	var auditPairs []UserIpPair
-	err := LOG_DB.Model(&AuditLog{}).
-		Select("user_id, ip").
-		Where("created_at >= ? AND ip <> ''", since).
-		Group("user_id, ip").
-		Scan(&auditPairs).Error
-	if err != nil {
+	if err := auditQuery.Select("user_id, ip").Group("user_id, ip").Scan(&auditPairs).Error; err != nil {
 		return nil, err
 	}
 	var logPairs []UserIpPair
-	err = LOG_DB.Model(&Log{}).
-		Select("user_id, ip").
-		Where("created_at >= ? AND ip <> '' AND type IN ?", since, recentIpLogTypes).
-		Group("user_id, ip").
-		Scan(&logPairs).Error
-	if err != nil {
+	if err := logQuery.Select("user_id, ip").Group("user_id, ip").Scan(&logPairs).Error; err != nil {
 		return nil, err
 	}
 	return append(auditPairs, logPairs...), nil

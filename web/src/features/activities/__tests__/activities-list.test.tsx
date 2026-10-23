@@ -50,6 +50,9 @@ function activity(
     min_spend: 0,
     spend_start_time: 0,
     spend_end_time: 0,
+    min_invites: 0,
+    invite_start_time: 0,
+    invite_end_time: 0,
     wheel_total_limit: 0,
     wheel_daily_limit: 0,
     entry_count: 0,
@@ -61,6 +64,7 @@ function activity(
     winner_count: 0,
     me: {
       paid: 0,
+      invited: 0,
       eligible: true,
       joined: false,
       spins_used: 0,

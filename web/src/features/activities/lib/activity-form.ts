@@ -21,7 +21,11 @@ import { z } from 'zod'
 
 import { parseQuotaFromDollars, quotaUnitsToEditableAmount } from '@/lib/format'
 
-import { LOTTERY_MAX_PRIZES, LOTTERY_PROBABILITY_SCALE } from '../constants'
+import {
+  LOTTERY_MAX_MIN_INVITES,
+  LOTTERY_MAX_PRIZES,
+  LOTTERY_PROBABILITY_SCALE,
+} from '../constants'
 import type { LotteryActivity, LotteryActivityPayload } from '../types'
 
 const prizeSchema = z.object({
@@ -52,6 +56,9 @@ export function getActivityFormSchema(t: TFunction) {
       min_spend: z.number().min(0),
       spend_start_time: z.date().optional(),
       spend_end_time: z.date().optional(),
+      min_invites: z.number().int().min(0),
+      invite_start_time: z.date().optional(),
+      invite_end_time: z.date().optional(),
       wheel_total_limit: z.number().int().min(0),
       wheel_daily_limit: z.number().int().min(0),
       prizes: z.array(prizeSchema),
@@ -94,6 +101,19 @@ export function getActivityFormSchema(t: TFunction) {
         issue(
           ['spend_end_time'],
           t('Spending window end must be later than its start')
+        )
+      }
+      if (values.min_invites > LOTTERY_MAX_MIN_INVITES) {
+        issue(['min_invites'], t('Invalid minimum invitations'))
+      }
+      if (
+        values.invite_start_time &&
+        values.invite_end_time &&
+        values.invite_end_time <= values.invite_start_time
+      ) {
+        issue(
+          ['invite_end_time'],
+          t('Invitation window end must be later than its start')
         )
       }
       if (
@@ -160,6 +180,9 @@ export const ACTIVITY_FORM_DEFAULT_VALUES: ActivityFormValues = {
   min_spend: 0,
   spend_start_time: undefined,
   spend_end_time: undefined,
+  min_invites: 0,
+  invite_start_time: undefined,
+  invite_end_time: undefined,
   wheel_total_limit: 1,
   wheel_daily_limit: 0,
   prizes: [{ ...EMPTY_PRIZE }],
@@ -190,6 +213,11 @@ export function activityFormToPayload(
     spend_start_time:
       values.min_spend > 0 ? toSeconds(values.spend_start_time) : 0,
     spend_end_time: values.min_spend > 0 ? toSeconds(values.spend_end_time) : 0,
+    min_invites: values.min_invites,
+    invite_start_time:
+      values.min_invites > 0 ? toSeconds(values.invite_start_time) : 0,
+    invite_end_time:
+      values.min_invites > 0 ? toSeconds(values.invite_end_time) : 0,
     wheel_total_limit: values.mode === 'wheel' ? values.wheel_total_limit : 0,
     wheel_daily_limit: values.mode === 'wheel' ? values.wheel_daily_limit : 0,
     prizes: values.prizes.map((prize) => ({
@@ -224,6 +252,9 @@ export function activityToFormValues(
     min_spend: activity.min_spend,
     spend_start_time: toDate(activity.spend_start_time),
     spend_end_time: toDate(activity.spend_end_time),
+    min_invites: activity.min_invites,
+    invite_start_time: toDate(activity.invite_start_time),
+    invite_end_time: toDate(activity.invite_end_time),
     wheel_total_limit: activity.wheel_total_limit,
     wheel_daily_limit: activity.wheel_daily_limit,
     prizes: activity.prizes.map((prize) => ({

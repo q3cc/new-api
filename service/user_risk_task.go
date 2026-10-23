@@ -48,9 +48,12 @@ func StartUserRiskScoreTask() {
 	})
 }
 
+// runUserRiskScoreOnce scores users and cancels invitations whose inviter
+// and invitee share an IP; both work from the same IP observations.
 func runUserRiskScoreOnce() {
 	setting := *operation_setting.GetUserRiskSetting()
-	if !setting.Enabled {
+	cancelSharedIp := operation_setting.GetAffiliateRebateSetting().CancelSharedIp
+	if !setting.Enabled && !cancelSharedIp {
 		return
 	}
 	if !userRiskRunning.CompareAndSwap(false, true) {
@@ -60,9 +63,20 @@ func runUserRiskScoreOnce() {
 
 	ctx := context.Background()
 	now := common.GetTimestamp()
-	pairs, err := model.ListUserIpPairs(now - int64(max(setting.WindowDays, 1))*24*3600)
+	pairs, err := model.ListUserIpPairs(now - userRiskWindowSeconds(setting))
 	if err != nil {
 		logger.LogWarn(ctx, common.LogText("user risk score task failed to list IPs: %v", err))
+		return
+	}
+	if cancelSharedIp {
+		invites, err := model.ListCheckableAffiliateInvites()
+		if err != nil {
+			logger.LogWarn(ctx, common.LogText("user risk score task failed to list invitations: %v", err))
+		} else {
+			cancelSharedIpInvites(ctx, FindSharedIpInvites(pairs, invites))
+		}
+	}
+	if !setting.Enabled {
 		return
 	}
 	activeIds, err := model.ListActiveUserIds()
@@ -76,11 +90,81 @@ func runUserRiskScoreOnce() {
 	}
 }
 
+func userRiskWindowSeconds(setting operation_setting.UserRiskSetting) int64 {
+	return int64(max(setting.WindowDays, 1)) * 24 * 3600
+}
+
+// userRiskPublicAddr parses an IP the risk checks count. Non-public addresses
+// are ignored so a misconfigured reverse proxy does not make every account
+// look shared.
+func userRiskPublicAddr(ip string) (netip.Addr, bool) {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	addr = addr.Unmap().WithZone("")
+	if !addr.IsGlobalUnicast() || addr.IsPrivate() {
+		return netip.Addr{}, false
+	}
+	return addr, true
+}
+
+// SharedIpInvite is an invitation whose inviter and invitee were seen on the
+// same public IPs.
+type SharedIpInvite struct {
+	model.AffiliateInvitePair
+	Ips []string
+}
+
+// FindSharedIpInvites returns the invitations whose inviter and invitee share
+// at least one public IP, with the shared IPs sorted.
+func FindSharedIpInvites(pairs []model.UserIpPair, invites []model.AffiliateInvitePair) []SharedIpInvite {
+	if len(invites) == 0 {
+		return nil
+	}
+	userIps := make(map[int]map[netip.Addr]bool)
+	for _, pair := range pairs {
+		addr, ok := userRiskPublicAddr(pair.Ip)
+		if !ok {
+			continue
+		}
+		if userIps[pair.UserId] == nil {
+			userIps[pair.UserId] = make(map[netip.Addr]bool)
+		}
+		userIps[pair.UserId][addr] = true
+	}
+	var matches []SharedIpInvite
+	for _, invite := range invites {
+		var shared []netip.Addr
+		for addr := range userIps[invite.InviteeId] {
+			if userIps[invite.InviterId][addr] {
+				shared = append(shared, addr)
+			}
+		}
+		if len(shared) == 0 {
+			continue
+		}
+		slices.SortFunc(shared, netip.Addr.Compare)
+		ips := make([]string, 0, min(len(shared), userRiskMaxMatches))
+		for _, addr := range shared[:min(len(shared), userRiskMaxMatches)] {
+			ips = append(ips, addr.String())
+		}
+		matches = append(matches, SharedIpInvite{AffiliateInvitePair: invite, Ips: ips})
+	}
+	return matches
+}
+
+func cancelSharedIpInvites(ctx context.Context, matches []SharedIpInvite) {
+	for _, match := range matches {
+		if _, err := model.CancelAffiliateInvite(match.InviteeId, match.InviterId, model.AffiliateReasonSharedIp, match.Ips, 0, ""); err != nil {
+			logger.LogWarn(ctx, common.LogText("failed to cancel invitation of user %d: %v", match.InviteeId, err))
+		}
+	}
+}
+
 // ComputeUserRiskScores scores every active user that has at least one public
 // IP: other accounts sharing an exact IP, other accounts sharing only the
 // IPv4 /24 or IPv6 /64, and distinct IPs beyond the allowed threshold.
-// Non-public addresses are ignored so a misconfigured reverse proxy does not
-// make every account look shared.
 func ComputeUserRiskScores(pairs []model.UserIpPair, activeUserIds []int, setting operation_setting.UserRiskSetting, now int64) []model.UserRiskScore {
 	active := make(map[int]bool, len(activeUserIds))
 	for _, id := range activeUserIds {
@@ -93,12 +177,8 @@ func ComputeUserRiskScores(pairs []model.UserIpPair, activeUserIds []int, settin
 		if !active[pair.UserId] {
 			continue
 		}
-		addr, err := netip.ParseAddr(pair.Ip)
-		if err != nil {
-			continue
-		}
-		addr = addr.Unmap().WithZone("")
-		if !addr.IsGlobalUnicast() || addr.IsPrivate() {
+		addr, ok := userRiskPublicAddr(pair.Ip)
+		if !ok {
 			continue
 		}
 		if userIps[pair.UserId] == nil {

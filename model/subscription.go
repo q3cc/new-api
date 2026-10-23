@@ -634,6 +634,12 @@ func completeSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
 			return err
 		}
+		// The rebate is worth what the plan costs when paid with balance.
+		if baseQuota, err := calcSubscriptionBalanceQuota(order.Money); err == nil {
+			if err := recordAffiliateRebateTx(tx, order.UserId, order.TradeNo, AffiliateRebateSourceSubscription, baseQuota); err != nil {
+				return err
+			}
+		}
 		order.Status = common.TopUpStatusSuccess
 		order.CompleteTime = common.GetTimestamp()
 		if providerPayload != "" {

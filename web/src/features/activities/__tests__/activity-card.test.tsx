@@ -43,6 +43,9 @@ function participantDraw(
     min_spend: 20,
     spend_start_time: 0,
     spend_end_time: 0,
+    min_invites: 0,
+    invite_start_time: 0,
+    invite_end_time: 0,
     wheel_total_limit: 0,
     wheel_daily_limit: 0,
     entry_count: 3,
@@ -67,6 +70,7 @@ function participantDraw(
     winner_count: 0,
     me: {
       paid: 5,
+      invited: 0,
       eligible: false,
       joined: false,
       spins_used: 0,
@@ -105,6 +109,29 @@ describe('ActivityCard', () => {
     expect(
       screen.getByText('3 / 10 joined, draws when full')
     ).toBeInTheDocument()
+  })
+
+  it('shows invitation progress and names the missing invitations when spending is met', () => {
+    renderCard({
+      ...participantDraw({ eligible: false, paid: 25, invited: 1 }),
+      min_invites: 3,
+    })
+
+    expect(screen.getByRole('button', { name: 'Join' })).toBeDisabled()
+    expect(screen.getByText('Invited 1 / 3')).toBeInTheDocument()
+    expect(screen.getByText('You paid 25 of 20')).toHaveClass('text-success')
+    expect(screen.getByText('Invited 1 / 3')).toHaveClass('text-warning')
+    expect(
+      screen.getByText(
+        'You do not meet the invitation requirement of this activity'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('shows no invitation progress for activities without an invitation requirement', () => {
+    renderCard(participantDraw())
+
+    expect(screen.queryByText(/^Invited /)).not.toBeInTheDocument()
   })
 
   it('lets an eligible user join', async () => {

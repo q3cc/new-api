@@ -98,10 +98,14 @@ export function getActivityAvailability(
     }
   }
   if (!activity.me.eligible) {
+    // The spending requirement is named first, as the server does.
+    const missesInvitesOnly =
+      activity.min_invites > 0 && activity.me.paid + 1e-9 >= activity.min_spend
     return {
       ...result,
-      blockedReason:
-        'You do not meet the spending requirement of this activity',
+      blockedReason: missesInvitesOnly
+        ? 'You do not meet the invitation requirement of this activity'
+        : 'You do not meet the spending requirement of this activity',
     }
   }
   if (spinsLeft === 0) {

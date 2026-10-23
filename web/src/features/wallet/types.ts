@@ -65,6 +65,44 @@ export type TopUpStatusResponse = ApiResponse<{
 export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
 export type AffiliateCodeResponse = ApiResponse<string>
 export type AffiliateTransferResponse = ApiResponse
+
+export type AffiliateRebateStatus =
+  | 'pending'
+  | 'review'
+  | 'confirmed'
+  | 'rejected'
+
+/** A rebate earned from a paid order of an invited user. */
+export interface AffiliateRebate {
+  id: number
+  invitee_id: number
+  source: 'topup' | 'subscription'
+  base_quota: number
+  rate_bps: number
+  quota: number
+  status: AffiliateRebateStatus
+  /** Message key translated by the console. */
+  reason: string
+  confirm_at: number
+  confirmed_at: number
+  created_at: number
+}
+
+export interface AffiliateRebatesData {
+  /** Whether rebates are on and payment compliance is confirmed. */
+  enabled: boolean
+  rate_percent: number
+  confirm_days: number
+  /** Rebates still confirming or held for review. */
+  pending_quota: number
+  page: {
+    page: number
+    page_size: number
+    total: number
+    items: AffiliateRebate[]
+  }
+}
+export type AffiliateRebatesResponse = ApiResponse<AffiliateRebatesData>
 export type CreemPaymentResponse = ApiResponse<{ checkout_url: string }>
 export type WaffoPaymentResponse = ApiResponse<
   { payment_url?: string } | string

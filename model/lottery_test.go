@@ -14,9 +14,9 @@ func setupLotteryFixture(t *testing.T) {
 	t.Helper()
 	require.NoError(t, DB.AutoMigrate(&LotteryActivity{}, &LotteryPrize{}, &LotteryEntry{}))
 	clear := func() {
-		all := DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped()
 		for _, table := range []any{&LotteryActivity{}, &LotteryPrize{}, &LotteryEntry{}, &TopUp{}, &UserSubscription{}, &SubscriptionPlan{}, &User{}, &Log{}} {
-			require.NoError(t, all.Delete(table).Error)
+			// A fresh session per table: a reused one keeps the first table.
+			require.NoError(t, DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(table).Error)
 		}
 	}
 	clear()
@@ -95,6 +95,8 @@ func TestLotteryActivityValidateRejectsInvalidRules(t *testing.T) {
 		{name: "no prizes", activity: LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive}},
 		{name: "draw time in the past", activity: LotteryActivity{Title: "S", Mode: LotteryModeScheduled, Status: LotteryStatusActive, DrawTime: 1, Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
 		{name: "end time in the past", activity: LotteryActivity{Title: "P", Mode: LotteryModeParticipants, Status: LotteryStatusActive, TargetParticipants: 2, EndTime: 1, Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
+		{name: "invitation window ending before it starts", activity: LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive, MinInvites: 1, InviteStartTime: 5000, InviteEndTime: 1000, Prizes: []LotteryPrize{quotaPrize(0, 0)}}},
+		{name: "negative minimum invitations", activity: LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive, MinInvites: -1, Prizes: []LotteryPrize{quotaPrize(0, 0)}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -214,6 +216,43 @@ func TestSpinLotteryWheelRequiresSpendingInWindow(t *testing.T) {
 	entry, err := SpinLotteryWheel(activity.Id, userId)
 	require.NoError(t, err)
 	assert.Zero(t, entry.PrizeId, "a prize with probability 0 is never won")
+}
+
+func TestSpinLotteryWheelRequiresInvitationsInWindow(t *testing.T) {
+	setupLotteryFixture(t)
+	inviterId := createLotteryUser(t, "lottery_inviter")
+	invite := func(name string, createdAt int64) *User {
+		user := &User{Username: name, Password: "password", Status: common.UserStatusEnabled, AffCode: name, InviterId: inviterId, CreatedAt: createdAt}
+		require.NoError(t, DB.Create(user).Error)
+		return user
+	}
+	invite("in_window", 2000)
+	invite("after_window", 9000)
+	require.NoError(t, DB.Delete(invite("deleted_in_window", 3000)).Error)
+	cancelled := invite("cancelled_in_window", 3000)
+	require.NoError(t, DB.Model(cancelled).Update("inviter_id", 0).Error)
+	activity := &LotteryActivity{
+		Title: "Wheel", Mode: LotteryModeWheel, Status: LotteryStatusActive,
+		MinSpend: 10, MinInvites: 2, InviteStartTime: 1000, InviteEndTime: 5000,
+		Prizes: []LotteryPrize{{Name: "Credit", Type: LotteryPrizeQuota, Quota: 100, Probability: 0}},
+	}
+	require.NoError(t, CreateLotteryActivity(activity))
+
+	state, err := GetLotteryUserState(DB, activity, inviterId)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, state.Invited, "only current, undeleted invitees registered in the window count")
+	assert.False(t, state.Eligible)
+
+	_, err = SpinLotteryWheel(activity.Id, inviterId)
+	assert.ErrorContains(t, err, "spending requirement", "both requirements apply")
+
+	createPaidOrder(t, inviterId, 10, common.TopUpStatusSuccess, 3000)
+	_, err = SpinLotteryWheel(activity.Id, inviterId)
+	assert.ErrorContains(t, err, "invitation requirement")
+
+	invite("second_in_window", 5000)
+	_, err = SpinLotteryWheel(activity.Id, inviterId)
+	require.NoError(t, err)
 }
 
 func TestParticipantLotteryDrawsWhenTargetIsReached(t *testing.T) {

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { TrialCreditSettings } from '@/features/trial-credit/settings'
 import { parseCurrencyDisplayType } from '@/lib/currency'
 
+import { AffiliateRebateSection } from '../general/affiliate-rebate-section'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
@@ -82,6 +83,30 @@ const BILLING_SECTIONS = [
             enable_free_model_pre_consume:
               settings['quota_setting.enable_free_model_pre_consume'],
           },
+        }}
+        complianceConfirmed={
+          (settings['payment_setting.compliance_confirmed'] ?? false) &&
+          settings['payment_setting.compliance_terms_version'] === 'v1'
+        }
+      />
+    ),
+  },
+  {
+    id: 'referral-rebates',
+    titleKey: 'Referral Rebates',
+    build: (settings: BillingSettings) => (
+      <AffiliateRebateSection
+        defaultValues={{
+          'affiliate_rebate_setting.enabled':
+            settings['affiliate_rebate_setting.enabled'],
+          'affiliate_rebate_setting.rate_percent':
+            settings['affiliate_rebate_setting.rate_percent'],
+          'affiliate_rebate_setting.confirm_days':
+            settings['affiliate_rebate_setting.confirm_days'],
+          'affiliate_rebate_setting.risk_review_score':
+            settings['affiliate_rebate_setting.risk_review_score'],
+          'affiliate_rebate_setting.cancel_shared_ip':
+            settings['affiliate_rebate_setting.cancel_shared_ip'],
         }}
         complianceConfirmed={
           (settings['payment_setting.compliance_confirmed'] ?? false) &&

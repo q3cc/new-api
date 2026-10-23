@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
@@ -28,7 +29,13 @@ import {
   requireServerSuccess,
 } from '@/lib/server-error-message'
 
-import { getAffiliateCode, transferAffiliateQuota } from '../api'
+import {
+  getAffiliateCode,
+  getAffiliateRebates,
+  transferAffiliateQuota,
+  walletQueryKeys,
+} from '../api'
+import { AFFILIATE_REBATES_PAGE_SIZE } from '../constants'
 import { generateAffiliateLink } from '../lib'
 
 // ============================================================================
@@ -102,4 +109,22 @@ export function useAffiliate() {
     transferQuota,
     refetch: fetchAffiliateCode,
   }
+}
+
+/**
+ * One page of the caller's referral rebates, with the rebate settings and the
+ * amount still confirming. Page 1 also feeds the wallet card.
+ */
+export function useAffiliateRebates(page = 1) {
+  return useQuery({
+    queryKey: walletQueryKeys.affiliateRebates(
+      page,
+      AFFILIATE_REBATES_PAGE_SIZE
+    ),
+    queryFn: async () =>
+      requireServerSuccess(
+        await getAffiliateRebates(page, AFFILIATE_REBATES_PAGE_SIZE)
+      ).data,
+    placeholderData: keepPreviousData,
+  })
 }

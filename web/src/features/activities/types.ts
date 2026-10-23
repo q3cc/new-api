@@ -58,6 +58,10 @@ export type LotteryActivity = {
   min_spend: number
   spend_start_time: number
   spend_end_time: number
+  /** Accounts a user must have invited within the invitation window. */
+  min_invites: number
+  invite_start_time: number
+  invite_end_time: number
   wheel_total_limit: number
   wheel_daily_limit: number
   entry_count: number
@@ -83,6 +87,8 @@ export type LotteryEntry = {
 
 export type LotteryUserState = {
   paid: number
+  /** Accounts invited within the invitation window. */
+  invited: number
   eligible: boolean
   joined: boolean
   spins_used: number
@@ -138,6 +144,9 @@ export type LotteryActivityPayload = Pick<
   | 'min_spend'
   | 'spend_start_time'
   | 'spend_end_time'
+  | 'min_invites'
+  | 'invite_start_time'
+  | 'invite_end_time'
   | 'wheel_total_limit'
   | 'wheel_daily_limit'
 > & {

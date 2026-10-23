@@ -16,6 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { StatusVariant } from '@/components/status-badge'
+
+import type { AffiliateRebateStatus } from './types'
+
 // ============================================================================
 // Wallet Constants
 // ============================================================================
@@ -64,3 +68,19 @@ export const DEFAULT_DISCOUNT_RATE = 1.0
  * Default minimum topup amount
  */
 export const DEFAULT_MIN_TOPUP = 1
+
+/**
+ * Referral rebate statuses with their i18n label keys
+ */
+export const AFFILIATE_REBATE_STATUSES: Record<
+  AffiliateRebateStatus,
+  { labelKey: string; variant: StatusVariant }
+> = {
+  pending: { labelKey: 'Confirming', variant: 'info' },
+  review: { labelKey: 'Under review', variant: 'warning' },
+  confirmed: { labelKey: 'Credited', variant: 'success' },
+  rejected: { labelKey: 'Rejected', variant: 'danger' },
+}
+
+/** Rebates shown per page; the card reuses the first page for its total. */
+export const AFFILIATE_REBATES_PAGE_SIZE = 10

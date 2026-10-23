@@ -159,6 +159,10 @@ export function SidebarModulesSection({
         description: t('Administer user accounts and roles.'),
       },
       orders: { title: t('Orders'), description: '' },
+      referrals: {
+        title: t('Referrals'),
+        description: t('Review invitations and referral rebates.'),
+      },
       setting: {
         title: t('System settings'),
         description: t('Advanced platform configuration.'),

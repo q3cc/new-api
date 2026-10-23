@@ -854,5 +854,13 @@
   "＄%.6f quota": "＄%.6f 额度",
   "redemption failed for user %d": "用户 %d 兑换失败",
   "subscription redemption": "订阅兑换",
-  "failed to insert redemption": "创建兑换码失败"
+  "failed to insert redemption": "创建兑换码失败",
+  "affiliate rebate task failed to list invitations: %v": "邀请返利任务读取邀请关系失败: %v",
+  "affiliate rebate task failed to list IPs: %v": "邀请返利任务读取 IP 记录失败: %v",
+  "affiliate rebate task failed to list rebates: %v": "邀请返利任务读取返利记录失败: %v",
+  "failed to cancel invitation of user %d: %v": "取消用户 %d 的邀请关系失败: %v",
+  "failed to settle affiliate rebate %d: %v": "结算邀请返利 %d 失败: %v",
+  "user risk score task failed to list invitations: %v": "用户风险评分任务读取邀请关系失败: %v",
+  "invitation of user %d by user %d cancelled: %s": "用户 %d 与邀请人 %d 的邀请关系已取消: %s",
+  "invitation of user %d by user %d restored by user %d": "用户 %d 与邀请人 %d 的邀请关系已由用户 %d 恢复"
 }

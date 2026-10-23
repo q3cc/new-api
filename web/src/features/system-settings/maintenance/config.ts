@@ -84,6 +84,7 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     setting: true,
     subscription: true,
     orders: true,
+    referrals: true,
   },
 }
 

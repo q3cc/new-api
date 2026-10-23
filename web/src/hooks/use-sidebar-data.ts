@@ -25,6 +25,7 @@ import {
   FileText,
   FlaskConical,
   Gift,
+  HandCoins,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -168,6 +169,12 @@ export function useSidebarData(): SidebarData {
             title: t('Orders'),
             url: '/orders',
             icon: Receipt,
+            requiredRole: ROLE.ADMIN,
+          },
+          {
+            title: t('Referrals'),
+            url: '/referrals',
+            icon: HandCoins,
             requiredRole: ROLE.ADMIN,
           },
           {

@@ -141,6 +141,9 @@ func main() {
 	// Lottery draw task (every minute, scheduled and participant-count draws)
 	service.StartLotteryDrawTask()
 
+	// Referral rebate task (every 5 minutes, credits rebates past confirmation)
+	service.StartAffiliateRebateTask()
+
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()

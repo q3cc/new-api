@@ -60,7 +60,7 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { createActivity, updateActivity } from '../../api'
-import { LOTTERY_MODES } from '../../constants'
+import { LOTTERY_MAX_MIN_INVITES, LOTTERY_MODES } from '../../constants'
 import {
   ACTIVITY_FORM_DEFAULT_VALUES,
   activityFormToPayload,
@@ -94,6 +94,7 @@ export function ActivityMutateDrawer(props: ActivityMutateDrawerProps) {
   })
   const mode = useWatch({ control: form.control, name: 'mode' })
   const minSpend = useWatch({ control: form.control, name: 'min_spend' })
+  const minInvites = useWatch({ control: form.control, name: 'min_invites' })
 
   useEffect(() => {
     if (!props.open) return
@@ -476,6 +477,78 @@ export function ActivityMutateDrawer(props: ActivityMutateDrawerProps) {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>{t('Spending counted until')}</FormLabel>
+                            <FormControl>
+                              <DateTimePicker
+                                value={field.value}
+                                onChange={field.onChange}
+                                placeholder={t('No end limit')}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  ) : null}
+                  <FormField
+                    control={form.control}
+                    name='min_invites'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Minimum invitations')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min={0}
+                            max={LOTTERY_MAX_MIN_INVITES}
+                            step={1}
+                            value={field.value}
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            onChange={(event) =>
+                              field.onChange(integerValue(event.target.value))
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Accounts the user invited that registered within the invitation window. Cancelled invitations do not count. 0 = no requirement.'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {minInvites > 0 ? (
+                    <div className='grid gap-3 sm:grid-cols-2'>
+                      <FormField
+                        control={form.control}
+                        name='invite_start_time'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              {t('Invitations counted from')}
+                            </FormLabel>
+                            <FormControl>
+                              <DateTimePicker
+                                value={field.value}
+                                onChange={field.onChange}
+                                placeholder={t('No start limit')}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name='invite_end_time'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              {t('Invitations counted until')}
+                            </FormLabel>
                             <FormControl>
                               <DateTimePicker
                                 value={field.value}

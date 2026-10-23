@@ -64,3 +64,6 @@ export const LOTTERY_DELIVERY_STATUSES: Record<
 export const LOTTERY_PROBABILITY_SCALE = 10000
 
 export const LOTTERY_MAX_PRIZES = 20
+
+/** Upper bound the server accepts for the invitation requirement. */
+export const LOTTERY_MAX_MIN_INVITES = 100_000

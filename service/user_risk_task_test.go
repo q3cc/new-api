@@ -90,29 +90,58 @@ func relationIds(relations []model.UserRiskRelation) []int {
 	return ids
 }
 
+func TestFindSharedIpInvites(t *testing.T) {
+	pairs := []model.UserIpPair{
+		// 1 invited 2; they share two public IPs (one in 4-in-6 notation).
+		{UserId: 1, Ip: "203.0.113.10"}, {UserId: 2, Ip: "::ffff:203.0.113.10"},
+		{UserId: 1, Ip: "198.51.100.1"}, {UserId: 2, Ip: "198.51.100.1"},
+		// 3 invited 4; they only share private and loopback addresses.
+		{UserId: 3, Ip: "10.0.0.1"}, {UserId: 4, Ip: "10.0.0.1"}, {UserId: 3, Ip: "127.0.0.1"}, {UserId: 4, Ip: "127.0.0.1"},
+		// 5 invited 6; 6 shares an IP with 1, who is not their inviter.
+		{UserId: 5, Ip: "192.0.2.5"}, {UserId: 6, Ip: "203.0.113.10"},
+	}
+	invites := []model.AffiliateInvitePair{
+		{InviteeId: 2, InviterId: 1},
+		{InviteeId: 4, InviterId: 3},
+		{InviteeId: 6, InviterId: 5},
+		{InviteeId: 8, InviterId: 7},
+	}
+
+	matches := FindSharedIpInvites(pairs, invites)
+
+	assert.Equal(t, []SharedIpInvite{
+		{AffiliateInvitePair: model.AffiliateInvitePair{InviteeId: 2, InviterId: 1}, Ips: []string{"198.51.100.1", "203.0.113.10"}},
+	}, matches)
+	assert.Empty(t, FindSharedIpInvites(pairs, nil))
+}
+
 func TestRunUserRiskScoreOnceReplacesPreviousRound(t *testing.T) {
 	previousDB, previousLogDB := model.DB, model.LOG_DB
 	previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
 	previousSetting := *operation_setting.GetUserRiskSetting()
+	previousRebateSetting := *operation_setting.GetAffiliateRebateSetting()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}, &model.AuditLog{}, &model.UserRiskScore{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}, &model.AuditLog{}, &model.UserRiskScore{}, &model.AffiliateRebate{}, &model.AffiliateInviteLog{}))
 	model.DB, model.LOG_DB = db, db
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	t.Cleanup(func() {
 		model.DB, model.LOG_DB = previousDB, previousLogDB
 		common.SetDatabaseTypes(previousMain, previousLog)
 		*operation_setting.GetUserRiskSetting() = previousSetting
+		*operation_setting.GetAffiliateRebateSetting() = previousRebateSetting
 		_ = sqlDB.Close()
 	})
 	*operation_setting.GetUserRiskSetting() = testUserRiskSetting
+	operation_setting.GetAffiliateRebateSetting().CancelSharedIp = true
 
-	for _, name := range []string{"risk-a", "risk-b", "risk-c"} {
-		require.NoError(t, db.Create(&model.User{Username: name, Password: "password", AffCode: name}).Error)
-	}
+	// risk-a invited risk-b, and the two share an IP below.
+	require.NoError(t, db.Create(&model.User{Username: "risk-a", Password: "password", AffCode: "risk-a", AffCount: 1}).Error)
+	require.NoError(t, db.Create(&model.User{Username: "risk-b", Password: "password", AffCode: "risk-b", InviterId: 1}).Error)
+	require.NoError(t, db.Create(&model.User{Username: "risk-c", Password: "password", AffCode: "risk-c"}).Error)
 	now := common.GetTimestamp()
 	require.NoError(t, db.Create(&model.AuditLog{EventId: "risk-1", UserId: 1, CreatedAt: now, Ip: "203.0.113.10"}).Error)
 	require.NoError(t, db.Create([]*model.Log{
@@ -127,6 +156,14 @@ func TestRunUserRiskScoreOnceReplacesPreviousRound(t *testing.T) {
 	assert.Equal(t, 10, users[0].RiskScore.Score)
 	assert.Equal(t, 10, users[1].RiskScore.Score)
 	assert.Equal(t, 0, users[2].RiskScore.Score, "top-up callers and stale logs do not count")
+	var invitee model.User
+	require.NoError(t, db.First(&invitee, 2).Error)
+	assert.Zero(t, invitee.InviterId, "an invitation between accounts sharing an IP is cancelled")
+	var inviteLogs []model.AffiliateInviteLog
+	require.NoError(t, db.Find(&inviteLogs).Error)
+	require.Len(t, inviteLogs, 1)
+	assert.Equal(t, model.AffiliateInviteActionCancel, inviteLogs[0].Action)
+	assert.Equal(t, "203.0.113.10", inviteLogs[0].SharedIps)
 
 	require.NoError(t, db.Delete(&model.User{}, 2).Error)
 	runUserRiskScoreOnce()

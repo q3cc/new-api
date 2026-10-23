@@ -175,6 +175,37 @@ describe('orders sidebar entry', () => {
   })
 })
 
+describe('referrals sidebar entry', () => {
+  it('old configurations show Referrals right after Orders for administrators', () => {
+    const { result } = sidebarFor({
+      admin: { enabled: true, orders: true },
+    })
+    const items =
+      result.current.find((group) => group.id === 'admin')?.items ?? []
+    const index = items.findIndex((item) => item.title === 'Orders')
+    expect(index).toBeGreaterThanOrEqual(0)
+    expect(items[index + 1]).toMatchObject({
+      title: 'Referrals',
+      url: '/referrals',
+      requiredRole: 10,
+    })
+    expect(
+      parseSidebarModulesAdmin('{"admin":{"enabled":true}}').admin.referrals
+    ).toBe(true)
+  })
+  it('saving the referral visibility setting hides only the referrals entry', () => {
+    const config = parseSidebarModulesAdmin('{"admin":{"enabled":true}}')
+    config.admin.referrals = false
+    const saved = parseSidebarModulesAdmin(serializeSidebarModulesAdmin(config))
+    const { result } = sidebarFor(saved)
+    const titles = result.current
+      .flatMap((group) => group.items)
+      .map((item) => item.title)
+    expect(titles).not.toContain('Referrals')
+    expect(titles).toContain('Orders')
+  })
+})
+
 describe('audit log sidebar entry', () => {
   it('admin settings default Audit Logs to visible and preserve its independent toggle when saved', () => {
     const config = parseSidebarModulesAdmin(

@@ -110,6 +110,20 @@ describe('activity form schema', () => {
       message: 'Prize name is required',
     },
     {
+      name: 'an invitation window ending before it starts',
+      input: values({
+        min_invites: 2,
+        invite_start_time: new Date(2_000_000),
+        invite_end_time: new Date(1_000_000),
+      }),
+      message: 'Invitation window end must be later than its start',
+    },
+    {
+      name: 'more required invitations than the server accepts',
+      input: values({ min_invites: 100_001 }),
+      message: 'Invalid minimum invitations',
+    },
+    {
       name: 'no prizes',
       input: values({ prizes: [] }),
       message: 'An activity needs 1 to 20 prizes',
@@ -159,6 +173,32 @@ describe('activityFormToPayload', () => {
     )
     expect(payload.spend_start_time).toBe(0)
     expect(payload.spend_end_time).toBe(0)
+  })
+
+  it('sends the invitation requirement with its window in seconds', () => {
+    const payload = activityFormToPayload(
+      values({
+        min_invites: 3,
+        invite_start_time: new Date(1_000_000),
+        invite_end_time: new Date(2_000_000),
+      })
+    )
+    expect(payload.min_invites).toBe(3)
+    expect(payload.invite_start_time).toBe(1000)
+    expect(payload.invite_end_time).toBe(2000)
+  })
+
+  it('drops the invitation window when there is no invitation requirement', () => {
+    const payload = activityFormToPayload(
+      values({
+        min_invites: 0,
+        invite_start_time: new Date(1_000_000),
+        invite_end_time: new Date(2_000_000),
+      })
+    )
+    expect(payload.min_invites).toBe(0)
+    expect(payload.invite_start_time).toBe(0)
+    expect(payload.invite_end_time).toBe(0)
   })
 
   it('keeps the draw time and drops wheel limits for scheduled draws', () => {

@@ -43,6 +43,9 @@ function activity(
     min_spend: 0,
     spend_start_time: 0,
     spend_end_time: 0,
+    min_invites: 0,
+    invite_start_time: 0,
+    invite_end_time: 0,
     wheel_total_limit: 0,
     wheel_daily_limit: 0,
     entry_count: 0,
@@ -55,6 +58,7 @@ function activity(
     winner_count: 0,
     me: {
       paid: 0,
+      invited: 0,
       eligible: true,
       joined: false,
       spins_used: 0,
@@ -94,6 +98,24 @@ describe('getActivityAvailability', () => {
     {
       name: 'a user below the spending requirement is blocked',
       input: activity({ min_spend: 10 }, { eligible: false, paid: 3 }),
+      action: 'spin',
+      reason: 'You do not meet the spending requirement of this activity',
+    },
+    {
+      name: 'a user below the invitation requirement is blocked',
+      input: activity(
+        { min_spend: 10, min_invites: 3 },
+        { eligible: false, paid: 10, invited: 1 }
+      ),
+      action: 'spin',
+      reason: 'You do not meet the invitation requirement of this activity',
+    },
+    {
+      name: 'a user below both requirements is told about spending first',
+      input: activity(
+        { min_spend: 10, min_invites: 3 },
+        { eligible: false, paid: 3, invited: 1 }
+      ),
       action: 'spin',
       reason: 'You do not meet the spending requirement of this activity',
     },
