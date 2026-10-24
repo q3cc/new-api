@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getActivityAvailability,
   isHistoryActivity,
+  isJoinableActivity,
 } from '../lib/activity-state'
 import type { LotteryActivityView } from '../types'
 
@@ -203,5 +204,61 @@ describe('isHistoryActivity', () => {
     },
   ])('treats $name as history: $history', ({ input, history }) => {
     expect(isHistoryActivity(input, NOW)).toBe(history)
+  })
+})
+
+describe('isJoinableActivity', () => {
+  it.each([
+    { name: 'an open wheel with spins left', input: activity(), want: true },
+    {
+      name: 'an open draw the user has not joined',
+      input: activity({ mode: 'scheduled', draw_time: NOW + 100 }),
+      want: true,
+    },
+    {
+      name: 'a draw the user already joined',
+      input: activity({ mode: 'scheduled' }, { joined: true }),
+      want: false,
+    },
+    {
+      name: 'an activity that has not started',
+      input: activity({ start_time: NOW + 10 }),
+      want: false,
+    },
+    {
+      name: 'a running leaderboard, where nothing needs joining',
+      input: activity({ mode: 'leaderboard', end_time: NOW + 100 }),
+      want: false,
+    },
+    {
+      name: 'a user below the spending requirement',
+      input: activity({ min_spend: 10 }, { eligible: false, paid: 5 }),
+      want: false,
+    },
+    {
+      name: 'a user who has just reached the requirement',
+      input: activity({ min_spend: 10 }, { eligible: true, paid: 10 }),
+      want: true,
+    },
+    {
+      name: "a wheel with today's spins used up",
+      input: activity({ wheel_daily_limit: 3 }, { spins_used_today: 3 }),
+      want: false,
+    },
+    {
+      name: 'the same wheel after the daily spins refresh',
+      input: activity(
+        { wheel_daily_limit: 3 },
+        { spins_used: 3, spins_used_today: 0 }
+      ),
+      want: true,
+    },
+    {
+      name: 'a drawn activity',
+      input: activity({ status: 'drawn' }),
+      want: false,
+    },
+  ])('$name: $want', ({ input, want }) => {
+    expect(isJoinableActivity(input, NOW)).toBe(want)
   })
 })

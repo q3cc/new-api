@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, Gift } from 'lucide-react'
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -32,46 +31,21 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import {
+  activitiesListQuery,
   activitiesQueryKeys,
-  getActivities,
   joinActivity,
   spinWheel,
 } from '../api'
+import { useNowSeconds } from '../hooks/use-now-seconds'
 import { isHistoryActivity } from '../lib/activity-state'
 import type { LotteryActivityView, LotteryEntry } from '../types'
 import { ActivityCard } from './activity-card'
-
-const ACTIVITIES_REFRESH_MS = 60_000
-
-function useNowSeconds(): number {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
-  useEffect(() => {
-    const timer = window.setInterval(
-      () => setNow(Math.floor(Date.now() / 1000)),
-      30_000
-    )
-    return () => window.clearInterval(timer)
-  }, [])
-  return now
-}
 
 export function ActivitiesList() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const nowSeconds = useNowSeconds()
-  const { data, isPending } = useQuery({
-    queryKey: activitiesQueryKeys.list(),
-    queryFn: async () => requireServerSuccess(await getActivities()).data ?? [],
-    // Entries, stock and draws change as other users take part; refresh
-    // while something is still running. Hidden tabs do not poll.
-    refetchInterval: (query) => {
-      const nowSeconds = Math.floor(Date.now() / 1000)
-      const running = (query.state.data ?? []).some(
-        (activity) => !isHistoryActivity(activity, nowSeconds)
-      )
-      return running ? ACTIVITIES_REFRESH_MS : false
-    },
-  })
+  const { data, isPending } = useQuery(activitiesListQuery)
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: activitiesQueryKeys.all })
 

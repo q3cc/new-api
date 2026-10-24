@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
 import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
+import { useHasJoinableActivity } from '@/features/activities/hooks/use-has-joinable-activity'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -30,6 +31,8 @@ import { useSidebarData } from './use-sidebar-data'
 
 /** Sentinel key used for the root navigation in animation `key=` props */
 const ROOT_VIEW_KEY = '__root'
+
+const ACTIVITIES_URL = '/activities'
 
 /**
  * Resolve the active sidebar view for the current location.
@@ -50,6 +53,14 @@ export function useSidebarView(): ResolvedSidebarView {
   const userRole = useAuthStore((s) => s.auth.user?.role)
   const rootSidebarData = useSidebarData()
   const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
+  // Mark Activities while the user can take part in one; skip the request
+  // when the entry is hidden or nobody is signed in.
+  const activitiesShown =
+    userRole !== undefined &&
+    configFilteredRoot.some((group) =>
+      group.items.some((item) => item.url === ACTIVITIES_URL)
+    )
+  const hasJoinableActivity = useHasJoinableActivity(activitiesShown)
 
   const rootNavGroups = useMemo<NavGroup[]>(() => {
     const role = userRole ?? ROLE.GUEST
@@ -57,12 +68,23 @@ export function useSidebarView(): ResolvedSidebarView {
     return configFilteredRoot
       .filter((group) => (group.id === 'admin' ? isAdmin : true))
       .map((group) => {
-        const items = group.items.filter(
-          (item) => item.requiredRole === undefined || role >= item.requiredRole
-        )
-        return items.length === group.items.length ? group : { ...group, items }
+        const items = group.items
+          .filter(
+            (item) =>
+              item.requiredRole === undefined || role >= item.requiredRole
+          )
+          .map((item) =>
+            hasJoinableActivity && item.url === ACTIVITIES_URL
+              ? {
+                  ...item,
+                  badge: t('New'),
+                  badgeVariant: 'destructive' as const,
+                }
+              : item
+          )
+        return { ...group, items }
       })
-  }, [configFilteredRoot, userRole])
+  }, [configFilteredRoot, userRole, hasJoinableActivity, t])
 
   const view = resolveSidebarView(pathname)
 

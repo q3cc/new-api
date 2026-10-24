@@ -142,6 +142,19 @@ export function getActivityAvailability(
 }
 
 /**
+ * Whether the current user can take part in an activity right now: join a
+ * draw, or spin a wheel with spins left. It turns true again once the user
+ * reaches a requirement or a wheel's daily spins refresh.
+ */
+export function isJoinableActivity(
+  activity: LotteryActivityView,
+  nowSeconds: number
+): boolean {
+  const availability = getActivityAvailability(activity, nowSeconds)
+  return availability.action !== null && availability.blockedReason === null
+}
+
+/**
  * Whether an activity is over for good: drawn, cancelled, or a wheel past its
  * end time. A draw that stopped taking entries is not history until drawn.
  */

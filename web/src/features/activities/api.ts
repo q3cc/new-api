@@ -16,8 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { api } from '@/lib/api'
+import { queryOptions } from '@tanstack/react-query'
 
+import { api } from '@/lib/api'
+import { requireServerSuccess } from '@/lib/server-error-message'
+
+import { isHistoryActivity } from './lib/activity-state'
 import type {
   ApiResponse,
   LotteryActivity,
@@ -49,6 +53,26 @@ export async function getActivities(): Promise<
   const res = await api.get('/api/lottery/activities')
   return res.data
 }
+
+const ACTIVITIES_REFRESH_MS = 60_000
+
+/**
+ * The user's activities, shared by the activities page and the sidebar badge.
+ * Entries, stock, draws, requirements and daily spins change over time, so
+ * the list refreshes while something is still running. Hidden tabs do not
+ * poll.
+ */
+export const activitiesListQuery = queryOptions({
+  queryKey: activitiesQueryKeys.list(),
+  queryFn: async () => requireServerSuccess(await getActivities()).data ?? [],
+  refetchInterval: (query) => {
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    const running = (query.state.data ?? []).some(
+      (activity) => !isHistoryActivity(activity, nowSeconds)
+    )
+    return running ? ACTIVITIES_REFRESH_MS : false
+  },
+})
 
 export async function joinActivity(id: number): Promise<ApiResponse> {
   const res = await api.post(`/api/lottery/activities/${id}/join`)
