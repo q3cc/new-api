@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -325,9 +326,14 @@ func TestImageHelperKeepsAdaptorClassifiedConvertError(t *testing.T) {
 type failedGenerationReservation struct {
 	imageReservation
 	settled, refunded bool
+	settledQuota      int
 }
 
-func (s *failedGenerationReservation) Settle(int) error { s.settled = true; return nil }
+func (s *failedGenerationReservation) Settle(quota int) error {
+	s.settled = true
+	s.settledQuota = quota
+	return nil
+}
 func (s *failedGenerationReservation) Refund(*gin.Context) {
 	if !s.settled {
 		s.refunded = true
@@ -377,5 +383,58 @@ func TestGeminiEmptyGenerationRefundsReservation(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// A Gemini stream that fails after the client already received output cannot
+// be retried. That attempt bills the usage it reached instead of refunding the
+// whole reservation; a failure before any output still refunds it.
+func TestGeminiStreamFailureAfterOutputBillsDeliveredUsage(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	gin.SetMode(gin.TestMode)
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	database := setupRelayChannelDB(t)
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Token{}, &model.Log{}))
+	previousLogDB, previousRedis := model.LOG_DB, common.RedisEnabled
+	model.LOG_DB, common.RedisEnabled = database, false
+	t.Cleanup(func() { model.LOG_DB, common.RedisEnabled = previousLogDB, previousRedis })
+	user := &model.User{Username: "gemini-stream", Quota: 100000, Status: common.UserStatusEnabled, AffCode: "gemini-stream"}
+	require.NoError(t, database.Create(user).Error)
+
+	delivered := `data: {"candidates":[{"content":{"parts":[{"text":"delivered"}]}}],"usageMetadata":{"promptTokenCount":40,"candidatesTokenCount":10,"totalTokenCount":50}}` + "\n\n"
+	for _, tc := range []struct {
+		name, body string
+		code       types.ErrorCode
+		billed     bool
+	}{
+		{"malformed frame after output", delivered + "data: {broken\n\n", types.ErrorCodeBadResponseBody, true},
+		{"safety after output", delivered + `data: {"candidates":[{"content":{"parts":[{"text":"suppressed"}]},"finishReason":"SAFETY"}]}` + "\n\n", types.ErrorCodePromptBlocked, true},
+		{"malformed first frame", "data: {broken\n\n", types.ErrorCodeBadResponseBody, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-test:streamGenerateContent", nil)
+			reservation := &failedGenerationReservation{imageReservation: imageReservation{held: 2000, limit: 10000}}
+			info := &relaycommon.RelayInfo{UserId: user.Id, IsStream: true, DisablePing: true, RelayMode: relayconstant.RelayModeGemini,
+				RelayFormat: types.RelayFormatGemini, OriginModelName: "gemini-test", Billing: reservation,
+				ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gemini-test"},
+				PriceData:   hosttypes.PriceData{ModelRatio: 1, CompletionRatio: 1, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1}}}
+			info.SetEstimatePromptTokens(40)
+
+			_, apiErr := (&gemini.Adaptor{}).DoResponse(c, &http.Response{Body: io.NopCloser(strings.NewReader(tc.body + "data: [DONE]\n\n"))}, info)
+			require.NotNil(t, apiErr)
+			assert.Equal(t, tc.code, apiErr.GetErrorCode())
+			require.NotNil(t, RefundFailedRequestBilling(c, info, apiErr), "the client still receives the failure")
+
+			assert.Equal(t, tc.billed, reservation.settled)
+			assert.Equal(t, !tc.billed, reservation.refunded)
+			if tc.billed {
+				assert.Contains(t, recorder.Body.String(), "delivered")
+				assert.Equal(t, 50, reservation.settledQuota)
+			}
+		})
 	}
 }

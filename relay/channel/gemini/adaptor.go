@@ -259,10 +259,16 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
 	// A rejected generation may still carry real upstream usage (or output
-	// delivered before the rejection). Settle that evidence once; empty local
-	// estimates are zero and take the caller's normal failure/refund path.
+	// delivered before the rejection). So may any stream that fails after the
+	// response started: that attempt is never retried, and the client already
+	// has its output. Settle that evidence once; empty local estimates are zero
+	// and take the caller's normal failure/refund path.
 	defer func() {
-		if err == nil || (err.GetErrorCode() != types.ErrorCodePromptBlocked && err.GetErrorCode() != types.ErrorCodeEmptyResponse) {
+		if err == nil {
+			return
+		}
+		rejected := err.GetErrorCode() == types.ErrorCodePromptBlocked || err.GetErrorCode() == types.ErrorCodeEmptyResponse
+		if !rejected && !c.Writer.Written() {
 			return
 		}
 		if actual, ok := usage.(*dto.Usage); ok && service.ValidUsage(actual) {
