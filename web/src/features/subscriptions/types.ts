@@ -41,6 +41,7 @@ export const subscriptionPlanSchema = z.object({
   total_amount: z.number(),
   upgrade_group: z.string().optional(),
   downgrade_group: z.string().optional(),
+  allowed_groups: z.array(z.string()).nullish(),
   stripe_price_id: z.string().optional(),
   creem_product_id: z.string().optional(),
   waffo_pancake_product_id: z.string().optional(),
@@ -67,6 +68,7 @@ export const userSubscriptionSchema = z.object({
   amount_total: z.number(),
   amount_used: z.number(),
   next_reset_time: z.number().optional(),
+  allowed_groups: z.array(z.string()).nullish(),
 })
 
 export type UserSubscription = z.infer<typeof userSubscriptionSchema>

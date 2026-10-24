@@ -298,3 +298,69 @@ it.each(['en', 'zh', 'zh-TW', 'fr', 'ru', 'ja', 'vi'])(
     toast.dismiss()
   }
 )
+
+it('shows the groups a plan and an active subscription pay for, and nothing for an unlimited plan', async () => {
+  await i18n.changeLanguage('zh')
+  const plan = (id: number, title: string, groups?: string[]) => ({
+    plan: {
+      id,
+      title,
+      enabled: true,
+      duration_unit: 'month',
+      duration_value: 1,
+      total_amount: 5000000,
+      quota_reset_period: 'never',
+      price_amount: 10,
+      max_purchase_per_user: 0,
+      allowed_groups: groups,
+    },
+  })
+  const sub = {
+    subscription: {
+      id: 31,
+      user_id: 1,
+      plan_id: 8,
+      status: 'active',
+      start_time: 1,
+      end_time: 2000000000,
+      amount_total: 5000000,
+      amount_used: 0,
+      allowed_groups: ['vip'],
+    },
+  }
+  vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    if (url === '/api/subscription/plans') {
+      return {
+        data: {
+          success: true,
+          data: [plan(8, 'VIP Plan', ['vip', 'svip']), plan(9, 'Any Plan')],
+        },
+      }
+    }
+    if (url === '/api/subscription/self') {
+      return {
+        data: {
+          success: true,
+          data: { subscriptions: [sub], all_subscriptions: [sub] },
+        },
+      }
+    }
+    return { data: { success: true, data: { id: 1, quota: 10 } } }
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+
+  render(
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>
+        <SubscriptionPlansCard topupInfo={null} />
+      </I18nextProvider>
+    </QueryClientProvider>
+  )
+
+  expect(await screen.findByText('可用分组: vip, svip')).toBeVisible()
+  expect(screen.getByText('可用分组: vip')).toBeVisible()
+  expect(screen.getAllByText(/可用分组/)).toHaveLength(2)
+  client.clear()
+})

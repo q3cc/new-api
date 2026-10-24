@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -128,6 +129,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		// startGroupIndex: 开始搜索的分组索引
 		startGroupIndex := 0
 		crossGroupRetry := common.GetContextKeyBool(param.Ctx, constant.ContextKeyTokenCrossGroupRetry)
+		// A subscription limited to some groups pays for this request, so a
+		// retry must not move to a group it does not cover.
+		paidGroups, paidGroupsOnly := common.GetContextKeyType[[]string](param.Ctx, constant.ContextKeyBillingAllowedGroups)
 
 		if lastGroupIndex, exists := common.GetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex); exists {
 			if idx, ok := lastGroupIndex.(int); ok {
@@ -147,12 +151,15 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannel(
-				autoGroup,
-				param.ModelName,
-				priorityRetry,
-				filters,
-			)
+			channel = nil
+			if !paidGroupsOnly || slices.Contains(paidGroups, autoGroup) {
+				channel, _ = model.GetRandomSatisfiedChannel(
+					autoGroup,
+					param.ModelName,
+					priorityRetry,
+					filters,
+				)
+			}
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组

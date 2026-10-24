@@ -1,8 +1,10 @@
 package model
 
 import (
+	"database/sql/driver"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -181,6 +183,9 @@ type SubscriptionPlan struct {
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
+	// Request groups the subscription quota pays for (empty = every group)
+	AllowedGroups SubscriptionGroups `json:"allowed_groups" gorm:"type:text"`
+
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
@@ -253,6 +258,66 @@ func GetSubscriptionOrderByTradeNo(tradeNo string) *SubscriptionOrder {
 }
 
 // User subscription instance
+// SubscriptionGroups lists the request groups a subscription pays for. It is
+// stored as a JSON array; an empty list means every group.
+type SubscriptionGroups []string
+
+func (g SubscriptionGroups) Value() (driver.Value, error) {
+	if len(g) == 0 {
+		return "", nil
+	}
+	data, err := common.Marshal([]string(g))
+	if err != nil {
+		return nil, err
+	}
+	return string(data), nil
+}
+
+func (g *SubscriptionGroups) Scan(value any) error {
+	var text string
+	switch v := value.(type) {
+	case nil:
+	case string:
+		text = v
+	case []byte:
+		text = string(v)
+	default:
+		return fmt.Errorf("unsupported subscription groups value %T", value)
+	}
+	if strings.TrimSpace(text) == "" {
+		*g = nil
+		return nil
+	}
+	var groups []string
+	if err := common.UnmarshalJsonStr(text, &groups); err != nil {
+		return err
+	}
+	*g = groups
+	return nil
+}
+
+// Allows reports whether the subscription pays for a request in group.
+func (g SubscriptionGroups) Allows(group string) bool {
+	return len(g) == 0 || slices.Contains(g, group)
+}
+
+// Normalize trims and deduplicates the groups. It returns the first group
+// that exists reports unknown, if any.
+func (g SubscriptionGroups) Normalize(exists func(string) bool) (SubscriptionGroups, string) {
+	var groups SubscriptionGroups
+	for _, group := range g {
+		group = strings.TrimSpace(group)
+		if group == "" || slices.Contains(groups, group) {
+			continue
+		}
+		if !exists(group) {
+			return nil, group
+		}
+		groups = append(groups, group)
+	}
+	return groups, ""
+}
+
 type UserSubscription struct {
 	Id     int `json:"id"`
 	UserId int `json:"user_id" gorm:"index;index:idx_user_sub_active,priority:1"`
@@ -278,6 +343,10 @@ type UserSubscription struct {
 
 	// Whether wallet fallback is allowed after this subscription's quota is exhausted (snapshot from plan)
 	AllowWalletOverflow bool `json:"allow_wallet_overflow"`
+
+	// Request groups this subscription pays for, read from its plan so plan
+	// edits apply to existing subscriptions (empty = every group)
+	AllowedGroups SubscriptionGroups `json:"allowed_groups" gorm:"-"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
@@ -896,38 +965,54 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	return buildSubscriptionSummaries(subs), nil
 }
 
-// HasActiveUserSubscription returns whether the user has any active subscription.
-// This is a lightweight existence check to avoid heavy pre-consume transactions.
-func HasActiveUserSubscription(userId int) (bool, error) {
-	if userId <= 0 {
-		return false, errors.New("invalid userId")
-	}
-	now := common.GetTimestamp()
-	var count int64
-	if err := DB.Model(&UserSubscription{}).
-		Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
-		Count(&count).Error; err != nil {
+// HasActiveUserSubscription returns whether the user has an active subscription
+// whose plan pays for requests in group. This is a lightweight existence check
+// to avoid heavy pre-consume transactions.
+func HasActiveUserSubscription(userId int, group string) (bool, error) {
+	subs, err := activeUserSubscriptionGroups(userId, nil)
+	if err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	return slices.ContainsFunc(subs, func(sub UserSubscription) bool { return sub.AllowedGroups.Allows(group) }), nil
 }
 
 // UserActiveSubscriptionsAllowWalletOverflow returns whether wallet balance may be used
-// after the user's subscription quota is exhausted. A single active subscription that
-// disallows wallet overflow (allow_wallet_overflow = false) blocks the fallback.
-func UserActiveSubscriptionsAllowWalletOverflow(userId int) (bool, error) {
-	if userId <= 0 {
-		return false, errors.New("invalid userId")
-	}
-	now := common.GetTimestamp()
-	var strictCount int64
-	if err := DB.Model(&UserSubscription{}).
-		Where("user_id = ? AND status = ? AND end_time > ? AND allow_wallet_overflow = ?",
-			userId, "active", now, false).
-		Count(&strictCount).Error; err != nil {
+// after the user's subscription quota for group is exhausted. A single active
+// subscription for that group that disallows wallet overflow
+// (allow_wallet_overflow = false) blocks the fallback.
+func UserActiveSubscriptionsAllowWalletOverflow(userId int, group string) (bool, error) {
+	strict, err := activeUserSubscriptionGroups(userId, func(query *gorm.DB) *gorm.DB {
+		return query.Where("allow_wallet_overflow = ?", false)
+	})
+	if err != nil {
 		return false, err
 	}
-	return strictCount == 0, nil
+	return !slices.ContainsFunc(strict, func(sub UserSubscription) bool { return sub.AllowedGroups.Allows(group) }), nil
+}
+
+// activeUserSubscriptionGroups loads the user's active subscriptions,
+// optionally narrowed by filter, with the groups their plans pay for.
+func activeUserSubscriptionGroups(userId int, filter func(*gorm.DB) *gorm.DB) ([]UserSubscription, error) {
+	if userId <= 0 {
+		return nil, errors.New("invalid userId")
+	}
+	query := DB.Model(&UserSubscription{}).Select("id", "plan_id").
+		Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", common.GetTimestamp())
+	if filter != nil {
+		query = filter(query)
+	}
+	var subs []UserSubscription
+	if err := query.Find(&subs).Error; err != nil {
+		return nil, err
+	}
+	for i := range subs {
+		plan, err := GetSubscriptionPlanById(subs[i].PlanId)
+		if err != nil {
+			return nil, err
+		}
+		subs[i].AllowedGroups = plan.AllowedGroups
+	}
+	return subs, nil
 }
 
 // GetAllUserSubscriptions returns all subscriptions (active and expired) for a user.
@@ -952,6 +1037,9 @@ func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
 	result := make([]SubscriptionSummary, 0, len(subs))
 	for _, sub := range subs {
 		subCopy := sub
+		if plan, err := GetSubscriptionPlanById(sub.PlanId); err == nil {
+			subCopy.AllowedGroups = plan.AllowedGroups
+		}
 		result = append(result, SubscriptionSummary{
 			Subscription: &subCopy,
 		})
@@ -1170,6 +1258,7 @@ type SubscriptionPreConsumeResult struct {
 	AmountTotal        int64
 	AmountUsedBefore   int64
 	AmountUsedAfter    int64
+	AllowedGroups      SubscriptionGroups
 }
 
 // ExpireDueSubscriptions marks expired subscriptions and handles group downgrade.
@@ -1330,8 +1419,9 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 	return tx.Save(sub).Error
 }
 
-// PreConsumeUserSubscription pre-consumes from any active subscription total quota.
-func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64) (*SubscriptionPreConsumeResult, error) {
+// PreConsumeUserSubscription pre-consumes from any active subscription total
+// quota that pays for requests in group.
+func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64, group string) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
@@ -1359,11 +1449,16 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			if err := tx.Where("id = ?", existing.UserSubscriptionId).First(&sub).Error; err != nil {
 				return err
 			}
+			plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+			if err != nil {
+				return err
+			}
 			returnValue.UserSubscriptionId = sub.Id
 			returnValue.PreConsumed = existing.PreConsumed
 			returnValue.AmountTotal = sub.AmountTotal
 			returnValue.AmountUsedBefore = sub.AmountUsed
 			returnValue.AmountUsedAfter = sub.AmountUsed
+			returnValue.AllowedGroups = plan.AllowedGroups
 			return nil
 		}
 
@@ -1377,12 +1472,17 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 		if len(subs) == 0 {
 			return errors.New("no active subscription")
 		}
+		covered := false
 		for _, candidate := range subs {
 			sub := candidate
 			plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
 			if err != nil {
 				return err
 			}
+			if !plan.AllowedGroups.Allows(group) {
+				continue
+			}
+			covered = true
 			if err := maybeResetUserSubscriptionWithPlanTx(tx, &sub, plan, now); err != nil {
 				return err
 			}
@@ -1411,6 +1511,7 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 					returnValue.AmountTotal = sub.AmountTotal
 					returnValue.AmountUsedBefore = sub.AmountUsed
 					returnValue.AmountUsedAfter = sub.AmountUsed
+					returnValue.AllowedGroups = plan.AllowedGroups
 					return nil
 				}
 				return err
@@ -1424,7 +1525,11 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			returnValue.AmountTotal = sub.AmountTotal
 			returnValue.AmountUsedBefore = usedBefore
 			returnValue.AmountUsedAfter = sub.AmountUsed
+			returnValue.AllowedGroups = plan.AllowedGroups
 			return nil
+		}
+		if !covered {
+			return fmt.Errorf("no active subscription for group %s", group)
 		}
 		return fmt.Errorf("subscription quota insufficient, need=%d", amount)
 	})

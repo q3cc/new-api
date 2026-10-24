@@ -21,6 +21,9 @@ const (
 	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
 	ContextKeyTokenCrossGroupRetry   ContextKey = "token_cross_group_retry"
 	ContextKeyTokenAutoGroups        ContextKey = "token_auto_groups"
+	// ContextKeyBillingAllowedGroups holds the groups the subscription paying
+	// for this request covers; a retry may only move to one of them.
+	ContextKeyBillingAllowedGroups ContextKey = "billing_allowed_groups"
 
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
@@ -465,20 +466,25 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		if subConsume <= 0 {
 			subConsume = 1
 		}
+		funding := &SubscriptionFunding{
+			requestId: relayInfo.RequestId,
+			userId:    relayInfo.UserId,
+			modelName: relayInfo.GetBillingModelName(),
+			amount:    subConsume,
+			group:     relayInfo.UsingGroup,
+		}
 		session := &BillingSession{
 			relayInfo: relayInfo,
 			lang:      i18n.StatedLang(c),
-			funding: &SubscriptionFunding{
-				requestId: relayInfo.RequestId,
-				userId:    relayInfo.UserId,
-				modelName: relayInfo.GetBillingModelName(),
-				amount:    subConsume,
-			},
+			funding:   funding,
 		}
 		// 必须传 subConsume 而非 preConsumedQuota，保证 SubscriptionFunding.amount、
 		// preConsume 参数和 FinalPreConsumedQuota 三者一致，避免订阅多扣费。
 		if apiErr := session.preConsume(c, int(subConsume)); apiErr != nil {
 			return nil, apiErr
+		}
+		if len(funding.allowedGroups) > 0 {
+			common.SetContextKey(c, constant.ContextKeyBillingAllowedGroups, []string(funding.allowedGroups))
 		}
 		return session, nil
 	}
@@ -500,7 +506,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	case "subscription_first":
 		fallthrough
 	default:
-		hasSub, subCheckErr := model.HasActiveUserSubscription(relayInfo.UserId)
+		hasSub, subCheckErr := model.HasActiveUserSubscription(relayInfo.UserId, relayInfo.UsingGroup)
 		if subCheckErr != nil {
 			return nil, types.NewError(subCheckErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 		}
@@ -511,7 +517,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		if apiErr != nil {
 			if apiErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
 				// 仅当用户的活跃订阅允许钱包回退时才回退到钱包，否则返回订阅额度不足错误
-				allowOverflow, overflowErr := model.UserActiveSubscriptionsAllowWalletOverflow(relayInfo.UserId)
+				allowOverflow, overflowErr := model.UserActiveSubscriptionsAllowWalletOverflow(relayInfo.UserId, relayInfo.UsingGroup)
 				if overflowErr != nil {
 					return nil, types.NewError(overflowErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 				}

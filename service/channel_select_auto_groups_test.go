@@ -429,3 +429,116 @@ func TestTrialGroupFundingCompatibility(t *testing.T) {
 		})
 	}
 }
+
+// A plan limited to some groups pays only for requests in those groups, and
+// an edit to the plan's groups applies to subscriptions bought before it.
+// Other requests use the wallet, and a cross-group retry stays inside the
+// groups the subscription paid for.
+func TestSubscriptionAllowedGroupsChooseFunding(t *testing.T) {
+	db := setupChannelSelectAutoGroupsTest(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Option{}, &model.SubscriptionPlan{}, &model.UserSubscription{}, &model.SubscriptionPreConsumeRecord{}))
+	require.NoError(t, model.MigrateTrialCredit())
+	oldRedis := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() { common.RedisEnabled = oldRedis })
+	gin.SetMode(gin.TestMode)
+
+	t.Run("plan groups are trimmed, deduplicated and must exist", func(t *testing.T) {
+		exists := func(group string) bool { return group == "vip" || group == "svip" }
+		groups, unknown := model.SubscriptionGroups{" vip", "", "svip", "vip "}.Normalize(exists)
+		assert.Equal(t, model.SubscriptionGroups{"vip", "svip"}, groups)
+		assert.Empty(t, unknown)
+		_, unknown = model.SubscriptionGroups{"vip", "missing"}.Normalize(exists)
+		assert.Equal(t, "missing", unknown)
+	})
+
+	type planSpec struct {
+		groups   model.SubscriptionGroups
+		overflow bool
+	}
+	for _, tc := range []struct {
+		name, group, preference string
+		plans                   []planSpec
+		wantSubscription        int // index into plans, -1 for the wallet
+		wantRefused             bool
+	}{
+		{name: "vip plan pays a vip request", group: "vip", plans: []planSpec{{model.SubscriptionGroups{"vip"}, true}}, wantSubscription: 0},
+		{name: "vip plan leaves a default request to the wallet", group: "default", plans: []planSpec{{model.SubscriptionGroups{"vip"}, true}}, wantSubscription: -1},
+		{name: "vip plan without wallet fallback still leaves default to the wallet", group: "default", plans: []planSpec{{model.SubscriptionGroups{"vip"}, false}}, wantSubscription: -1},
+		{name: "unlimited plan pays after a vip plan is skipped", group: "default", plans: []planSpec{{model.SubscriptionGroups{"vip"}, true}, {nil, true}}, wantSubscription: 1},
+		{name: "subscription only refuses a group no plan covers", group: "default", preference: "subscription_only", plans: []planSpec{{model.SubscriptionGroups{"vip"}, true}}, wantRefused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user := model.User{Username: "groups-" + strings.ReplaceAll(tc.name, " ", "-"), AffCode: tc.name, Group: "default", Quota: 1000}
+			require.NoError(t, db.Create(&user).Error)
+			subs := make([]*model.UserSubscription, 0, len(tc.plans))
+			for _, spec := range tc.plans {
+				overflow := spec.overflow
+				plan := model.SubscriptionPlan{Title: "groups plan", Enabled: true, TotalAmount: 1000, AllowWalletOverflow: &overflow}
+				require.NoError(t, db.Create(&plan).Error)
+				sub, err := model.CreateUserSubscriptionFromPlanTx(db, user.Id, &plan, "admin")
+				require.NoError(t, err)
+				// The groups are set after purchase, as an administrator edit would.
+				require.NoError(t, db.Model(&plan).Update("allowed_groups", spec.groups).Error)
+				model.InvalidateSubscriptionPlanCache(plan.Id)
+				var stored model.SubscriptionPlan
+				require.NoError(t, db.First(&stored, plan.Id).Error)
+				assert.Equal(t, len(spec.groups), len(stored.AllowedGroups))
+				subs = append(subs, sub)
+			}
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+			info := &relaycommon.RelayInfo{UserId: user.Id, UserGroup: "default", UsingGroup: tc.group, RequestId: "groups-" + tc.name, IsPlayground: true, TokenUnlimited: true}
+			info.UserSetting.BillingPreference = tc.preference
+
+			session, apiErr := NewBillingSession(ctx, info, 100)
+
+			if tc.wantRefused {
+				require.NotNil(t, apiErr)
+				assert.Contains(t, apiErr.Error(), tc.group)
+				return
+			}
+			require.Nil(t, apiErr)
+			allowed, restricted := common.GetContextKeyType[[]string](ctx, constant.ContextKeyBillingAllowedGroups)
+			if tc.wantSubscription < 0 {
+				assert.Equal(t, BillingSourceWallet, session.funding.Source())
+				assert.False(t, restricted)
+				for _, sub := range subs {
+					var stored model.UserSubscription
+					require.NoError(t, db.First(&stored, sub.Id).Error)
+					assert.Zero(t, stored.AmountUsed)
+				}
+				return
+			}
+			assert.Equal(t, BillingSourceSubscription, session.funding.Source())
+			var paid model.UserSubscription
+			require.NoError(t, db.First(&paid, subs[tc.wantSubscription].Id).Error)
+			assert.EqualValues(t, 100, paid.AmountUsed)
+			assert.Equal(t, len(tc.plans[tc.wantSubscription].groups) > 0, restricted)
+			if restricted {
+				assert.Equal(t, []string(tc.plans[tc.wantSubscription].groups), allowed)
+			}
+		})
+	}
+
+	t.Run("cross-group retry stays inside the paid groups", func(t *testing.T) {
+		const modelName = "paid-groups-model"
+		createChannelSelectAutoGroupsChannel(t, db, 2301, "default", modelName)
+		createChannelSelectAutoGroupsChannel(t, db, 2302, "vip", modelName)
+		model.InitChannelCache()
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+		common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+		common.SetContextKey(ctx, constant.ContextKeyTokenAutoGroups, []string{"default", "vip"})
+		common.SetContextKey(ctx, constant.ContextKeyTokenCrossGroupRetry, true)
+		common.SetContextKey(ctx, constant.ContextKeyBillingAllowedGroups, []string{"vip"})
+		retry := 0
+
+		channel, group, err := CacheGetRandomSatisfiedChannel(&RetryParam{Ctx: ctx, TokenGroup: "auto", ModelName: modelName, RequestPath: "/v1/chat/completions", Retry: &retry})
+
+		require.NoError(t, err)
+		require.NotNil(t, channel)
+		assert.Equal(t, 2302, channel.Id)
+		assert.Equal(t, "vip", group)
+	})
+}

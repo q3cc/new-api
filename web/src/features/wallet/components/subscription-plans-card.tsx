@@ -420,6 +420,7 @@ export function SubscriptionPlansCard({
                   const isActive =
                     subscription?.status === 'active' && !isExpired
                   const nextResetTime = subscription?.next_reset_time ?? 0
+                  const allowedGroups = subscription?.allowed_groups ?? []
                   let statusBadge = (
                     <StatusBadge
                       label={t('Expired')}
@@ -455,7 +456,7 @@ export function SubscriptionPlansCard({
                   return (
                     <div
                       key={subscription?.id}
-                      className='rounded-md border bg-background p-3 text-xs'
+                      className='bg-background rounded-md border p-3 text-xs'
                     >
                       <div className='flex items-center justify-between'>
                         <div className='flex items-center gap-2'>
@@ -484,6 +485,11 @@ export function SubscriptionPlansCard({
                         <div className='text-muted-foreground mt-1'>
                           {t('Next reset')}:{' '}
                           {new Date(nextResetTime * 1000).toLocaleString()}
+                        </div>
+                      )}
+                      {allowedGroups.length > 0 && (
+                        <div className='text-muted-foreground mt-1'>
+                          {`${t('Allowed groups')}: ${allowedGroups.join(', ')}`}
                         </div>
                       )}
                       <div className='text-muted-foreground mt-1'>
@@ -552,6 +558,9 @@ export function SubscriptionPlansCard({
                 limit > 0 ? `${t('Purchase Limit')}: ${limit}` : null,
                 plan.upgrade_group
                   ? `${t('Upgrade Group')}: ${plan.upgrade_group}`
+                  : null,
+                plan.allowed_groups?.length
+                  ? `${t('Allowed groups')}: ${plan.allowed_groups.join(', ')}`
                   : null,
               ].filter(Boolean) as string[]
 

@@ -198,6 +198,9 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 			return
 		}
 	}
+	if !normalizePlanAllowedGroups(c, &req.Plan) {
+		return
+	}
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorT(c, "Custom reset cycle must be greater than 0 seconds")
@@ -272,6 +275,9 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			return
 		}
 	}
+	if !normalizePlanAllowedGroups(c, &req.Plan) {
+		return
+	}
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorT(c, "Custom reset cycle must be greater than 0 seconds")
@@ -297,6 +303,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"total_amount":               req.Plan.TotalAmount,
 			"upgrade_group":              req.Plan.UpgradeGroup,
 			"downgrade_group":            req.Plan.DowngradeGroup,
+			"allowed_groups":             req.Plan.AllowedGroups,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
 			"updated_at":                 common.GetTimestamp(),
@@ -318,6 +325,22 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 	}
 	model.InvalidateSubscriptionPlanCache(id)
 	common.ApiSuccess(c, nil)
+}
+
+// normalizePlanAllowedGroups trims and deduplicates the groups a plan pays
+// for and rejects one that does not exist.
+func normalizePlanAllowedGroups(c *gin.Context, plan *model.SubscriptionPlan) bool {
+	ratios := ratio_setting.GetGroupRatioCopy()
+	groups, unknown := plan.AllowedGroups.Normalize(func(group string) bool {
+		_, ok := ratios[group]
+		return ok
+	})
+	if unknown != "" {
+		common.ApiErrorT(c, "Allowed group {{group}} does not exist", map[string]any{"group": unknown})
+		return false
+	}
+	plan.AllowedGroups = groups
+	return true
 }
 
 type AdminUpdateSubscriptionPlanStatusRequest struct {
