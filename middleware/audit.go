@@ -46,21 +46,58 @@ var auditRouteActions = map[string]string{
 	"POST /api/user/topup/complete":                    "user.topup_complete",
 	"DELETE /api/user/:id/reset_passkey":               "user.reset_passkey",
 	"DELETE /api/user/:id/oauth/bindings/:provider_id": "user.oauth_unbind",
+	"POST /api/user/:id/trial-credit":                  "user.trial_credit_grant",
+
+	// 渠道
+	"POST /api/channel/fetch_models":            "channel.fetch_models",
+	"POST /api/channel/fix":                     "channel.fix_abilities",
+	"POST /api/channel/priority/reorder":        "channel.priority_reorder",
+	"POST /api/channel/upstream_updates/detect": "channel.upstream_detect",
+	"POST /api/channel/:id/codex/refresh":       "channel.codex_refresh",
+	"POST /api/channel/:id/codex/usage/reset":   "channel.codex_usage_reset",
+	"POST /api/channel/ollama/pull":             "channel.ollama_pull",
+	"POST /api/channel/ollama/pull/stream":      "channel.ollama_pull",
+	"DELETE /api/channel/ollama/delete":         "channel.ollama_delete",
 
 	// 系统设置（root）
-	"POST /api/option/payment_compliance":       "option.payment_compliance",
-	"POST /api/option/rest_model_ratio":         "option.reset_ratio",
-	"DELETE /api/option/channel_affinity_cache": "option.clear_affinity_cache",
+	"POST /api/option/payment_compliance":                 "option.payment_compliance",
+	"POST /api/option/rest_model_ratio":                   "option.reset_ratio",
+	"DELETE /api/option/channel_affinity_cache":           "option.clear_affinity_cache",
+	"PUT /api/option/epay":                                "payment.epay_config_update",
+	"PATCH /api/option/request_policy":                    "option.request_policy_update",
+	"POST /api/option/model_pricing/preview":              "option.model_pricing_preview",
+	"POST /api/option/model_pricing/convert":              "option.model_pricing_convert",
+	"POST /api/option/waffo-pancake/pair":                 "option.waffo_pancake_pair",
+	"POST /api/option/waffo-pancake/save":                 "option.waffo_pancake_save",
+	"POST /api/option/waffo-pancake/subscription-product": "option.waffo_pancake_subscription_product",
+	"PUT /api/trial-credit/config":                        "trial_credit.config_update",
+	"POST /api/ratio_sync/fetch":                          "ratio_sync.fetch",
 
 	// 自定义 OAuth（root）
-	"POST /api/custom-oauth-provider/":      "custom_oauth.create",
-	"PUT /api/custom-oauth-provider/:id":    "custom_oauth.update",
-	"DELETE /api/custom-oauth-provider/:id": "custom_oauth.delete",
+	"POST /api/custom-oauth-provider/":          "custom_oauth.create",
+	"PUT /api/custom-oauth-provider/:id":        "custom_oauth.update",
+	"DELETE /api/custom-oauth-provider/:id":     "custom_oauth.delete",
+	"POST /api/custom-oauth-provider/discovery": "custom_oauth.discovery",
 
 	// 性能/缓存（root）
 	"DELETE /api/performance/disk_cache": "performance.clear_disk_cache",
 	"POST /api/performance/gc":           "performance.gc",
 	"DELETE /api/performance/logs":       "performance.clear_logs",
+	"POST /api/performance/reset_stats":  "performance.reset_stats",
+
+	// 系统信息与系统任务（root）
+	"DELETE /api/system-info/instances/:node_name": "system.instance_delete",
+	"DELETE /api/system-info/stale-instances":      "system.stale_instances_delete",
+	"DELETE /api/system-task/history":              "system_task.history_delete",
+
+	// 任务插件（root）
+	"POST /api/plugin/task":                          "task_plugin.upload",
+	"PUT /api/plugin/task":                           "task_plugin.upload",
+	"POST /api/plugin/task/:key/activate":            "task_plugin.activate",
+	"POST /api/plugin/task/:key/dryrun":              "task_plugin.dryrun",
+	"POST /api/plugin/task/:key/status":              "task_plugin.status_update",
+	"PUT /api/plugin/task/marketplace/sources":       "task_plugin.marketplace_sources_update",
+	"DELETE /api/plugin/task/:key/versions/:version": "task_plugin.version_delete",
 
 	// 兑换码
 	"PUT /api/redemption/":           "redemption.update",
@@ -74,9 +111,10 @@ var auditRouteActions = map[string]string{
 	"DELETE /api/prefill_group/:id": "prefill_group.delete",
 
 	// 供应商
-	"POST /api/vendors/":      "vendor.create",
-	"PUT /api/vendors/":       "vendor.update",
-	"DELETE /api/vendors/:id": "vendor.delete",
+	"POST /api/vendors/":                   "vendor.create",
+	"PUT /api/vendors/":                    "vendor.update",
+	"DELETE /api/vendors/:id":              "vendor.delete",
+	"POST /api/vendors/operations/preview": "vendor.operation_preview",
 
 	// 模型元数据
 	"POST /api/models/":              "model.create",
@@ -85,17 +123,47 @@ var auditRouteActions = map[string]string{
 	"POST /api/models/sync_upstream": "model.sync_upstream",
 
 	// 部署
-	"POST /api/deployments/":      "deployment.create",
-	"PUT /api/deployments/:id":    "deployment.update",
-	"DELETE /api/deployments/:id": "deployment.delete",
+	"POST /api/deployments/":                         "deployment.create",
+	"PUT /api/deployments/:id":                       "deployment.update",
+	"DELETE /api/deployments/:id":                    "deployment.delete",
+	"PUT /api/deployments/:id/name":                  "deployment.rename",
+	"POST /api/deployments/:id/extend":               "deployment.extend",
+	"POST /api/deployments/price-estimation":         "deployment.price_estimate",
+	"POST /api/deployments/test-connection":          "deployment.test_connection",
+	"POST /api/deployments/settings/test-connection": "deployment.test_connection",
 
 	// 订阅（管理员）
-	"POST /api/subscription/admin/plans":    "subscription.plan_create",
-	"PUT /api/subscription/admin/plans/:id": "subscription.plan_update",
-	"POST /api/subscription/admin/bind":     "subscription.bind",
+	"POST /api/subscription/admin/plans":                             "subscription.plan_create",
+	"PUT /api/subscription/admin/plans/:id":                          "subscription.plan_update",
+	"POST /api/subscription/admin/bind":                              "subscription.bind",
+	"PATCH /api/subscription/admin/plans/:id":                        "subscription.plan_status_update",
+	"POST /api/subscription/admin/users/:id/subscriptions":           "subscription.user_subscription_create",
+	"POST /api/subscription/admin/user_subscriptions/:id/invalidate": "subscription.user_subscription_invalidate",
+	"DELETE /api/subscription/admin/user_subscriptions/:id":          "subscription.user_subscription_delete",
+
+	// 活动（转盘、抽奖、排行榜）
+	"POST /api/lottery/admin/activities":             "activity.create",
+	"PUT /api/lottery/admin/activities/:id":          "activity.update",
+	"DELETE /api/lottery/admin/activities/:id":       "activity.delete",
+	"POST /api/lottery/admin/activities/:id/cancel":  "activity.cancel",
+	"POST /api/lottery/admin/activities/:id/draw":    "activity.draw",
+	"POST /api/lottery/admin/entries/:id/deliver":    "activity.entry_deliver",
+	"POST /api/lottery/admin/entries/:id/disqualify": "activity.entry_disqualify",
+
+	// 推荐返利
+	"POST /api/affiliate/invites/:id/cancel":      "affiliate.invite_cancel",
+	"POST /api/affiliate/invite-logs/:id/restore": "affiliate.invite_restore",
+	"POST /api/affiliate/rebates/:id/approve":     "affiliate.rebate_approve",
+	"POST /api/affiliate/rebates/:id/reject":      "affiliate.rebate_reject",
 
 	// 日志
 	"POST /api/system-task/log-cleanup": "log.cleanup_start",
+}
+
+// AuditRouteAction returns the action a fallback audit log records for an
+// administrator write route, or "" when the route falls back to "generic".
+func AuditRouteAction(method, route string) string {
+	return auditRouteActions[method+" "+route]
 }
 
 // beginAdminAudit 在管理/root 写操作进入 handler 前包装 ResponseWriter，

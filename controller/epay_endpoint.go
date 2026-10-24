@@ -31,7 +31,7 @@ func UpdateEpayConfig(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAudit(c, "generic", map[string]any{"action": "payment.epay_config_update", "endpoint_count": len(config.Endpoints), "payment_method_count": len(config.PayMethods)})
+	recordManageAudit(c, "payment.epay_config_update", map[string]any{"endpoint_count": len(config.Endpoints), "payment_method_count": len(config.PayMethods)})
 	GetEpayConfig(c)
 }
 

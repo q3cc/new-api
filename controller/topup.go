@@ -594,7 +594,7 @@ func AdminCompleteTopUp(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAudit(c, "generic", map[string]any{"action": "payment.order_complete", "trade_no": req.TradeNo})
+	recordManageAudit(c, "user.topup_complete", map[string]any{"trade_no": req.TradeNo})
 	common.ApiSuccess(c, nil)
 }
 

@@ -72,6 +72,19 @@ var auditContentTemplates = map[string]string{
 	"redemption.create":              "Created ${count} redemption codes named ${name} (${quota} each)",
 	"redemption.delete_batch":        "Batch deleted ${count} redemption codes",
 
+	"user.topup_complete":        "Completed top-up order ${trade_no} for the user",
+	"payment.epay_config_update": "Updated Epay configuration",
+
+	"channel.upstream_detect_all": "Started detecting upstream model changes for all channels",
+	"model.delete_batch":          "Batch deleted models",
+	"model.metadata.sync":         "Synced model metadata",
+	"model.pricing.update":        "Updated model pricing",
+	"vendor.metadata.save":        "Saved vendor ${name}",
+	"vendor.metadata.delete":      "Deleted a vendor",
+	"vendor.assign":               "Assigned models to a vendor",
+	"vendor.merge":                "Merged vendors",
+	"vendor.delete":               "Deleted a vendor",
+
 	"subscription.plan_reset":       "Reset active subscriptions for plan ${plan_id}",
 	"subscription.user_plan_reset":  "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
 	"subscription.user_quota_reset": "Administrator reset the quota of subscription plan ${plan_title} (ID: ${plan_id})",

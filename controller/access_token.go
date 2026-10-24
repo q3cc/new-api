@@ -386,6 +386,21 @@ func GetAuditLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// Older versions recorded routes the fallback table did not name yet as
+	// "generic"; name them now so the console can translate them.
+	for _, entry := range logs {
+		if entry.Action != "generic" {
+			continue
+		}
+		action := middleware.AuditRouteAction(entry.Method, entry.Route)
+		if action == "" {
+			continue
+		}
+		entry.Action = action
+		if entry.Other.Op != nil && entry.Other.Op.Action == "generic" {
+			entry.Other.Op.Action = action
+		}
+	}
 	page.SetItems(logs)
 	page.SetTotal(int(total))
 	common.ApiSuccess(c, page)

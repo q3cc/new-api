@@ -1504,3 +1504,38 @@ func TestTrialCreditAuthorizationAndOwnerIsolation(t *testing.T) {
 	assert.Contains(t, invalid.Body.String(), `"success":false`)
 
 }
+
+// Older versions recorded administrator routes without an action name as
+// "generic". Listing names those that the fallback table now covers, so the
+// console translates them; a route still without a name stays generic.
+func TestAuditListNamesOlderGenericRouteLogs(t *testing.T) {
+	user, pat := setupAccessTokenAudit(t)
+	for _, route := range [][2]string{{"PUT", "/api/lottery/admin/activities/:id"}, {"POST", "/api/not-named"}} {
+		model.RecordAuditLog(nil, model.AuditLog{
+			ActorRole: common.RoleAdminUser, UserId: user.Id, Category: model.AuditCategoryOperation,
+			Action: "generic", Method: route[0], Route: route[1], Success: true,
+			Other: model.AuditOther{Op: &model.AuditOperation{Action: "generic", Params: model.AuditFields{"method": route[0], "route": route[1]}}},
+		})
+	}
+	router := gin.New()
+	router.Use(middleware.RequestId(), middleware.AccessTokenAudit())
+	router.GET("/api/audit/self", middleware.UserAuth(), GetAuditLogs)
+
+	response := auditRequest(router, "GET", "/api/audit/self?category=operation", pat)
+
+	var result struct {
+		Success bool
+		Data    struct{ Items []model.AuditLog }
+	}
+	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+	require.True(t, result.Success)
+	actions := map[string][2]string{}
+	for _, item := range result.Data.Items {
+		require.NotNil(t, item.Other.Op)
+		actions[item.Route] = [2]string{item.Action, item.Other.Op.Action}
+	}
+	assert.Equal(t, map[string][2]string{
+		"/api/lottery/admin/activities/:id": {"activity.update", "activity.update"},
+		"/api/not-named":                    {"generic", "generic"},
+	}, actions)
+}

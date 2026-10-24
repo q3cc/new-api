@@ -489,6 +489,7 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'user.topup_complete': 'Completed top-up order for the user',
   'user.reset_passkey': 'Reset the user passkey',
   'user.oauth_unbind': 'Removed an OAuth binding for the user',
+  'user.trial_credit_grant': 'Granted trial credit to the user',
   // System settings
   'option.update': 'Updated system setting {{key}}',
   'option.passkey_domains':
@@ -501,14 +502,39 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'option.payment_compliance': 'Confirmed payment compliance',
   'option.reset_ratio': 'Reset model ratios',
   'option.clear_affinity_cache': 'Cleared channel affinity cache',
+  'option.request_policy_update': 'Updated the request policy',
+  'option.model_pricing_preview': 'Previewed model pricing',
+  'option.model_pricing_convert': 'Previewed model pricing conversion',
+  'option.waffo_pancake_pair': 'Created a Waffo Pancake store and product',
+  'option.waffo_pancake_save': 'Saved Waffo Pancake settings',
+  'option.waffo_pancake_subscription_product':
+    'Created a Waffo Pancake subscription product',
+  'trial_credit.config_update': 'Updated trial credit settings',
+  'ratio_sync.fetch': 'Fetched upstream ratios',
+  // Payments
+  'payment.epay_config_update': 'Updated Epay configuration',
   // Custom OAuth
   'custom_oauth.create': 'Created a custom OAuth provider',
   'custom_oauth.update': 'Updated a custom OAuth provider',
   'custom_oauth.delete': 'Deleted a custom OAuth provider',
+  'custom_oauth.discovery': 'Fetched OAuth discovery configuration',
   // Performance / cache
   'performance.clear_disk_cache': 'Cleared disk cache',
   'performance.gc': 'Triggered garbage collection',
   'performance.clear_logs': 'Cleared log files',
+  'performance.reset_stats': 'Reset performance statistics',
+  // System information and tasks
+  'system.instance_delete': 'Removed a stale server instance',
+  'system.stale_instances_delete': 'Removed stale server instances',
+  'system_task.history_delete': 'Cleared system task history',
+  // Task plugins
+  'task_plugin.upload': 'Uploaded a task plugin',
+  'task_plugin.activate': 'Activated a task plugin version',
+  'task_plugin.dryrun': 'Ran a task plugin dry run',
+  'task_plugin.status_update': 'Changed task plugin status',
+  'task_plugin.marketplace_sources_update':
+    'Updated task plugin marketplace sources',
+  'task_plugin.version_delete': 'Deleted a task plugin version',
   // Channel
   'channel.create': 'Created channel {{name}} (type {{type}}, count {{count}})',
   'channel.update': 'Updated channel {{name}} (ID: {{id}})',
@@ -531,6 +557,16 @@ const AUDIT_TEMPLATES: Record<string, string> = {
     'Applied upstream model changes to channel (ID: {{id}})',
   'channel.upstream_apply_all':
     'Applied upstream model changes to {{count}} channels',
+  'channel.upstream_detect': 'Detected upstream model changes',
+  'channel.upstream_detect_all':
+    'Started detecting upstream model changes for all channels',
+  'channel.fetch_models': 'Fetched the upstream model list',
+  'channel.fix_abilities': 'Fixed channel abilities',
+  'channel.priority_reorder': 'Reordered channel priorities',
+  'channel.codex_refresh': 'Refreshed Codex channel credentials',
+  'channel.codex_usage_reset': 'Reset Codex channel usage',
+  'channel.ollama_pull': 'Pulled an Ollama model',
+  'channel.ollama_delete': 'Deleted an Ollama model',
   // Redemption codes
   'redemption.subscription_create':
     'Created {{count}} subscription redemption codes named {{name}} for plan {{plan}}',
@@ -547,26 +583,66 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'vendor.create': 'Created a vendor',
   'vendor.update': 'Updated a vendor',
   'vendor.delete': 'Deleted a vendor',
+  'vendor.metadata.save': 'Saved vendor {{name}}',
+  'vendor.metadata.delete': 'Deleted a vendor',
+  'vendor.assign': 'Assigned models to a vendor',
+  'vendor.merge': 'Merged vendors',
+  'vendor.operation_preview': 'Previewed a vendor operation',
   // Model metadata
   'model.create': 'Created a model',
   'model.update': 'Updated a model',
   'model.delete': 'Deleted a model',
   'model.sync_upstream': 'Synced upstream models',
+  'model.delete_batch': 'Batch deleted models',
+  'model.metadata.sync': 'Synced model metadata',
+  'model.pricing.update': 'Updated model pricing',
   // Deployments
   'deployment.create': 'Created a deployment',
   'deployment.update': 'Updated a deployment',
   'deployment.delete': 'Deleted a deployment',
+  'deployment.rename': 'Renamed a deployment',
+  'deployment.extend': 'Extended a deployment',
+  'deployment.price_estimate': 'Estimated deployment price',
+  'deployment.test_connection': 'Tested the deployment provider connection',
   // Subscriptions
   'subscription.plan_create': 'Created a subscription plan',
   'subscription.plan_update': 'Updated a subscription plan',
   'subscription.bind': 'Bound a subscription',
+  'subscription.plan_status_update': 'Changed subscription plan status',
+  'subscription.plan_reset': 'Reset active subscriptions for plan {{plan_id}}',
+  'subscription.user_plan_reset':
+    'Reset active plan {{plan_id}} subscriptions for user {{target_user_id}}',
+  'subscription.user_subscription_create': 'Added a subscription for the user',
+  'subscription.user_subscription_invalidate':
+    'Invalidated a user subscription',
+  'subscription.user_subscription_delete': 'Deleted a user subscription',
   'subscription.user_quota_reset':
     'Administrator reset the quota of subscription plan {{plan_title}} (ID: {{plan_id}})',
+  // Activities
+  'activity.create': 'Created an activity',
+  'activity.update': 'Updated an activity',
+  'activity.delete': 'Deleted an activity',
+  'activity.cancel': 'Cancelled an activity',
+  'activity.draw': 'Drew winners or awarded prizes for an activity',
+  'activity.entry_deliver': 'Delivered an activity prize',
+  'activity.entry_disqualify': 'Changed eligibility of a leaderboard entry',
+  // Referral rebates
+  'affiliate.invite_cancel': 'Cancelled an invitation',
+  'affiliate.invite_restore': 'Restored an invitation',
+  'affiliate.rebate_approve': 'Approved a referral rebate',
+  'affiliate.rebate_reject': 'Rejected a referral rebate',
   // Logs
   'log.clear': 'Cleared historical logs',
   'log.cleanup_start': 'Log cleanup task started.',
   // Generic middleware fallback
   generic: '{{method}} {{route}}',
+}
+
+// Older versions recorded these operations as "generic" with the real action
+// in params; they render with the template of the action recorded now.
+const LEGACY_GENERIC_ACTIONS: Record<string, string> = {
+  'payment.order_complete': 'user.topup_complete',
+  'payment.epay_config_update': 'payment.epay_config_update',
 }
 
 /**
@@ -626,7 +702,12 @@ export function renderAuditContent(
     }
     return t('Batch deleted redemption codes (count not recorded)')
   }
-  const template = AUDIT_TEMPLATES[op.action]
+  let action = op.action
+  const legacyAction = op.params?.action
+  if (action === 'generic' && typeof legacyAction === 'string') {
+    action = LEGACY_GENERIC_ACTIONS[legacyAction] ?? action
+  }
+  const template = AUDIT_TEMPLATES[action]
   if (!template) return null
   const quotaOperation = buildQuotaAuditOperation(
     op.action,
