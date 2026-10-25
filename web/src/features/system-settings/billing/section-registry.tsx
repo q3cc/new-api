@@ -103,6 +103,8 @@ const BILLING_SECTIONS = [
             settings['affiliate_rebate_setting.risk_review_score'],
           'affiliate_rebate_setting.cancel_shared_ip':
             settings['affiliate_rebate_setting.cancel_shared_ip'],
+          'affiliate_rebate_setting.restore_shared_ip_paid_amount':
+            settings['affiliate_rebate_setting.restore_shared_ip_paid_amount'],
         }}
         complianceConfirmed={
           (settings['payment_setting.compliance_confirmed'] ?? false) &&

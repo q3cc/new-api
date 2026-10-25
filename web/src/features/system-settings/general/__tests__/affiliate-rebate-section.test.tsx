@@ -53,6 +53,7 @@ function Fixture() {
             'affiliate_rebate_setting.confirm_days': 7,
             'affiliate_rebate_setting.risk_review_score': 50,
             'affiliate_rebate_setting.cancel_shared_ip': true,
+            'affiliate_rebate_setting.restore_shared_ip_paid_amount': 3,
           }}
         />
       </SettingsPageProvider>
@@ -121,6 +122,29 @@ test('changing the inviter reward saves it under its original option key', async
     expect(api.put).toHaveBeenCalledWith('/api/option/', {
       key: 'QuotaForInviter',
       value: 1000,
+    })
+  )
+  expect(api.put).toHaveBeenCalledTimes(1)
+})
+
+test('changing the paid amount that restores a shared-IP cancellation saves it as a number', async () => {
+  await renderSettings()
+  const field = screen.getByRole('spinbutton', {
+    name: 'Restore after the invitee pays more than',
+  })
+  expect(field).toHaveValue(3)
+
+  fireEvent.change(field, { target: { value: '5.5' } })
+  const save = screen.getByRole('button', {
+    name: 'Save referral rebate settings',
+  })
+  await waitFor(() => expect(save).toBeEnabled())
+  fireEvent.click(save)
+
+  await waitFor(() =>
+    expect(api.put).toHaveBeenCalledWith('/api/option/', {
+      key: 'affiliate_rebate_setting.restore_shared_ip_paid_amount',
+      value: 5.5,
     })
   )
   expect(api.put).toHaveBeenCalledTimes(1)

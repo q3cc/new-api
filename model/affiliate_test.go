@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -186,18 +187,73 @@ func TestCancelAndRestoreAffiliateInvite(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[int]bool{logs[0].Id: true}, restorable)
 
-	require.NoError(t, RestoreAffiliateInvite(logs[0].Id, 1, "same household"))
+	require.NoError(t, RestoreAffiliateInvite(logs[0].Id, 1, "", "same household"))
 	assert.Equal(t, inviterId, userAffiliate(t, inviteeId).InviterId)
 	assert.Equal(t, 1, userAffiliate(t, inviterId).AffCount)
 	assert.Equal(t, AffiliateRebateRejected, userRebates(t, inviteeId)[0].Status, "rejected rebates stay rejected")
 	checkable, err := ListCheckableAffiliateInvites()
 	require.NoError(t, err)
 	assert.Empty(t, checkable, "a restored invitation is exempt from the shared-IP check")
-	assert.Error(t, RestoreAffiliateInvite(logs[0].Id, 1, ""), "an active invitation cannot be restored again")
+	assert.Error(t, RestoreAffiliateInvite(logs[0].Id, 1, "", ""), "an active invitation cannot be restored again")
 	require.NoError(t, DB.Order("id").Find(&logs).Error)
 	restorable, err = RestorableAffiliateInviteLogIds(logs)
 	require.NoError(t, err)
 	assert.Empty(t, restorable, "a cancellation followed by a restore is no longer restorable")
+}
+
+// An invitation the system cancelled for a shared IP comes back once the
+// invitee has paid more than the restore amount. A cancellation by an
+// administrator stays, and only successful orders count.
+func TestRestorePaidSharedIpInvites(t *testing.T) {
+	setupAffiliateFixture(t)
+	inviter := &User{Username: "aff_restore_inviter", Password: "password", Status: common.UserStatusEnabled, AffCode: "aff_restore_inviter"}
+	require.NoError(t, DB.Create(inviter).Error)
+	invitee := func(name string, status string, paid ...float64) int {
+		user := &User{Username: "aff_restore_" + name, Password: "password", Status: common.UserStatusEnabled, AffCode: "aff_restore_" + name, InviterId: inviter.Id}
+		require.NoError(t, DB.Create(user).Error)
+		require.NoError(t, DB.Model(inviter).Update("aff_count", gorm.Expr("aff_count + 1")).Error)
+		for i, money := range paid {
+			require.NoError(t, DB.Create(&TopUp{UserId: user.Id, Money: money, Status: status, TradeNo: fmt.Sprintf("restore-%s-%d", name, i), CompleteTime: common.GetTimestamp()}).Error)
+		}
+		return user.Id
+	}
+	paid := invitee("paid", common.TopUpStatusSuccess, 2, 1.5)
+	exact := invitee("exact", common.TopUpStatusSuccess, 3)
+	failed := invitee("failed", common.TopUpStatusFailed, 10)
+	byAdmin := invitee("admin", common.TopUpStatusSuccess, 10)
+	for _, id := range []int{paid, exact, failed} {
+		cancelled, err := CancelAffiliateInvite(id, inviter.Id, AffiliateReasonSharedIp, []string{"203.0.113.9"}, 0, "")
+		require.NoError(t, err)
+		require.True(t, cancelled)
+	}
+	cancelled, err := CancelAffiliateInvite(byAdmin, inviter.Id, AffiliateReasonAdminCancel, nil, 1, "")
+	require.NoError(t, err)
+	require.True(t, cancelled)
+
+	restored, err := RestorePaidSharedIpInvites(0)
+	require.NoError(t, err)
+	assert.Zero(t, restored, "an amount of 0 turns automatic restoring off")
+
+	restored, err = RestorePaidSharedIpInvites(3)
+	require.NoError(t, err)
+	assert.Equal(t, 1, restored)
+	assert.Equal(t, inviter.Id, userAffiliate(t, paid).InviterId, "3.5 paid is more than 3")
+	for _, id := range []int{exact, failed, byAdmin} {
+		assert.Zero(t, userAffiliate(t, id).InviterId)
+	}
+	assert.Equal(t, 1, userAffiliate(t, inviter.Id).AffCount)
+	var last AffiliateInviteLog
+	require.NoError(t, DB.Where("invitee_id = ?", paid).Order("id DESC").First(&last).Error)
+	assert.Equal(t, AffiliateInviteActionRestore, last.Action)
+	assert.Zero(t, last.OperatorId, "restored by the system")
+	assert.Equal(t, AffiliateReasonPaidRestore, last.Reason)
+
+	restored, err = RestorePaidSharedIpInvites(3)
+	require.NoError(t, err)
+	assert.Zero(t, restored, "a restored invitation is not restored again")
+	checkable, err := ListCheckableAffiliateInvites(paid)
+	require.NoError(t, err)
+	assert.Empty(t, checkable, "a restored invitation is not cancelled for the shared IP again")
 }
 
 func TestSettleAffiliateRebate(t *testing.T) {

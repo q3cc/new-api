@@ -362,6 +362,7 @@ export type BillingSettings = {
   'affiliate_rebate_setting.confirm_days': number
   'affiliate_rebate_setting.risk_review_score': number
   'affiliate_rebate_setting.cancel_shared_ip': boolean
+  'affiliate_rebate_setting.restore_shared_ip_paid_amount': number
 }
 
 export type OperationsSettings = {

@@ -49,11 +49,14 @@ func StartUserRiskScoreTask() {
 }
 
 // runUserRiskScoreOnce scores users and cancels invitations whose inviter
-// and invitee share an IP; both work from the same IP observations.
+// and invitee share an IP; both work from the same IP observations. It then
+// restores the shared-IP cancellations whose invitee has paid enough.
 func runUserRiskScoreOnce() {
 	setting := *operation_setting.GetUserRiskSetting()
-	cancelSharedIp := operation_setting.GetAffiliateRebateSetting().CancelSharedIp
-	if !setting.Enabled && !cancelSharedIp {
+	affiliate := *operation_setting.GetAffiliateRebateSetting()
+	cancelSharedIp := affiliate.CancelSharedIp
+	restorePaid := affiliate.RestoreSharedIpPaidAmount > 0
+	if !setting.Enabled && !cancelSharedIp && !restorePaid {
 		return
 	}
 	if !userRiskRunning.CompareAndSwap(false, true) {
@@ -62,6 +65,20 @@ func runUserRiskScoreOnce() {
 	defer userRiskRunning.Store(false)
 
 	ctx := context.Background()
+	if restorePaid {
+		defer func() {
+			restored, err := model.RestorePaidSharedIpInvites(affiliate.RestoreSharedIpPaidAmount)
+			if err != nil {
+				logger.LogWarn(ctx, common.LogText("user risk score task failed to restore paid invitations: %v", err))
+			}
+			if restored > 0 {
+				logger.LogInfo(ctx, common.LogText("user risk score task restored %d invitations whose invitee paid enough", restored))
+			}
+		}()
+	}
+	if !setting.Enabled && !cancelSharedIp {
+		return
+	}
 	now := common.GetTimestamp()
 	pairs, err := model.ListUserIpPairs(now - userRiskWindowSeconds(setting))
 	if err != nil {

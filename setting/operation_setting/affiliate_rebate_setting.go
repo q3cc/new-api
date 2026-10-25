@@ -16,6 +16,10 @@ type AffiliateRebateSetting struct {
 	// CancelSharedIp cancels an invitation once the inviter and the invitee
 	// are seen on the same public IP. It applies whether rebates are enabled.
 	CancelSharedIp bool `json:"cancel_shared_ip"`
+	// RestoreSharedIpPaidAmount restores an invitation cancelled for a shared
+	// IP once the invitee has paid more than this in successful orders; 0
+	// never restores automatically.
+	RestoreSharedIpPaidAmount float64 `json:"restore_shared_ip_paid_amount"`
 }
 
 const affiliateRebateMaxConfirmDays = 90
@@ -26,6 +30,8 @@ var affiliateRebateSetting = AffiliateRebateSetting{
 	ConfirmDays:     7,
 	RiskReviewScore: 50,
 	CancelSharedIp:  true,
+
+	RestoreSharedIpPaidAmount: 3,
 }
 
 func init() {

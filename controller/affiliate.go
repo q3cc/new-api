@@ -195,7 +195,7 @@ func RestoreAffiliateInvite(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := model.RestoreAffiliateInvite(logId, c.GetInt("id"), note); err != nil {
+	if err := model.RestoreAffiliateInvite(logId, c.GetInt("id"), "", note); err != nil {
 		common.ApiError(c, err)
 		return
 	}

@@ -68,6 +68,8 @@ const affiliateRebateSchema = z.object({
     .max(90, 'Confirmation period must be between 0 and 90 days'),
   risk_review_score: z.number().int().min(0),
   cancel_shared_ip: z.boolean(),
+  // Money paid in successful orders, as entered for activity requirements.
+  restore_shared_ip_paid_amount: z.number().min(0),
 })
 
 type AffiliateRebateFormValues = z.infer<typeof affiliateRebateSchema>
@@ -87,6 +89,8 @@ const OPTION_KEYS = {
   confirm_days: 'affiliate_rebate_setting.confirm_days',
   risk_review_score: 'affiliate_rebate_setting.risk_review_score',
   cancel_shared_ip: 'affiliate_rebate_setting.cancel_shared_ip',
+  restore_shared_ip_paid_amount:
+    'affiliate_rebate_setting.restore_shared_ip_paid_amount',
 } as const satisfies Record<AffiliateRebateField, string>
 
 export type AffiliateRebateSettingValues = {
@@ -106,6 +110,8 @@ function toFormValues(
     confirm_days: defaults['affiliate_rebate_setting.confirm_days'],
     risk_review_score: defaults['affiliate_rebate_setting.risk_review_score'],
     cancel_shared_ip: defaults['affiliate_rebate_setting.cancel_shared_ip'],
+    restore_shared_ip_paid_amount:
+      defaults['affiliate_rebate_setting.restore_shared_ip_paid_amount'],
   }
 }
 
@@ -173,6 +179,15 @@ export function AffiliateRebateSection(props: AffiliateRebateSectionProps) {
       ),
       step: 1,
       parse: (value) => Number.parseInt(value) || 0,
+    },
+    {
+      name: 'restore_shared_ip_paid_amount',
+      label: t('Restore after the invitee pays more than'),
+      description: t(
+        'Restores an invitation cancelled for sharing an IP once the invitee has paid more than this in successful orders, subscriptions included. Checked every hour; 0 never restores automatically.'
+      ),
+      step: 0.01,
+      parse: (value) => Math.max(Number.parseFloat(value) || 0, 0),
     },
   ]
   const form = useForm<AffiliateRebateFormValues>({

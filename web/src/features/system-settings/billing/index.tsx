@@ -113,6 +113,7 @@ const defaultBillingSettings: BillingSettings = {
   'affiliate_rebate_setting.confirm_days': 7,
   'affiliate_rebate_setting.risk_review_score': 50,
   'affiliate_rebate_setting.cancel_shared_ip': true,
+  'affiliate_rebate_setting.restore_shared_ip_paid_amount': 3,
 }
 
 export function BillingSettings() {

@@ -864,5 +864,7 @@
   "user risk score task failed to list invitations: %v": "用户风险评分任务读取邀请关系失败: %v",
   "invitation of user %d by user %d cancelled: %s": "用户 %d 与邀请人 %d 的邀请关系已取消: %s",
   "invitation of user %d by user %d restored by user %d": "用户 %d 与邀请人 %d 的邀请关系已由用户 %d 恢复",
+  "user risk score task failed to restore paid invitations: %v": "用户风险评分任务恢复已付费邀请失败: %v",
+  "user risk score task restored %d invitations whose invitee paid enough": "用户风险评分任务已恢复 %d 个被邀请人付费达标的邀请",
   "leaderboard lock of activity %d failed: %v": "锁定排行榜活动 %d 的名次失败: %v"
 }

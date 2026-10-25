@@ -35,6 +35,7 @@ const (
 	AffiliateReasonRiskScore        = "Invitee risk score is too high"
 	AffiliateReasonUserUnavailable  = "Inviter or invitee is disabled or deleted"
 	AffiliateReasonInviteNotCurrent = "The invitation has been cancelled"
+	AffiliateReasonPaidRestore      = "Invitee paid more than the restore amount"
 
 	affiliateNoteMaxLength = 255
 )
@@ -215,8 +216,8 @@ func CancelAffiliateInvite(inviteeId int, inviterId int, reason string, sharedIp
 
 // RestoreAffiliateInvite undoes a cancellation. A restored invitation is no
 // longer cancelled automatically for sharing an IP; rejected rebates stay
-// rejected.
-func RestoreAffiliateInvite(logId int, operatorId int, note string) error {
+// rejected. operatorId 0 is the system, which states its reason.
+func RestoreAffiliateInvite(logId int, operatorId int, reason string, note string) error {
 	note = trimAffiliateNote(note)
 	var entry AffiliateInviteLog
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -253,6 +254,7 @@ func RestoreAffiliateInvite(logId int, operatorId int, note string) error {
 			InviteeId:  entry.InviteeId,
 			InviterId:  entry.InviterId,
 			Action:     AffiliateInviteActionRestore,
+			Reason:     reason,
 			OperatorId: operatorId,
 			Note:       note,
 		}).Error
@@ -262,6 +264,61 @@ func RestoreAffiliateInvite(logId int, operatorId int, note string) error {
 	}
 	common.SysLog(common.LogText("invitation of user %d by user %d restored by user %d", entry.InviteeId, entry.InviterId, operatorId))
 	return nil
+}
+
+// RestorePaidSharedIpInvites restores the invitations the system cancelled for
+// a shared IP whose invitee has since paid more than minPaid in successful
+// orders, subscription purchases included. It reports how many it restored;
+// a minPaid of 0 restores none.
+func RestorePaidSharedIpInvites(minPaid float64) (int, error) {
+	if !(minPaid > 0) {
+		return 0, nil
+	}
+	// Only an invitation whose latest log is the system's shared-IP
+	// cancellation qualifies: a later restore or an administrator's
+	// cancellation leaves it alone.
+	latest := DB.Model(&AffiliateInviteLog{}).Select("MAX(id)").Group("invitee_id")
+	var cancels []AffiliateInviteLog
+	if err := DB.Where("id IN (?)", latest).
+		Where("action = ? AND operator_id = ? AND reason = ?", AffiliateInviteActionCancel, 0, AffiliateReasonSharedIp).
+		Find(&cancels).Error; err != nil {
+		return 0, err
+	}
+	if len(cancels) == 0 {
+		return 0, nil
+	}
+	inviteeIds := make([]int, 0, len(cancels))
+	inviterIds := make([]int, 0, len(cancels))
+	for _, entry := range cancels {
+		inviteeIds = append(inviteeIds, entry.InviteeId)
+		inviterIds = append(inviterIds, entry.InviterId)
+	}
+	var payers, uninvited, inviters []int
+	if err := DB.Model(&TopUp{}).Select("user_id").
+		Where("user_id IN ? AND status = ?", inviteeIds, common.TopUpStatusSuccess).
+		Group("user_id").Having("SUM(money) > ?", minPaid).
+		Pluck("user_id", &payers).Error; err != nil {
+		return 0, err
+	}
+	if err := DB.Model(&User{}).Where("id IN ? AND inviter_id = 0", inviteeIds).Pluck("id", &uninvited).Error; err != nil {
+		return 0, err
+	}
+	if err := DB.Model(&User{}).Where("id IN ?", inviterIds).Pluck("id", &inviters).Error; err != nil {
+		return 0, err
+	}
+	restored := 0
+	for _, entry := range cancels {
+		// Skip what RestoreAffiliateInvite would refuse, so a deleted inviter
+		// or a new invitation is not retried every run.
+		if !slices.Contains(payers, entry.InviteeId) || !slices.Contains(uninvited, entry.InviteeId) || !slices.Contains(inviters, entry.InviterId) {
+			continue
+		}
+		if err := RestoreAffiliateInvite(entry.Id, 0, AffiliateReasonPaidRestore, ""); err != nil {
+			return restored, err
+		}
+		restored++
+	}
+	return restored, nil
 }
 
 // ListDueAffiliateRebates returns rebates whose confirmation time has come.
