@@ -138,9 +138,13 @@ describe('UploadDialog layout', () => {
     expect(body).toHaveClass('overflow-y-auto')
   })
 
-  test('does not steal focus into the mid-dialog source editor on open', () => {
+  test('does not steal focus into the mid-dialog source editor on open', async () => {
     renderDialog()
 
+    // The editor module loads on demand; focus is checked once it is there.
+    await waitFor(() =>
+      expect(document.querySelector('.cm-content')).not.toBeNull()
+    )
     expect(document.querySelector('.cm-content')).not.toHaveFocus()
   })
 })

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test } from 'vitest'
 
 import { CodeBlockEditor } from '../code-block'
@@ -40,7 +40,7 @@ function editorTree(value: string) {
 }
 
 describe('CodeBlockEditor', () => {
-  test('does not add a second vertical inset to the line-number gutter for multiline source', () => {
+  test('does not add a second vertical inset to the line-number gutter for multiline source', async () => {
     const { getByRole } = render(
       <CodeBlockEditor
         ariaLabel='Plugin source'
@@ -51,6 +51,10 @@ describe('CodeBlockEditor', () => {
       />
     )
 
+    // The editor module is loaded on demand.
+    await waitFor(() =>
+      expect(document.querySelector('.cm-gutters')).not.toBeNull()
+    )
     const editor = getByRole('textbox', { name: 'Plugin source' })
     const gutters = editor.querySelector('.cm-gutters')
 
@@ -59,11 +63,13 @@ describe('CodeBlockEditor', () => {
     expect(gutters).toHaveStyle({ paddingTop: '0px', paddingBottom: '0px' })
   })
 
-  test('keeps the same editor instance when value and onKeyDown change on rerender', () => {
+  test('keeps the same editor instance when value and onKeyDown change on rerender', async () => {
     const { rerender } = render(editorTree('h'))
 
+    await waitFor(() =>
+      expect(document.querySelector('.cm-content')).not.toBeNull()
+    )
     const contentBefore = document.querySelector('.cm-content')
-    expect(contentBefore).not.toBeNull()
 
     rerender(editorTree('hi'))
 

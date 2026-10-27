@@ -19,16 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 /* eslint-disable react-refresh/only-export-components */
 'use client'
 
-import { javascript } from '@codemirror/lang-javascript'
-import { markdown } from '@codemirror/lang-markdown'
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { EditorState, type Extension } from '@codemirror/state'
-import {
-  EditorView,
-  lineNumbers,
-  placeholder as placeholderExtension,
-} from '@codemirror/view'
-import { tags as highlightTags } from '@lezer/highlight'
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -39,13 +29,12 @@ import {
 import {
   type ComponentProps,
   createContext,
-  type CSSProperties,
   type HTMLAttributes,
+  lazy,
   type ReactNode,
+  Suspense,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -58,6 +47,15 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+
+import {
+  getRequestedCodeLanguage,
+  type CodeMirrorCodeViewProps,
+} from './code-block-language'
+
+// CodeMirror and its languages are loaded the first time a code block is
+// shown, so routes without code do not carry the editor.
+const CodeMirrorCodeView = lazy(() => import('./code-block-codemirror'))
 
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string
@@ -90,19 +88,6 @@ type CodeBlockEditorProps = Omit<
   value: string
 }
 
-type CodeMirrorCodeViewProps = {
-  ariaLabel: string
-  autoFocus?: boolean
-  language: BundledLanguage | string
-  onChange?: (value: string) => void
-  onKeyDown?: (event: globalThis.KeyboardEvent) => void
-  placeholder?: string
-  readOnly?: boolean
-  rows?: number
-  showLineNumbers?: boolean
-  value: string
-}
-
 type CodeBlockFrameProps = Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
   bodyClassName?: string
   bodyMaxHeight?: string
@@ -122,126 +107,6 @@ const CodeBlockContext = createContext<CodeBlockContextType>({
   code: '',
   language: 'plaintext',
 })
-
-const LANGUAGE_ALIASES: Record<string, BundledLanguage> = {
-  csharp: 'c#',
-  golang: 'go',
-  js: 'javascript',
-  shell: 'bash',
-  shellscript: 'bash',
-  ts: 'typescript',
-}
-
-const LANGUAGE_PATTERN = /^[a-z0-9][a-z0-9+#._-]{0,31}$/i
-const codeMirrorTheme = EditorView.theme({
-  '&': {
-    background: 'transparent',
-    color: 'var(--foreground)',
-    fontSize: '13px',
-  },
-  '.cm-content': {
-    caretColor: 'var(--foreground)',
-    fontFamily: 'var(--font-mono)',
-    lineHeight: '1.5rem',
-    minHeight: 'var(--code-editor-min-height)',
-    minWidth: 'max-content',
-    padding: '1rem 1rem 1rem 0',
-  },
-  '.cm-editor': {
-    background: 'transparent',
-    width: '100%',
-  },
-  '.cm-focused': {
-    outline: 'none',
-  },
-  '.cm-gutters': {
-    background: 'transparent',
-    borderRight: '0',
-    color: 'var(--muted-foreground)',
-    fontFamily: 'var(--font-mono)',
-    fontSize: '13px',
-    lineHeight: '1.5rem',
-    // CodeMirror already accounts for the content's vertical padding.
-    padding: '0 1rem 0 0',
-  },
-  '.cm-gutters:empty': {
-    display: 'none',
-  },
-  '.cm-lineNumbers .cm-gutterElement': {
-    minWidth: '2.5rem',
-    padding: '0 1rem 0 0',
-    textAlign: 'right',
-  },
-  '.cm-line': {
-    padding: '0',
-  },
-  '.cm-scroller': {
-    fontFamily: 'var(--font-mono)',
-    lineHeight: '1.5rem',
-    minHeight: 'var(--code-editor-min-height)',
-    overflow: 'auto',
-  },
-  '.cm-selectionBackground': {
-    background:
-      'color-mix(in oklch, var(--primary) 28%, transparent) !important',
-  },
-})
-
-const codeMirrorHighlightStyle = syntaxHighlighting(
-  HighlightStyle.define([
-    { tag: highlightTags.heading, color: '#e06c75', fontWeight: '600' },
-    { tag: [highlightTags.strong, highlightTags.emphasis], color: '#d19a66' },
-    { tag: [highlightTags.link, highlightTags.url], color: '#61afef' },
-    {
-      tag: [highlightTags.monospace, highlightTags.contentSeparator],
-      color: '#98c379',
-    },
-    {
-      tag: [highlightTags.keyword, highlightTags.processingInstruction],
-      color: '#c678dd',
-    },
-    {
-      tag: [highlightTags.atom, highlightTags.bool, highlightTags.number],
-      color: '#d19a66',
-    },
-    { tag: [highlightTags.string, highlightTags.inserted], color: '#98c379' },
-    { tag: [highlightTags.deleted, highlightTags.invalid], color: '#e06c75' },
-    {
-      tag: [highlightTags.meta, highlightTags.comment],
-      color: 'var(--muted-foreground)',
-    },
-  ])
-)
-
-function getRequestedCodeLanguage(language?: string) {
-  const normalized = language?.trim().toLowerCase() || 'plaintext'
-  if (!LANGUAGE_PATTERN.test(normalized)) {
-    return 'plaintext'
-  }
-
-  return LANGUAGE_ALIASES[normalized] ?? normalized
-}
-
-function getCodeMirrorLanguageExtension(language: BundledLanguage | string) {
-  const requestedLanguage = getRequestedCodeLanguage(language)
-  if (
-    requestedLanguage === 'markdown' ||
-    requestedLanguage === 'md' ||
-    requestedLanguage === 'mdx'
-  ) {
-    return markdown()
-  }
-
-  if (requestedLanguage === 'javascript' || requestedLanguage === 'jsx') {
-    return javascript({ jsx: requestedLanguage === 'jsx' })
-  }
-
-  if (requestedLanguage === 'typescript' || requestedLanguage === 'tsx') {
-    return javascript({ jsx: requestedLanguage === 'tsx', typescript: true })
-  }
-
-  return []
-}
 
 function getCodeLineCount(code: string) {
   if (!code) {
@@ -280,144 +145,41 @@ function getCodeBlockMaxHeight(
   return undefined
 }
 
-function getCodeMirrorExtensions(options: {
-  language: BundledLanguage | string
-  onKeyDown: (event: globalThis.KeyboardEvent) => void
-  placeholder?: string
-  readOnly: boolean
-  showLineNumbers: boolean
-}): Extension[] {
-  const extensions: Extension[] = [
-    getCodeMirrorLanguageExtension(options.language),
-    codeMirrorHighlightStyle,
-    codeMirrorTheme,
-    EditorState.tabSize.of(2),
-    EditorState.readOnly.of(options.readOnly),
-    EditorView.editable.of(!options.readOnly),
-    EditorView.domEventHandlers({
-      keydown(event) {
-        options.onKeyDown(event)
-        return event.defaultPrevented
-      },
-    }),
-  ]
-
-  if (options.placeholder) {
-    extensions.push(placeholderExtension(options.placeholder))
-  }
-
-  if (options.showLineNumbers) {
-    extensions.unshift(lineNumbers())
-  }
-
-  return extensions
+// The code as plain text, shown until the editor module has loaded.
+function CodeTextView(props: {
+  ariaLabel: string
+  readOnly?: boolean
+  rows?: number
+  value: string
+}) {
+  const minHeight = `${Math.max(4, props.rows ?? 8) * 1.5 + 2}rem`
+  return (
+    <pre
+      aria-label={props.ariaLabel}
+      aria-readonly={props.readOnly}
+      className='m-0 overflow-auto p-4 font-mono text-[13px] leading-6 whitespace-pre'
+      role='textbox'
+      style={{ minHeight }}
+    >
+      {props.value}
+    </pre>
+  )
 }
 
-function CodeMirrorCodeView({
-  ariaLabel,
-  autoFocus = false,
-  language,
-  onChange,
-  onKeyDown,
-  placeholder,
-  readOnly = false,
-  rows = 8,
-  showLineNumbers = true,
-  value,
-}: CodeMirrorCodeViewProps) {
-  const editorHostRef = useRef<HTMLDivElement>(null)
-  const editorViewRef = useRef<EditorView | null>(null)
-  const initialValueRef = useRef(value)
-  const onChangeRef = useRef(onChange)
-  const onKeyDownRef = useRef(onKeyDown)
-  const editorMinHeight = `${Math.max(4, rows) * 1.5 + 2}rem`
-  // onKeyDown is delivered through a ref so a new handler identity from the
-  // parent (recreated on every keystroke-driven render) does not invalidate
-  // the extensions and tear down the EditorView, which would reset the cursor
-  // to the document start and make typing appear right-to-left.
-  const editorExtensions = useMemo(
-    () =>
-      getCodeMirrorExtensions({
-        language,
-        onKeyDown: (event) => onKeyDownRef.current?.(event),
-        placeholder,
-        readOnly,
-        showLineNumbers,
-      }),
-    [language, placeholder, readOnly, showLineNumbers]
-  )
-
-  useEffect(() => {
-    onChangeRef.current = onChange
-    onKeyDownRef.current = onKeyDown
-  }, [onChange, onKeyDown])
-
-  useEffect(() => {
-    const editorHost = editorHostRef.current
-    if (!editorHost) {
-      return
-    }
-
-    const editorView = new EditorView({
-      doc: initialValueRef.current,
-      extensions: [
-        ...editorExtensions,
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            onChangeRef.current?.(update.state.doc.toString())
-          }
-        }),
-      ],
-      parent: editorHost,
-    })
-    editorViewRef.current = editorView
-    if (autoFocus) {
-      editorView.focus()
-    }
-
-    return () => {
-      editorView.destroy()
-      editorViewRef.current = null
-    }
-  }, [autoFocus, editorExtensions])
-
-  useEffect(() => {
-    // Track the latest value so a future editor rebuild (e.g. language change)
-    // starts from the current document instead of the mount-time snapshot.
-    initialValueRef.current = value
-
-    const editorView = editorViewRef.current
-    if (!editorView) {
-      return
-    }
-
-    const currentValue = editorView.state.doc.toString()
-    if (currentValue === value) {
-      return
-    }
-
-    editorView.dispatch({
-      changes: {
-        from: 0,
-        to: editorView.state.doc.length,
-        insert: value,
-      },
-    })
-  }, [value])
-
+function LazyCodeView(props: CodeMirrorCodeViewProps) {
   return (
-    <div
-      aria-label={ariaLabel}
-      aria-readonly={readOnly}
-      className='min-h-(--code-editor-min-height)'
-      ref={editorHostRef}
-      role='textbox'
-      style={
-        {
-          '--code-editor-min-height': editorMinHeight,
-        } as CSSProperties
+    <Suspense
+      fallback={
+        <CodeTextView
+          ariaLabel={props.ariaLabel}
+          readOnly={props.readOnly}
+          rows={props.rows}
+          value={props.value}
+        />
       }
-    />
+    >
+      <CodeMirrorCodeView {...props} />
+    </Suspense>
   )
 }
 
@@ -581,7 +343,7 @@ export const CodeBlock = ({
         title={displayTitle}
         {...props}
       >
-        <CodeMirrorCodeView
+        <LazyCodeView
           ariaLabel={
             typeof displayTitle === 'string' ? displayTitle : displayLanguage
           }
@@ -619,7 +381,7 @@ export const CodeBlockEditor = ({
       title={title}
       {...props}
     >
-      <CodeMirrorCodeView
+      <LazyCodeView
         ariaLabel={ariaLabel}
         autoFocus={autoFocus}
         language={language}

@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import forge from 'node-forge'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 
 import { sendChatCompletion } from '../api'
 import {
@@ -87,28 +88,31 @@ function canCompress(message: Message): boolean {
   )
 }
 
+// The digest is computed synchronously, with the same bytes as the node-forge
+// implementation it replaced, so summaries saved earlier stay valid.
+function sha256Hex(text: string): string {
+  return bytesToHex(sha256(utf8ToBytes(text)))
+}
+
 export function compressionSourceHash(messages: Message[]): string {
-  const digest = forge.md.sha256.create()
+  let hashes = ''
   for (const message of messages) {
     let hash = messageHashes.get(message)
     if (!hash) {
-      const item = forge.md.sha256.create()
-      item.update(
+      hash = sha256Hex(
         JSON.stringify([
           message.key,
           message.from,
           getCurrentVersion(message).id,
           getMessageContent(message),
           message.status,
-        ]),
-        'utf8'
+        ])
       )
-      hash = item.digest().toHex()
       messageHashes.set(message, hash)
     }
-    digest.update(hash)
+    hashes += hash
   }
-  return digest.digest().toHex()
+  return sha256Hex(hashes)
 }
 
 export function validCompression(

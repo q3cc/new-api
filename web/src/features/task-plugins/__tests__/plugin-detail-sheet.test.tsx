@@ -349,9 +349,15 @@ test('mounts sandbox on first visit and preserves input when switching tabs', as
     screen.queryByRole('textbox', { name: 'Arguments JSON', hidden: true })
   ).toBeNull()
   await user.click(screen.getByRole('tab', { name: 'Plugin sandbox' }))
+  // The editor module loads on demand and replaces the plain-text fallback.
+  const editable = await waitFor(() => {
+    const found = screen
+      .getByRole('textbox', { name: 'Arguments JSON' })
+      .querySelector<HTMLElement>('[contenteditable=true]')
+    if (!found) throw new Error('Missing editable sandbox input')
+    return found
+  })
   const editor = screen.getByRole('textbox', { name: 'Arguments JSON' })
-  const editable = editor.querySelector<HTMLElement>('[contenteditable=true]')
-  if (!editable) throw new Error('Missing editable sandbox input')
   act(() => editable.focus())
   await user.paste('42')
   expect(editor).toHaveTextContent('42')
