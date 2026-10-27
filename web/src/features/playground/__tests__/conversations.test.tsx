@@ -779,6 +779,27 @@ it('does not start a charged request when saving the user message fails', async 
   )
 })
 
+it('keeps the conversation editable after a save failure and sends once saving works again', async () => {
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  failSave = true
+  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+    target: { value: 'first try' },
+  })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+  await screen.findByRole('alert')
+  expect(completions).toHaveLength(0)
+  const input = screen.getByPlaceholderText('Ask anything')
+  expect(input).toBeEnabled()
+
+  failSave = false
+  fireEvent.change(input, { target: { value: 'second try' } })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+
+  await waitFor(() => expect(completions).toHaveLength(1))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
 it('aborts the previous account request and ignores its delayed reply after logout', async () => {
   renderPlayground()
   await screen.findByDisplayValue('draft Alpha')

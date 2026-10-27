@@ -69,6 +69,9 @@ function workspace(owner = 1) {
   result.attach()
   return result
 }
+function networkError() {
+  return new AxiosError('Network Error', 'ERR_NETWORK')
+}
 function responseError(status: number) {
   return Object.assign(new AxiosError('save rejected'), {
     response: {
@@ -228,7 +231,7 @@ beforeEach(() => {
     }
     const write = JSON.parse(body as string) as ConversationWrite
     writes.push(structuredClone(write))
-    if (failSave) throw new Error('Offline')
+    if (failSave) throw networkError()
     let row = operationResults.get(write.operation_id)
     if (!row) {
       row = {
@@ -247,7 +250,7 @@ beforeEach(() => {
   vi.spyOn(api, 'put').mockImplementation(async (url, body) => {
     const write = JSON.parse(body as string) as ConversationWrite
     writes.push(structuredClone(write))
-    if (failSave) throw new Error('Offline')
+    if (failSave) throw networkError()
     const id = Number(url?.split('/').at(-1))
     const previous = rows.get(id)
     if (!previous) throw responseError(404)
@@ -265,7 +268,7 @@ beforeEach(() => {
     }
     if (loseResponse) {
       loseResponse = false
-      throw new Error('Response lost')
+      throw networkError()
     }
     return { data: { success: true, data: structuredClone(row) } }
   })
@@ -432,6 +435,86 @@ it('backs off after rate limiting and preserves a single pending operation', asy
   expect(rows.get(1)?.document.draft).toBe('rate limited')
   expect(writes.at(-1)?.operation_id).toBe(operation)
   expect(cached.size).toBe(0)
+})
+
+it('retries a save that failed on the network with growing delays and clears the error once it lands', async () => {
+  vi.useFakeTimers()
+  const client = workspace()
+  const key = (await client.create(emptyConversationDocument())) ?? ''
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, messages: [message('offline edit')] },
+  }))
+  vi.mocked(api.put)
+    .mockRejectedValueOnce(networkError())
+    .mockRejectedValueOnce(responseError(502))
+  expect(await client.flush(key)).toBe(false)
+  expect(client.getSnapshot().entries[key].error).toBeInstanceOf(AxiosError)
+  const attempts = vi.mocked(api.put).mock.calls.length
+
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(vi.mocked(api.put).mock.calls).toHaveLength(attempts + 1)
+  expect(client.getSnapshot().entries[key].error).toBeInstanceOf(AxiosError)
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(vi.mocked(api.put).mock.calls).toHaveLength(attempts + 1)
+  await vi.advanceTimersByTimeAsync(2000)
+
+  expect(rows.get(1)?.document.messages[0]?.versions[0].content).toBe(
+    'offline edit'
+  )
+  expect(client.getSnapshot().entries[key].error).toBeUndefined()
+  expect(cached.size).toBe(0)
+})
+
+it('does not retry a rejected write until the document changes', async () => {
+  vi.useFakeTimers()
+  const client = workspace()
+  const key = (await client.create(emptyConversationDocument())) ?? ''
+  client.update(key, (row) => ({
+    ...row,
+    document: {
+      ...row.document,
+      messages: [message('x'.repeat(8 * 1024 * 1024))],
+    },
+  }))
+  expect(await client.flush(key)).toBe(false)
+  const attempts = vi.mocked(api.put).mock.calls.length
+
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(vi.mocked(api.put).mock.calls).toHaveLength(attempts)
+  expect(client.getSnapshot().entries[key].error).toBeInstanceOf(Error)
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, messages: [message('small again')] },
+  }))
+  expect(client.getSnapshot().entries[key].error).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(2000)
+
+  expect(rows.get(1)?.document.messages[0]?.versions[0].content).toBe(
+    'small again'
+  )
+})
+
+it('keeps a conflicting save waiting for the user instead of retrying it', async () => {
+  vi.useFakeTimers()
+  const client = workspace()
+  const key = (await client.create(emptyConversationDocument())) ?? ''
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, messages: [message('mine')] },
+  }))
+  vi.mocked(api.put).mockRejectedValueOnce(responseError(409))
+  expect(await client.flush(key)).toBe(false)
+  const attempts = vi.mocked(api.put).mock.calls.length
+
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, messages: [message('mine, edited')] },
+  }))
+  await vi.advanceTimersByTimeAsync(60_000)
+
+  expect(vi.mocked(api.put).mock.calls).toHaveLength(attempts)
+  expect(client.getSnapshot().entries[key].error).toBeInstanceOf(AxiosError)
 })
 
 it('reports concurrent edits without overwriting the newer server conversation', async () => {

@@ -161,6 +161,10 @@ export async function getConversation(id: number, signal?: AbortSignal) {
   })
   return parseConversation(requireServerSuccess(res.data).data)
 }
+/** The server's own wording for a document over its 8MB limit. */
+export const CONVERSATION_SIZE_LIMIT_MESSAGE =
+  'Conversation exceeds the size limit'
+
 export async function writeConversation(
   id: number | null,
   write: ConversationWrite,
@@ -168,7 +172,7 @@ export async function writeConversation(
 ) {
   const body = JSON.stringify(write)
   if (new TextEncoder().encode(body).byteLength > 8 * 1024 * 1024) {
-    throw new Error('Conversation exceeds the size limit')
+    throw new Error(CONVERSATION_SIZE_LIMIT_MESSAGE)
   }
   // The caller keeps the document it sent, so only the saved metadata comes
   // back instead of a second copy of the whole conversation.
@@ -205,7 +209,7 @@ export async function importConversation(
 ) {
   const bytes = new TextEncoder().encode(JSON.stringify(source))
   if (bytes.length > 8 * 1024 * 1024) {
-    throw new Error('Conversation exceeds the size limit')
+    throw new Error(CONVERSATION_SIZE_LIMIT_MESSAGE)
   }
   const controller = new AbortController()
   const uploadSignal = signal

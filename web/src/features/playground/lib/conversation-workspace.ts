@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { isAxiosError } from 'axios'
 
+import { getServerErrorStatus } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import type { ModelCapability } from '../compression-api'
@@ -58,6 +59,10 @@ export type ConversationEntry = {
   compressionProgress?: { completed: number; total: number }
   compressionError?: unknown
   error?: unknown
+  /** Failed save attempts in a row; cleared once a save lands. */
+  failures?: number
+  /** When a save that failed on the network or the server is tried again. */
+  retryAt?: number
   pending?: ConversationWrite
   pendingVersion?: number
 }
@@ -68,6 +73,20 @@ type Snapshot = {
   cacheError?: unknown
   ready: boolean
 }
+/**
+ * What a failed save needs before it can succeed. A conflict or a deletion
+ * elsewhere waits for the user; a rejected write (too large, invalid) waits
+ * for the document to change; a network or server failure is retried.
+ */
+export function saveErrorKind(
+  error: unknown
+): 'conflict' | 'rejected' | 'transient' {
+  const status = getServerErrorStatus(error)
+  if (status === 404 || status === 409) return 'conflict'
+  if (status !== undefined) return status >= 500 ? 'transient' : 'rejected'
+  return isAxiosError(error) ? 'transient' : 'rejected'
+}
+
 export function interruptedDocument(
   document: ConversationDocument
 ): ConversationDocument {
@@ -353,12 +372,22 @@ export class ConversationWorkspace {
     const draftOnly =
       isDraftOnlyChange(previous.row, row) &&
       (!previous.dirty || !!previous.draftOnly)
+    // A write the server rejected is worth trying again now that the document
+    // differs; a conflict keeps waiting for the user and a transient failure
+    // keeps its own retry schedule.
+    const error =
+      previous.error &&
+      !draftOnly &&
+      saveErrorKind(previous.error) === 'rejected'
+        ? undefined
+        : previous.error
     const entry = {
-      ...this.snapshot.entries[key],
+      ...previous,
       row,
       localVersion: previous.localVersion + 1,
       dirty: true,
       draftOnly,
+      error,
     }
     this.setEntry(entry)
     void this.cache(entry)
@@ -566,26 +595,35 @@ export class ConversationWorkspace {
       if (this.titleRequests.get(key) === controller) this.cancelTitle(key)
     }
   }
-  private schedule() {
+  private schedule(delay = 0) {
     if (this.timer || !this.isActive()) return
     this.timer = setTimeout(
       () => {
         this.timer = undefined
+        const now = Date.now()
         const entries = Object.values(this.snapshot.entries).filter(
           (entry) =>
             entry.dirty &&
             !entry.draftOnly &&
-            !entry.error &&
             !entry.saving &&
-            !isGenerating(entry.row.document)
+            !isGenerating(entry.row.document) &&
+            (!entry.error || saveErrorKind(entry.error) === 'transient')
         )
+        const due = entries.filter((entry) => (entry.retryAt ?? 0) <= now)
         const entry =
-          entries.find((item) => item.key !== this.lastScheduled) ?? entries[0]
-        if (!entry) return
-        this.lastScheduled = entry.key
-        void this.flush(entry.key).finally(() => this.schedule())
+          due.find((item) => item.key !== this.lastScheduled) ?? due[0]
+        if (entry) {
+          this.lastScheduled = entry.key
+          void this.flush(entry.key).finally(() => this.schedule())
+          return
+        }
+        // Everything left is backing off; wake up when the first one is due.
+        if (entries.length) {
+          const next = Math.min(...entries.map((item) => item.retryAt ?? now))
+          this.schedule(next - now)
+        }
       },
-      Math.max(2000, this.retryAfter - Date.now())
+      Math.max(2000, this.retryAfter - Date.now(), delay)
     )
   }
   flush(key: string): Promise<boolean> {
@@ -620,6 +658,7 @@ export class ConversationWorkspace {
       pendingVersion: sentVersion,
       saving: true,
       error: undefined,
+      retryAt: undefined,
     }
     this.setEntry(entry)
     await this.cache(entry)
@@ -646,6 +685,8 @@ export class ConversationWorkspace {
         pending: undefined,
         pendingVersion: undefined,
         error: undefined,
+        failures: undefined,
+        retryAt: undefined,
       }
       this.setEntry(next)
       await this.cache(next)
@@ -657,12 +698,31 @@ export class ConversationWorkspace {
       if (!this.isActive()) return false
       const current = this.snapshot.entries[key]
       if (!current) return false
-      this.setEntry({ ...current, saving: false, error })
       if (isAxiosError(error) && error.response?.status === 429) {
         const seconds = Number(error.response.headers['retry-after']) || 10
         this.retryAfter = Date.now() + Math.max(1, seconds) * 1000
-        this.setEntry({ ...this.snapshot.entries[key], error: undefined })
+        this.setEntry({ ...current, saving: false, error: undefined })
         this.schedule()
+      } else {
+        // A network or server failure is retried with a growing delay, up to
+        // a minute, replaying the same operation so the server can deduplicate
+        // an answer that was lost; the error stays visible meanwhile. A write
+        // the server refused was never applied, so the next attempt sends the
+        // document as it is by then rather than the refused one.
+        const failures = (current.failures ?? 0) + 1
+        const transient = saveErrorKind(error) === 'transient'
+        this.setEntry({
+          ...current,
+          saving: false,
+          error,
+          failures,
+          retryAt: transient
+            ? Date.now() + Math.min(60_000, 2000 * 2 ** (failures - 1))
+            : undefined,
+          pending: transient ? current.pending : undefined,
+          pendingVersion: transient ? current.pendingVersion : undefined,
+        })
+        if (transient) this.schedule()
       }
       await this.cache(this.snapshot.entries[key])
       return false

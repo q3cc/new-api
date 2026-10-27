@@ -46,7 +46,9 @@ export function exportConversation(
   exportedAt = new Date()
 ) {
   const title = conversation.title.trim() || 'New conversation'
+  // A failed reply holds the error text, not part of the conversation.
   const messages = conversation.document.messages
+    .filter((message) => message.status !== 'error')
     .map((message) => ({ message, text: getMessageContent(message) }))
     .filter(({ text }) => text.trim().length > 0)
   const safeTitle =
@@ -59,11 +61,10 @@ export function exportConversation(
   const filename = `${safeTitle}-${timestamp}.${format}`
   if (format === 'md') {
     // Leave message Markdown intact, especially nested code fences and images.
-    const content =
-      [
-        `# ${title.replaceAll(/[\r\n]+/g, ' ')}`,
-        ...messages.map(({ message, text }) => `## ${message.from}\n\n${text}`),
-      ].join('\n\n') + '\n'
+    const content = `${[
+      `# ${title.replaceAll(/[\r\n]+/g, ' ')}`,
+      ...messages.map(({ message, text }) => `## ${message.from}\n\n${text}`),
+    ].join('\n\n')}\n`
     return { filename, content, mimeType: 'text/markdown;charset=utf-8' }
   }
   const id = nanoid()
@@ -100,7 +101,7 @@ export function exportConversation(
   }
   return {
     filename,
-    content: JSON.stringify(backup, null, 2) + '\n',
+    content: `${JSON.stringify(backup, null, 2)}\n`,
     mimeType: 'application/json;charset=utf-8',
   }
 }

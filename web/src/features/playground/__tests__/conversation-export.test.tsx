@@ -75,6 +75,14 @@ function conversation(): SavedConversation {
       from: 'assistant',
       versions: [{ id: 'empty', content: '  ' }],
     },
+    {
+      key: 'failed',
+      from: 'assistant',
+      status: 'error',
+      versions: [
+        { id: 'failed', content: 'Request error occurred: PRIVATE_FAILURE' },
+      ],
+    },
   ]
   return {
     id: 12,
@@ -134,6 +142,15 @@ describe('conversation export', () => {
     )
     expect(file.filename).toBe('中文_测试_会话_-2026-10-16T12-00-00-000Z.json')
     expect(row.document.messages[2].versions).toHaveLength(2)
+  })
+
+  it('leaves a failed reply out of both formats', () => {
+    const row = conversation()
+    for (const format of ['json', 'md'] as const) {
+      expect(exportConversation(row, format).content).not.toContain(
+        'PRIVATE_FAILURE'
+      )
+    }
   })
 
   it('preserves Markdown bodies, code fences, tables and image links in order', () => {

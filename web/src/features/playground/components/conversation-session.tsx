@@ -21,8 +21,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { getServerErrorMessage } from '@/lib/server-error-message'
+import {
+  getServerErrorMessage,
+  translateServerText,
+} from '@/lib/server-error-message'
 
+import { CONVERSATION_SIZE_LIMIT_MESSAGE } from '../conversations-api'
 import {
   useChatHandler,
   usePlaygroundConversation,
@@ -32,6 +36,7 @@ import { usePlaygroundCompression } from '../hooks/use-playground-compression'
 import { effectiveCapability, shouldCompress } from '../lib/context-compression'
 import {
   interruptedDocument,
+  saveErrorKind,
   type ConversationEntry,
   type ConversationWorkspace,
 } from '../lib/conversation-workspace'
@@ -130,9 +135,10 @@ export function ConversationSession(props: Props) {
   useEffect(() => workspace.registerStop(key, stop), [key, workspace, stop])
   const sendChat = useCallback(
     (messages: Message[]) => {
+      const saveError = workspace.getSnapshot().entries[key]?.error
       if (
         !workspace.isActive() ||
-        workspace.getSnapshot().entries[key]?.error
+        (saveError && saveErrorKind(saveError) === 'conflict')
       ) {
         return
       }
@@ -254,6 +260,13 @@ function ConversationView(props: ViewProps) {
   const error = props.entry.error
   const status = isAxiosError(error) ? error.response?.status : undefined
   const deleted = status === 404
+  // A conflict or a deletion elsewhere needs the user's decision before any
+  // further change; every other save failure leaves the conversation usable,
+  // so the user can shrink it or keep working while saving is retried.
+  const locked = !!error && saveErrorKind(error) === 'conflict'
+  const tooLarge =
+    status === 413 ||
+    getServerErrorMessage(error, '') === CONVERSATION_SIZE_LIMIT_MESSAGE
   // Compressing only helps when there are older turns to summarize; a single
   // over-long message gets an explanation instead of a button.
   const canCompressContext = shouldCompress(document, 1, 1)
@@ -313,7 +326,14 @@ function ConversationView(props: ViewProps) {
               ? t(
                   'This conversation was deleted elsewhere. Save it as a new conversation to keep these messages.'
                 )
-              : getServerErrorMessage(error, t('Failed to save conversation'))}
+              : translateServerText(
+                  t,
+                  getServerErrorMessage(error, t('Failed to save conversation'))
+                )}
+            {tooLarge &&
+              ` ${t('Delete some messages or clear the history, then retry.')}`}
+            {props.entry.retryAt !== undefined &&
+              ` ${t('Saving will be retried automatically.')}`}
           </span>
           {status === 409 && (
             <Button size='sm' variant='outline' onClick={props.onReload}>
@@ -342,7 +362,7 @@ function ConversationView(props: ViewProps) {
           onEditMessage={props.conversation.handleEditMessage}
           onDeleteMessage={props.conversation.handleDeleteMessage}
           onSelectPrompt={props.conversation.handleSendMessage}
-          isGenerating={props.generating || !!error}
+          isGenerating={props.generating || locked}
           editingKey={props.conversation.editingMessageKey}
           onCancelEdit={props.conversation.handleEditOpenChange}
           onSaveEdit={(text) => props.conversation.applyEdit(text, false)}
@@ -364,7 +384,7 @@ function ConversationView(props: ViewProps) {
               workspace={props.workspace}
               compression={props.compression}
               groups={groups}
-              disabled={props.generating || !!error}
+              disabled={props.generating || locked}
             />
           }
           config={document.config}
@@ -376,7 +396,7 @@ function ConversationView(props: ViewProps) {
               document: { ...row.document, draft },
             }))
           }
-          disabled={props.generating || !!error}
+          disabled={props.generating || locked}
           isGenerating={props.generating}
           groups={groups}
           groupValue={document.config.group}

@@ -203,10 +203,14 @@ export function formatMessageForAPI(message: Message): ChatCompletionMessage {
 
 /**
  * Check if message is valid for API request
- * Excludes loading/streaming assistant messages and empty content
+ * Excludes loading/streaming assistant messages, failed replies and empty
+ * content
  */
 export function isValidMessage(message: Message): boolean {
   if (!message || !message.from || !message.versions.length) return false
+
+  // A failed reply holds the error text, not something the model said.
+  if (message.status === 'error') return false
 
   // Exclude empty assistant messages (loading/streaming placeholders)
   if (message.from === MESSAGE_ROLES.ASSISTANT && !hasMessageContent(message)) {
