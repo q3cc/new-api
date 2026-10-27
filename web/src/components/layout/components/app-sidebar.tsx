@@ -17,11 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Sidebar, SidebarContent, SidebarRail } from '@/components/ui/sidebar'
 import { useLayout } from '@/context/layout-provider'
+import { useHasJoinableActivity } from '@/features/activities/hooks/use-has-joinable-activity'
 import { useSidebarView } from '@/hooks/use-sidebar-view'
 import { MOTION_TRANSITION, MOTION_VARIANTS } from '@/lib/motion'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { NavGroup } from './nav-group'
 import { SidebarViewHeader } from './sidebar-view-header'
@@ -43,10 +47,34 @@ import { SidebarViewHeader } from './sidebar-view-header'
  * Adding a new nested view only requires registering a {@link SidebarView}
  * in the registry; this component requires no changes.
  */
+const ACTIVITIES_URL = '/activities'
+
 export function AppSidebar() {
+  const { t } = useTranslation()
   const { collapsible, variant } = useLayout()
-  const { key, view, navGroups } = useSidebarView()
+  const { key, view, navGroups: viewNavGroups } = useSidebarView()
   const shouldReduce = useReducedMotion()
+  // Mark Activities while the user can take part in one. Only the sidebar
+  // shows the badge, so search does not load activities, and nothing loads
+  // while the entry is hidden or nobody is signed in.
+  const signedIn = useAuthStore((s) => s.auth.user !== null)
+  const activitiesShown =
+    signedIn &&
+    viewNavGroups.some((group) =>
+      group.items.some((item) => item.url === ACTIVITIES_URL)
+    )
+  const hasJoinableActivity = useHasJoinableActivity(activitiesShown)
+  const navGroups = useMemo(() => {
+    if (!hasJoinableActivity) return viewNavGroups
+    return viewNavGroups.map((group) => ({
+      ...group,
+      items: group.items.map((item) =>
+        item.url === ACTIVITIES_URL
+          ? { ...item, badge: t('New'), badgeVariant: 'destructive' as const }
+          : item
+      ),
+    }))
+  }, [viewNavGroups, hasJoinableActivity, t])
 
   return (
     <Sidebar collapsible={collapsible} variant={variant}>
