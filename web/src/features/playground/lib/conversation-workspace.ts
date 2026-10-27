@@ -36,57 +36,24 @@ import {
   type ConversationPatch,
   type ConversationWrite,
   type SavedConversation,
-  type ImportProgress,
 } from '../conversations-api'
-import { compressContext, validCompression } from './context-compression'
+import { CompressionCoordinator } from './compression-coordinator'
+import { validCompression } from './context-compression'
+import type { ConversationEntry, WorkspaceSnapshot } from './conversation-entry'
 import {
   conversationTitleSource,
   generateConversationTitle,
 } from './conversation-title'
 import { interruptMessages } from './message/conversation-message-utils'
 import { getMessageContent } from './message/message-utils'
+import { PendingCache } from './storage/pending-cache'
 import {
   clearImportedSource,
   readLegacySource,
-  readPendingConversations,
-  writePendingConversation,
-  type PendingConversation,
 } from './storage/pending-conversations'
 
-export type ConversationEntry = {
-  key: string
-  row: SavedConversation
-  localVersion: number
-  dirty: boolean
-  /** The only unsaved change is the input draft; scheduled saves skip it. */
-  draftOnly?: boolean
-  saving: boolean
-  titleGenerating?: boolean
-  compressionProgress?: { completed: number; total: number }
-  compressionError?: unknown
-  error?: unknown
-  /** Failed save attempts in a row; cleared once a save lands. */
-  failures?: number
-  /** When a save that failed on the network or the server is tried again. */
-  retryAt?: number
-  pending?: ConversationWrite | ConversationPatch
-  pendingVersion?: number
-  /**
-   * The conversation as the server last confirmed it. While the messages are
-   * still that array, a save sends only the fields that differ from it.
-   */
-  saved?: SavedConversation
-}
-// Streaming replies update many times a second; the crash-recovery cache is
-// written at most this often per conversation and at once when a reply ends.
-const CACHE_DELAY = 1000
-export type WorkspaceSnapshot = {
-  entries: Record<string, ConversationEntry>
-  migrationError?: unknown
-  migrationProgress?: ImportProgress
-  cacheError?: unknown
-  ready: boolean
-}
+export type { ConversationEntry, WorkspaceSnapshot } from './conversation-entry'
+
 /**
  * What a failed save needs before it can succeed. A conflict or a deletion
  * elsewhere waits for the user; a rejected write (too large, invalid) waits
@@ -165,8 +132,6 @@ export class ConversationWorkspace {
   private controller = new AbortController()
   private timer: ReturnType<typeof setTimeout> | undefined
   private taskQueue: Promise<unknown> = Promise.resolve()
-  private cacheQueue: Promise<unknown> = Promise.resolve()
-  private cacheTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private stopped = false
   private stopHandlers = new Map<string, () => void>()
   private unsubscribeAuth?: () => void
@@ -174,14 +139,29 @@ export class ConversationWorkspace {
   private initialization?: Promise<void>
   private retryAfter = 0
   private lastScheduled = ''
-  private leases = new Map<string, () => void>()
   private opening = new Map<number, Promise<string | undefined>>()
   private titleRequests = new Map<string, AbortController>()
-  private compressionRequests = new Map<string, AbortController>()
+  private readonly pendingCache: PendingCache
+  private readonly compression: CompressionCoordinator
   constructor(
     readonly owner: number,
     private onSaved: (row?: SavedConversation) => void
-  ) {}
+  ) {
+    this.pendingCache = new PendingCache(
+      owner,
+      () => this.isActive(),
+      (error) => this.publish({ cacheError: error })
+    )
+    this.compression = new CompressionCoordinator({
+      isActive: () => this.isActive(),
+      getEntry: (key) => this.snapshot.entries[key],
+      setEntry: (entry) => this.setEntry(entry),
+      update: (key, updater) => this.update(key, updater),
+      flush: (key) => this.flush(key),
+      cancelTitle: (key) => this.cancelTitle(key),
+      signal: this.controller.signal,
+    })
+  }
   attach() {
     this.mounts += 1
     this.unsubscribeAuth ??= useAuthStore.subscribe((state) => {
@@ -217,73 +197,12 @@ export class ConversationWorkspace {
       this.stopHandlers.delete(key)
     }
   }
-  private async claim(key: string): Promise<boolean> {
-    if (this.leases.has(key) || !navigator.locks) return true
-    return new Promise((resolve) => {
-      void navigator.locks
-        .request(
-          `playground-pending:${this.owner}:${key}`,
-          { ifAvailable: true },
-          async (lock) => {
-            if (!lock || !this.isActive()) {
-              resolve(false)
-              return
-            }
-            await new Promise<void>((release) => {
-              this.leases.set(key, release)
-              resolve(true)
-            })
-          }
-        )
-        .catch(() => resolve(false))
-    })
-  }
-  // The cache is written soon, with whatever the entry holds by then.
-  private cacheLater(key: string) {
-    if (this.cacheTimers.has(key) || !this.isActive()) return
-    this.cacheTimers.set(
-      key,
-      setTimeout(() => {
-        this.cacheTimers.delete(key)
-        const entry = this.snapshot.entries[key]
-        if (entry) void this.cache(entry)
-      }, CACHE_DELAY)
-    )
-  }
-  private cache(entry: ConversationEntry) {
-    const timer = this.cacheTimers.get(entry.key)
-    if (timer) {
-      clearTimeout(timer)
-      this.cacheTimers.delete(entry.key)
-    }
-    const value: PendingConversation = {
-      owner: this.owner,
-      key: entry.key,
-      row: entry.row,
-      pending: entry.pending,
-      pendingVersion: entry.pendingVersion,
-      localVersion: entry.localVersion,
-    }
-    this.cacheQueue = this.cacheQueue
-      .catch(() => {})
-      .then(() =>
-        writePendingConversation(
-          this.owner,
-          entry.key,
-          entry.dirty ? value : undefined
-        )
-      )
-      .catch((error: unknown) => {
-        if (this.isActive()) this.publish({ cacheError: error })
-      })
-    return this.cacheQueue
-  }
   async initialize() {
     try {
-      const pending = await readPendingConversations(this.owner)
+      const pending = await this.pendingCache.read()
       if (!this.isActive()) return
       for (const saved of pending) {
-        if (!(await this.claim(saved.key))) continue
+        if (!(await this.pendingCache.claim(saved.key))) continue
         const row = parseConversation(saved.row)
         this.setEntry({
           key: saved.key,
@@ -356,7 +275,7 @@ export class ConversationWorkspace {
     const row = await getConversation(id, this.controller.signal)
     if (!this.isActive()) return
     const key = existing?.key ?? crypto.randomUUID()
-    if (!(await this.claim(key))) return
+    if (!(await this.pendingCache.claim(key))) return
     const entry: ConversationEntry = {
       key,
       row: { ...row, document: interruptedDocument(row.document) },
@@ -367,7 +286,7 @@ export class ConversationWorkspace {
     }
     // A reload discards pending edits only after fetching a valid replacement.
     this.setEntry(entry)
-    await this.cache(entry)
+    await this.pendingCache.write(entry)
     return key
   }
   async create(
@@ -377,7 +296,7 @@ export class ConversationWorkspace {
   ): Promise<string | undefined> {
     if (!this.isActive()) return
     const key = crypto.randomUUID()
-    if (!(await this.claim(key))) return
+    if (!(await this.pendingCache.claim(key))) return
     const entry: ConversationEntry = {
       key,
       row: {
@@ -449,11 +368,11 @@ export class ConversationWorkspace {
     const isPending = isGenerating(row.document)
     if (wasPending && !isPending) {
       // A finished reply is kept at once; a save follows unless one failed.
-      void this.cache(entry)
+      void this.pendingCache.write(entry)
       if (!entry.error) void this.flush(key)
       return
     }
-    this.cacheLater(key)
+    this.pendingCache.writeLater(key, () => this.snapshot.entries[key])
     // A reply in progress is saved once when it settles, and a draft rides
     // along with the next save; both stay in the local cache meanwhile, so
     // neither re-uploads the whole document every few seconds.
@@ -476,106 +395,15 @@ export class ConversationWorkspace {
     }
   }
   cancelCompression(key: string) {
-    this.compressionRequests.get(key)?.abort()
-    this.compressionRequests.delete(key)
-    const entry = this.snapshot.entries[key]
-    if (entry?.compressionProgress) {
-      this.setEntry({ ...entry, compressionProgress: undefined })
-    }
+    this.compression.cancel(key)
   }
-  async compress(
+  compress(
     key: string,
     capability: ModelCapability,
     group?: string,
     signal?: AbortSignal
   ): Promise<boolean> {
-    const entry = this.snapshot.entries[key]
-    if (
-      !this.isActive() ||
-      !entry ||
-      entry.error ||
-      this.compressionRequests.has(key)
-    ) {
-      return false
-    }
-    this.cancelTitle(key)
-    const controller = new AbortController()
-    this.compressionRequests.set(key, controller)
-    this.setEntry({
-      ...entry,
-      compressionProgress: { completed: 0, total: 0 },
-      compressionError: undefined,
-    })
-    const document = entry.row.document
-    this.update(key, (row) => ({
-      ...row,
-      document: { ...row.document, compressionAttempt: 'requested' },
-    }))
-    try {
-      if (!(await this.flush(key))) return false
-      const compression = await compressContext({
-        document,
-        capability,
-        group,
-        signal: AbortSignal.any([
-          controller.signal,
-          this.controller.signal,
-          ...(signal ? [signal] : []),
-        ]),
-        onProgress: (completed, total) => {
-          const current = this.snapshot.entries[key]
-          if (
-            this.isActive() &&
-            current &&
-            this.compressionRequests.get(key) === controller
-          ) {
-            this.setEntry({
-              ...current,
-              compressionProgress: { completed, total },
-            })
-          }
-        },
-      })
-      const current = this.snapshot.entries[key]
-      if (
-        !this.isActive() ||
-        !current ||
-        this.compressionRequests.get(key) !== controller
-      ) {
-        return false
-      }
-      if (!validCompression({ ...current.row.document, compression })) {
-        throw new Error('Conversation changed during compression')
-      }
-      this.update(key, (row) => ({
-        ...row,
-        document: {
-          ...row.document,
-          compression,
-          compressionAttempt: undefined,
-        },
-      }))
-      return await this.flush(key)
-    } catch (error) {
-      const current = this.snapshot.entries[key]
-      if (
-        this.isActive() &&
-        current &&
-        this.compressionRequests.get(key) === controller
-      ) {
-        this.setEntry({ ...current, compressionError: error })
-        this.update(key, (row) => ({
-          ...row,
-          document: { ...row.document, compressionAttempt: 'failed' },
-        }))
-        await this.flush(key)
-      }
-      return false
-    } finally {
-      if (this.compressionRequests.get(key) === controller) {
-        this.cancelCompression(key)
-      }
-    }
+    return this.compression.compress(key, capability, group, signal)
   }
   async generateTitle(key: string, retry = false): Promise<void> {
     const entry = this.snapshot.entries[key]
@@ -584,7 +412,7 @@ export class ConversationWorkspace {
       !entry ||
       entry.error ||
       this.titleRequests.has(key) ||
-      this.compressionRequests.has(key)
+      this.compression.has(key)
     ) {
       return
     }
@@ -707,7 +535,7 @@ export class ConversationWorkspace {
       // The server already holds this state; there is nothing to send.
       const clean = { ...entry, dirty: false, draftOnly: false }
       this.setEntry(clean)
-      await this.cache(clean)
+      await this.pendingCache.write(clean)
       return true
     }
     const sentVersion = entry.pendingVersion ?? entry.localVersion
@@ -723,7 +551,7 @@ export class ConversationWorkspace {
       retryAt: undefined,
     }
     this.setEntry(entry)
-    await this.cache(entry)
+    await this.pendingCache.write(entry)
     if (!this.isActive() || !this.snapshot.entries[key]) return false
     try {
       const saved = isConversationPatch(write)
@@ -760,7 +588,7 @@ export class ConversationWorkspace {
         retryAt: undefined,
       }
       this.setEntry(next)
-      await this.cache(next)
+      await this.pendingCache.write(next)
       this.onSaved(next.row)
       if (dirty && sentVersion < version) return this.save(key, version)
       if (dirty) this.schedule()
@@ -795,7 +623,7 @@ export class ConversationWorkspace {
         })
         if (transient) this.schedule()
       }
-      await this.cache(this.snapshot.entries[key])
+      await this.pendingCache.write(this.snapshot.entries[key])
       return false
     }
   }
@@ -822,21 +650,18 @@ export class ConversationWorkspace {
     const entries = { ...this.snapshot.entries }
     delete entries[key]
     this.publish({ entries })
-    await this.cache({ ...latest, dirty: false })
-    this.leases.get(key)?.()
-    this.leases.delete(key)
+    await this.pendingCache.write({ ...latest, dirty: false })
+    this.pendingCache.release(key)
     this.onSaved()
   }
   dispose() {
     if (this.stopped) return
     for (const key of this.titleRequests.keys()) this.cancelTitle(key)
-    for (const key of this.compressionRequests.keys()) {
-      this.cancelCompression(key)
-    }
+    this.compression.cancelAll()
     for (const stop of this.stopHandlers.values()) stop()
     for (const entry of Object.values(this.snapshot.entries)) {
       if (entry.dirty) {
-        void this.cache({
+        void this.pendingCache.write({
           ...entry,
           row: {
             ...entry.row,
@@ -848,12 +673,7 @@ export class ConversationWorkspace {
     this.stopped = true
     this.controller.abort()
     if (this.timer) clearTimeout(this.timer)
-    for (const timer of this.cacheTimers.values()) clearTimeout(timer)
-    this.cacheTimers.clear()
     this.unsubscribeAuth?.()
-    void this.cacheQueue.finally(() => {
-      for (const release of this.leases.values()) release()
-      this.leases.clear()
-    })
+    this.pendingCache.dispose()
   }
 }
