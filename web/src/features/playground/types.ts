@@ -32,6 +32,11 @@ export interface MessageVersion {
   id: string
   content: string
   state?: Omit<Message, 'key' | 'from' | 'versions' | 'selectedVersionId'>
+  /**
+   * The messages that followed this version while it was selected. Only a
+   * version that is not selected carries one; selecting it brings them back.
+   */
+  continuation?: Message[]
 }
 
 export interface Message {
@@ -56,6 +61,8 @@ export interface Message {
   isContentComplete?: boolean
   status?: MessageStatus
   errorCode?: string | null
+  /** Why a reply failed; the content keeps what arrived before the failure. */
+  errorMessage?: string
 }
 
 // API payload types

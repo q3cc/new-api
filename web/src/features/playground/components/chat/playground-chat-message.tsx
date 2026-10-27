@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { TFunction } from 'i18next'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -27,9 +28,13 @@ import {
   BranchPage,
 } from '@/components/ai-elements/branch'
 
+import { MESSAGE_STATUS } from '../../constants'
 import { isErrorMessage, type MessageAlignment } from '../../lib'
-import { getCurrentVersion } from '../../lib/message/message-utils'
-import type { Message } from '../../types'
+import {
+  getCurrentVersion,
+  hasMessageContent,
+} from '../../lib/message/message-utils'
+import type { Message, MessageStatus } from '../../types'
 import { MessageActions } from '../message/message-actions'
 import { MessageErrorActions } from '../message/message-error-actions'
 import { PlaygroundMessageContent } from '../message/playground-message-content'
@@ -54,6 +59,16 @@ type Props = {
   onCompress?: (message: Message) => void
 }
 
+// A version that did not finish is marked beside its number.
+function versionStatusLabel(
+  status: MessageStatus | undefined,
+  t: TFunction
+): string | null {
+  if (status === MESSAGE_STATUS.ERROR) return t('Failed')
+  if (status === MESSAGE_STATUS.INTERRUPTED) return t('Interrupted')
+  return null
+}
+
 /**
  * One message of the chat. It is memoized so a reply streaming at the end of
  * the list does not re-render the messages above it.
@@ -64,6 +79,12 @@ export const PlaygroundChatMessage = memo(function PlaygroundChatMessage(
   const { t } = useTranslation()
   const message = props.message
   const isError = isErrorMessage(message)
+  // A failed reply and a stopped reply without text both need a way out.
+  const needsRecovery =
+    isError ||
+    (message.status === MESSAGE_STATUS.INTERRUPTED &&
+      !hasMessageContent(message))
+  const statusLabel = versionStatusLabel(message.status, t)
   const onSelectVersion = props.onSelectVersion
   const onRegenerateMessage = props.onRegenerateMessage
   const onEditMessage = props.onEditMessage
@@ -73,52 +94,58 @@ export const PlaygroundChatMessage = memo(function PlaygroundChatMessage(
   return (
     <PlaygroundMessageContent
       alignment={props.alignment}
-      actions={
-        <>
-          {message.versions.length > 1 && onSelectVersion && (
-            <Branch
-              className='w-auto'
-              branch={message.versions.findIndex(
-                (version) => version.id === getCurrentVersion(message).id
+      branch={
+        message.versions.length > 1 && onSelectVersion ? (
+          <Branch
+            className='w-auto'
+            branch={message.versions.findIndex(
+              (version) => version.id === getCurrentVersion(message).id
+            )}
+            branchCount={message.versions.length}
+            onBranchChange={(index) =>
+              onSelectVersion(message, message.versions[index].id)
+            }
+          >
+            <BranchSelector from={message.from} className='self-start px-0'>
+              <BranchPrevious
+                aria-label={t('Previous reply')}
+                disabled={props.isGenerating}
+              />
+              <BranchPage />
+              {statusLabel && (
+                <span className='text-muted-foreground text-xs'>
+                  {statusLabel}
+                </span>
               )}
-              branchCount={message.versions.length}
-              onBranchChange={(index) =>
-                onSelectVersion(message, message.versions[index].id)
-              }
-            >
-              <BranchSelector from={message.from} className='self-start px-0'>
-                <BranchPrevious
-                  aria-label={t('Previous reply')}
-                  disabled={props.isGenerating}
-                />
-                <BranchPage />
-                <BranchNext
-                  aria-label={t('Next reply')}
-                  disabled={props.isGenerating}
-                />
-              </BranchSelector>
-            </Branch>
-          )}
-          <MessageActions
-            message={message}
-            onCopy={props.onCopyMessage}
-            onRegenerate={onRegenerateMessage}
-            onToggleSource={props.onToggleSource}
-            onEdit={onEditMessage}
-            onDelete={onDeleteMessage}
-            isSourceVisible={props.isSourceVisible}
-            isGenerating={props.isGenerating}
-            alwaysVisible={props.alwaysShowActions}
-            className='mt-1.5'
-          />
-        </>
+              <BranchNext
+                aria-label={t('Next reply')}
+                disabled={props.isGenerating}
+              />
+            </BranchSelector>
+          </Branch>
+        ) : undefined
+      }
+      actions={
+        <MessageActions
+          message={message}
+          onCopy={props.onCopyMessage}
+          onRegenerate={onRegenerateMessage}
+          onToggleSource={props.onToggleSource}
+          onEdit={onEditMessage}
+          onDelete={onDeleteMessage}
+          isSourceVisible={props.isSourceVisible}
+          isGenerating={props.isGenerating}
+          alwaysVisible={props.alwaysShowActions}
+          className='mt-1.5'
+        />
       }
       isSourceVisible={props.isSourceVisible}
       message={message}
       errorActions={
-        isError ? (
+        needsRecovery ? (
           <MessageErrorActions
             disabled={props.isGenerating}
+            content={props.content}
             contextLengthError={props.contextLengthError}
             onCompress={
               props.contextLengthError && onCompress

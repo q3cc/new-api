@@ -217,9 +217,9 @@ describe('stream failures', () => {
       '502',
       'Request failed'
     )
-    expect(failed && getMessageContent(failed)).toBe(
-      'Partial answer\n\nRequest failed: Connection closed'
-    )
+    // The failure is kept beside the content, not written into it.
+    expect(failed && getMessageContent(failed)).toBe('Partial answer')
+    expect(failed?.errorMessage).toBe('Request failed: Connection closed')
     expect(failed?.reasoning?.content).toBe('Preserved reasoning')
     expect(failed?.status).toBe('error')
     expect(failed?.errorCode).toBe('502')

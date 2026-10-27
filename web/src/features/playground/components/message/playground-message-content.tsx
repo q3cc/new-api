@@ -55,6 +55,8 @@ import { MessageMetadata } from './message-metadata'
 type PlaygroundMessageContentProps = {
   actions: ReactNode
   alignment: MessageAlignment
+  /** The version switcher; shown for failed and stopped replies as well. */
+  branch?: ReactNode
   errorActions?: ReactNode
   isSourceVisible?: boolean
   message: Message
@@ -64,6 +66,7 @@ type PlaygroundMessageContentProps = {
 export const PlaygroundMessageContent = memo(function PlaygroundMessageContent({
   actions,
   alignment,
+  branch,
   errorActions,
   isSourceVisible = false,
   message,
@@ -80,6 +83,12 @@ export const PlaygroundMessageContent = memo(function PlaygroundMessageContent({
     sources,
   } = getMessageContentState(message, versionContent)
   const isError = isErrorMessage(message)
+  // What arrived before a failure stays readable above the error. Replies
+  // saved before the failure was kept apart hold the error in the content.
+  const partialContent =
+    isError && message.errorMessage !== undefined ? displayContent : ''
+  const emptyInterrupted =
+    message.status === MESSAGE_STATUS.INTERRUPTED && !versionContent.trim()
   const isMessageFinal =
     message.status !== MESSAGE_STATUS.LOADING &&
     message.status !== MESSAGE_STATUS.STREAMING
@@ -106,7 +115,7 @@ export const PlaygroundMessageContent = memo(function PlaygroundMessageContent({
         </Sources>
       )}
 
-      {message.status === 'interrupted' && (
+      {message.status === MESSAGE_STATUS.INTERRUPTED && (
         <p className='text-muted-foreground text-sm'>
           {t('Generation was interrupted')}
         </p>
@@ -134,8 +143,24 @@ export const PlaygroundMessageContent = memo(function PlaygroundMessageContent({
 
       {isError && (
         <>
+          {partialContent && (
+            <MessageContent
+              variant='flat'
+              className={cn(getMessageContentStyles())}
+            >
+              <Response final>{partialContent}</Response>
+            </MessageContent>
+          )}
           <MessageError message={message} className='mb-2' />
           <MessageMetadata alignment={alignment} message={message} />
+          {branch}
+          {errorActions}
+        </>
+      )}
+
+      {!isError && emptyInterrupted && (
+        <>
+          {branch}
           {errorActions}
         </>
       )}
@@ -165,6 +190,7 @@ export const PlaygroundMessageContent = memo(function PlaygroundMessageContent({
             </MessageContent>
           )}
           <MessageMetadata alignment={alignment} message={message} />
+          {branch}
           {actions}
         </>
       )}

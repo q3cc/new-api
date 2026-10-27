@@ -19,12 +19,15 @@ For commercial licensing, please contact support@quantumnous.com
 import { Edit, Minimize2Icon, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { CopyButton } from '@/components/copy-button'
 import { Button } from '@/components/ui/button'
 
 import { MessageActionButton } from './message-action-button'
 
 type MessageErrorActionsProps = {
   disabled?: boolean
+  /** The partial reply, offered for copying. */
+  content?: string
   /** The provider refused the request as too long for the model's context. */
   contextLengthError?: boolean
   onDelete?: () => void
@@ -35,6 +38,7 @@ type MessageErrorActionsProps = {
 
 export function MessageErrorActions({
   disabled = false,
+  content = '',
   contextLengthError = false,
   onDelete,
   onEditPrompt,
@@ -43,7 +47,7 @@ export function MessageErrorActions({
 }: MessageErrorActionsProps) {
   const { t } = useTranslation()
 
-  if (!onRetry && !onEditPrompt && !onDelete && !onCompress) {
+  if (!onRetry && !onEditPrompt && !onDelete && !onCompress && !content) {
     return null
   }
 
@@ -67,6 +71,16 @@ export function MessageErrorActions({
           <Minimize2Icon aria-hidden='true' />
           {t('Compress context and retry')}
         </Button>
+      )}
+
+      {content.trim() && (
+        <CopyButton
+          value={content}
+          variant='ghost'
+          size='icon'
+          className='text-muted-foreground hover:text-foreground size-8 touch-manipulation pointer-coarse:size-11'
+          tooltip={t('Copy')}
+        />
       )}
 
       {onRetry && (

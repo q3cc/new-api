@@ -100,6 +100,14 @@ export function selectMessageVersion(message: Message, id: string): Message {
   }
 }
 
+/** A reply that is still being requested or streamed. */
+export function isGeneratingMessage(message: Message): boolean {
+  return (
+    message.status === MESSAGE_STATUS.LOADING ||
+    message.status === MESSAGE_STATUS.STREAMING
+  )
+}
+
 export function discardFailedReply(message: Message): Message {
   if (message.versions.length <= 1) return message
   const current = getCurrentVersion(message)

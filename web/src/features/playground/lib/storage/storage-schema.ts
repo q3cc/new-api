@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+import type { Message } from '../../types'
 import { normalizeMessageErrorCode } from '../message/message-error-utils'
 
 export const STORAGE_VERSION = 1
@@ -84,9 +85,12 @@ const messageStateSchema = z.object({
     (value) => (value === null ? null : normalizeMessageErrorCode(value)),
     z.string().nullable().optional()
   ),
+  errorMessage: z.string().optional(),
 })
 
-const messageSchema = messageStateSchema.extend({
+// A version may carry the messages that followed it, which are messages
+// themselves, so the schema refers to itself.
+const messageSchema: z.ZodType<Message> = messageStateSchema.extend({
   key: z.string(),
   from: messageRoleSchema,
   selectedVersionId: z.string().optional(),
@@ -96,6 +100,7 @@ const messageSchema = messageStateSchema.extend({
         id: z.string(),
         content: z.string(),
         state: messageStateSchema.optional(),
+        continuation: z.lazy(() => z.array(messageSchema)).optional(),
       })
     )
     .min(1),

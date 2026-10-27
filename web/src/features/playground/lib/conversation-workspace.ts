@@ -43,7 +43,8 @@ import {
   conversationTitleSource,
   generateConversationTitle,
 } from './conversation-title'
-import { discardFailedReply, getMessageContent } from './message/message-utils'
+import { interruptMessages } from './message/conversation-message-utils'
+import { getMessageContent } from './message/message-utils'
 import {
   clearImportedSource,
   readLegacySource,
@@ -104,18 +105,7 @@ export function interruptedDocument(
   document: ConversationDocument
 ): ConversationDocument {
   if (!isGenerating(document)) return document
-  return {
-    ...document,
-    messages: document.messages.map((message) =>
-      message.status === 'loading' || message.status === 'streaming'
-        ? discardFailedReply({
-            ...message,
-            status: 'interrupted',
-            isReasoningStreaming: false,
-          })
-        : message
-    ),
-  }
+  return { ...document, messages: interruptMessages(document.messages) }
 }
 
 export function isGeneratingDocument(document: ConversationDocument): boolean {

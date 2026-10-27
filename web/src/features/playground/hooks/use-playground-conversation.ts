@@ -23,8 +23,8 @@ import {
   applyMessageEdit,
   createRegeneratedMessages,
   removeMessageByKey,
+  switchMessageVersion,
 } from '../lib'
-import { selectMessageVersion } from '../lib/message/message-utils'
 import type { Message } from '../types'
 
 type UsePlaygroundConversationOptions = {
@@ -117,9 +117,7 @@ export function usePlaygroundConversation({
   const handleSelectVersion = useCallback(
     (message: Message, id: string) =>
       updateMessages((previous) =>
-        previous.map((item) =>
-          item.key === message.key ? selectMessageVersion(item, id) : item
-        )
+        switchMessageVersion(previous, message.key, id)
       ),
     [updateMessages]
   )

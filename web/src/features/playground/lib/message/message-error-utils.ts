@@ -109,6 +109,14 @@ type MessageErrorState = {
   showSettingsLink: boolean
 }
 
+/**
+ * The text describing a failure. Replies saved before the failure was kept
+ * apart from the content carry it in the content itself.
+ */
+export function getMessageErrorText(message: Message): string {
+  return message.errorMessage ?? getMessageContent(message)
+}
+
 export function isAdminRole(role?: number | null): boolean {
   return role != null && role >= 10
 }
@@ -125,7 +133,7 @@ export function getMessageErrorState(
     return null
   }
 
-  const content = getMessageContent(message) || FALLBACK_ERROR_CONTENT
+  const content = getMessageErrorText(message) || FALLBACK_ERROR_CONTENT
   const isModelPriceError = message.errorCode === MODEL_PRICE_ERROR_CODE
 
   return {

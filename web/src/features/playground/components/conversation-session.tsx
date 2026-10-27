@@ -41,11 +41,12 @@ import {
   type ConversationEntry,
   type ConversationWorkspace,
 } from '../lib/conversation-workspace'
-import { parseContextLimit } from '../lib/message/message-error-utils'
+import { interruptMessages } from '../lib/message/conversation-message-utils'
 import {
-  discardFailedReply,
-  getMessageContent,
-} from '../lib/message/message-utils'
+  getMessageErrorText,
+  parseContextLimit,
+} from '../lib/message/message-error-utils'
+import { isGeneratingMessage } from '../lib/message/message-utils'
 import type { Message } from '../types'
 import { PlaygroundChat } from './chat/playground-chat'
 import { PlaygroundInput } from './input/playground-input'
@@ -135,10 +136,7 @@ function ConversationSessionBody(props: Props) {
     const pendingKeys = new Set(
       workspace
         .getSnapshot()
-        .entries[key]?.row.document.messages.filter(
-          (message) =>
-            message.status === 'loading' || message.status === 'streaming'
-        )
+        .entries[key]?.row.document.messages.filter(isGeneratingMessage)
         .map((message) => message.key)
     )
     generation.current += 1
@@ -149,15 +147,7 @@ function ConversationSessionBody(props: Props) {
       ...row,
       document: {
         ...row.document,
-        messages: row.document.messages.map((message) =>
-          pendingKeys.has(message.key)
-            ? discardFailedReply({
-                ...message,
-                status: 'interrupted',
-                isReasoningStreaming: false,
-              })
-            : message
-        ),
+        messages: interruptMessages(row.document.messages, pendingKeys),
       },
     }))
     if (!workspace.getSnapshot().entries[key]?.error) void workspace.flush(key)
@@ -296,7 +286,7 @@ function ConversationView(props: ViewProps) {
   const canCompressContext = shouldCompress(document, 1, 1)
   const compressAndRetry = async (message: Message) => {
     const model = document.config.model
-    const learned = parseContextLimit(getMessageContent(message))
+    const learned = parseContextLimit(getMessageErrorText(message))
     const limit = document.contextLimits?.[model] ?? learned
     if (learned && document.contextLimits?.[model] === undefined) {
       props.workspace.update(props.entry.key, (row) => ({

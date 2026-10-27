@@ -462,20 +462,25 @@ it('retains successful replies, switches their metadata, excludes failed retries
   const selected = selectMessageVersion(old, completed.selectedVersionId)
   expect(getMessageContent(selected)).toBe('New answer')
   expect(selected.reasoning?.content).toBe('New reasoning')
+  // A failed retry stays as its own version so the user can see what went
+  // wrong and switch back to the earlier answer.
   const failed = updateAssistantMessageWithError(
     [loading],
     'Payment required',
     '402'
   )[0]
-  expect(failed.versions).toHaveLength(1)
-  expect(getMessageContent(failed)).toBe(getMessageContent(previous))
-  expect(failed.status).toBe('complete')
+  expect(failed.versions).toHaveLength(2)
+  expect(failed.selectedVersionId).toBe(loading.selectedVersionId)
+  expect(getMessageContent(failed)).toBe('')
+  expect(failed.status).toBe('error')
+  expect(failed.errorMessage).toContain('Payment required')
   const retryError = createRegeneratedMessages(
-    [{ ...previous, status: 'error' }],
+    [{ ...previous, status: 'error', errorMessage: 'Request failed' }],
     previous.key
   )?.at(-1)
   assert(retryError)
-  expect(retryError.versions).toHaveLength(1)
+  expect(retryError.versions).toHaveLength(2)
+  expect(retryError.versions[0].state?.status).toBe('error')
   document.messages[9] = old
   const restored = parseConversation({
     id: 1,

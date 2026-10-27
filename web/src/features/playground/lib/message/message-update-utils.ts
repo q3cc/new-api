@@ -19,14 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import { ERROR_MESSAGES, MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
 import type { Message } from '../../types'
 import { completeAssistantTiming } from './message-timing-utils'
-import {
-  discardFailedReply,
-  getMessageContent,
-  updateCurrentVersionContent,
-} from './message-utils'
 
 /**
- * Update the last assistant message with an error.
+ * Marks the last assistant message as failed. The content keeps whatever
+ * arrived before the failure; the failure itself is kept beside it, so the
+ * reply stays readable and a later version does not hide it.
  */
 export function updateAssistantMessageWithError(
   messages: Message[],
@@ -34,22 +31,15 @@ export function updateAssistantMessageWithError(
   errorCode?: string,
   title: string = ERROR_MESSAGES.API_REQUEST_ERROR
 ): Message[] {
-  return updateLastAssistantMessage(messages, (message) => {
-    if (message.versions.length > 1) return discardFailedReply(message)
-    const partialContent = getMessageContent(message)
-    const failure = `${title}: ${errorMessage}`
-    const updatedMessage = updateCurrentVersionContent(
-      message,
-      partialContent ? `${partialContent}\n\n${failure}` : failure
-    )
-
-    return completeAssistantTiming({
-      ...updatedMessage,
+  return updateLastAssistantMessage(messages, (message) =>
+    completeAssistantTiming({
+      ...message,
       status: MESSAGE_STATUS.ERROR,
       isReasoningStreaming: false,
       errorCode: errorCode || null,
+      errorMessage: `${title}: ${errorMessage}`,
     })
-  })
+  )
 }
 
 /**

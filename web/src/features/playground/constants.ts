@@ -30,6 +30,7 @@ export const MESSAGE_STATUS = {
   STREAMING: 'streaming',
   COMPLETE: 'complete',
   ERROR: 'error',
+  INTERRUPTED: 'interrupted',
 } as const
 
 // API endpoints

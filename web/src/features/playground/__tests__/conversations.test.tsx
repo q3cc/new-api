@@ -591,6 +591,90 @@ it('switches saved reply versions and shows the question on the right and the re
   expect(await screen.findByText('Second answer')).toBeVisible()
 })
 
+it('branches when an edited question is sent and returns to the original reply when switching back', async () => {
+  const first = records.get(1)
+  assert(first)
+  first.document.messages = [
+    {
+      key: 'question',
+      from: 'user',
+      versions: [{ id: 'q1', content: 'Original question' }],
+    },
+    {
+      key: 'answer',
+      from: 'assistant',
+      status: 'complete',
+      versions: [{ id: 'a1', content: 'Original answer' }],
+    },
+  ]
+  renderPlayground()
+  expect(await screen.findByText('Original answer')).toBeVisible()
+  const question = screen.getByText('Original question').closest('.group')
+  assert(question instanceof HTMLElement)
+  fireEvent.click(within(question).getByRole('button', { name: 'Edit' }))
+  const editable = await waitFor(() => {
+    const found = document.querySelector<HTMLElement>('[contenteditable=true]')
+    if (!found) throw new Error('Editor not ready')
+    return found
+  })
+  act(() => editable.focus())
+  fireEvent.paste(editable, {
+    clipboardData: { getData: () => ' edited' },
+  })
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Save & Submit' })).toBeEnabled()
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Submit' }))
+  await waitFor(() => expect(completions).toHaveLength(1))
+  expect(completions[0].text).toContain('edited')
+  await act(async () => completions[0].finish('Branch answer'))
+  expect(await screen.findByText('Branch answer')).toBeVisible()
+  expect(screen.queryByText('Original answer')).not.toBeInTheDocument()
+  expect(screen.getByText('2 of 2')).toBeVisible()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Previous reply' }))
+  expect(await screen.findByText('Original answer')).toBeVisible()
+  expect(screen.getByText('Original question')).toBeVisible()
+  expect(screen.queryByText('Branch answer')).not.toBeInTheDocument()
+  await waitFor(() => {
+    const saved = records.get(1)?.document.messages[0]
+    expect(saved?.selectedVersionId).toBe('q1')
+    expect(saved?.versions[1].continuation?.[0].versions[0].content).toBe(
+      'Branch answer'
+    )
+  })
+})
+
+it('asks before deleting a message', async () => {
+  const first = records.get(1)
+  assert(first)
+  first.document.messages = [
+    {
+      key: 'question',
+      from: 'user',
+      versions: [{ id: 'q1', content: 'Keep me?' }],
+    },
+    {
+      key: 'answer',
+      from: 'assistant',
+      status: 'complete',
+      versions: [{ id: 'a1', content: 'Reply to keep' }],
+    },
+  ]
+  renderPlayground()
+  expect(await screen.findByText('Reply to keep')).toBeVisible()
+  const answer = screen.getByText('Reply to keep').closest('.group')
+  assert(answer instanceof HTMLElement)
+  fireEvent.click(within(answer).getByRole('button', { name: 'Delete' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(screen.getByText('Reply to keep')).toBeVisible()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+  await waitFor(() =>
+    expect(screen.queryByText('Reply to keep')).not.toBeInTheDocument()
+  )
+  expect(screen.getByText('Keep me?')).toBeVisible()
+})
+
 it('shows upload and verification progress until the server confirms import', async () => {
   localStorage.setItem('playground_messages', '[]')
   let finish: (() => void) | undefined
@@ -814,7 +898,10 @@ it('does not start a charged request when saving the user message fails', async 
   ).toBeEnabled()
   expect(screen.getByText('keep this prompt')).toBeInTheDocument()
   failSave = false
-  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  // The banner's retry saves again; the stopped reply offers its own retry.
+  fireEvent.click(
+    within(screen.getByRole('alert')).getByRole('button', { name: 'Retry' })
+  )
   await waitFor(() =>
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   )

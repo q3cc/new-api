@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { MESSAGE_ROLES } from '../../constants'
+import { MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -35,12 +35,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { Message } from '../../types'
+import type { Message, MessageVersion } from '../../types'
 import {
   createLoadingAssistantMessage,
+  createMessageVersion,
   createUserMessage,
   getMessageContent,
   getCurrentVersion,
+  hasMessageContent,
+  isGeneratingMessage,
+  selectMessageVersion,
   updateCurrentVersionContent,
 } from './message-utils'
 
@@ -66,6 +70,105 @@ export function appendUserMessagePair(
     createUserMessage(content, submittedAt),
     createLoadingAssistantMessage(submittedAt),
   ]
+}
+
+// The version keeps what followed it, so selecting it again brings that back.
+function withContinuation(
+  version: MessageVersion,
+  continuation: Message[]
+): MessageVersion {
+  if (!continuation.length) {
+    const { continuation: _dropped, ...rest } = version
+    return rest
+  }
+  return { ...version, continuation }
+}
+
+// A version worth keeping as a branch: it has text, or it failed or was
+// interrupted and the user may want to see why.
+function isKeptVersion(version: MessageVersion): boolean {
+  const status = version.state?.status
+  return (
+    version.content.trim() !== '' ||
+    status === MESSAGE_STATUS.ERROR ||
+    status === MESSAGE_STATUS.INTERRUPTED
+  )
+}
+
+/**
+ * Selects another version of a message. The messages after the message move
+ * into the version that was selected until now, and the messages the target
+ * version carried come back after it, so each version keeps its own branch.
+ */
+export function switchMessageVersion(
+  messages: Message[],
+  messageKey: string,
+  versionId: string
+): Message[] {
+  const index = messages.findIndex((message) => message.key === messageKey)
+  if (index === -1) return messages
+  const message = messages[index]
+  const current = getCurrentVersion(message)
+  const target = message.versions.find((version) => version.id === versionId)
+  if (!target || target.id === current.id) return messages
+  const switched = selectMessageVersion(message, versionId)
+  const tail = messages.slice(index + 1)
+  const versions = switched.versions.map((version) => {
+    if (version.id === current.id) return withContinuation(version, tail)
+    if (version.id === target.id) return withContinuation(version, [])
+    return version
+  })
+  return [
+    ...messages.slice(0, index),
+    { ...switched, versions },
+    ...(target.continuation ?? []),
+  ]
+}
+
+/**
+ * Marks requests in progress as interrupted. A reply that received nothing
+ * and has an earlier version returns to that version, with what followed it.
+ */
+export function interruptMessages(
+  messages: Message[],
+  keys?: ReadonlySet<string>
+): Message[] {
+  let result = messages
+  for (const message of messages) {
+    if (!isGeneratingMessage(message) || (keys && !keys.has(message.key))) {
+      continue
+    }
+    const interrupted: Message = {
+      ...message,
+      status: MESSAGE_STATUS.INTERRUPTED,
+      isReasoningStreaming: false,
+    }
+    const current = getCurrentVersion(message)
+    const previous = [...message.versions]
+      .reverse()
+      .find((version) => version.id !== current.id)
+    if (hasMessageContent(message) || !previous) {
+      result = result.map((item) =>
+        item.key === message.key ? interrupted : item
+      )
+      continue
+    }
+    result = switchMessageVersion(
+      result.map((item) => (item.key === message.key ? interrupted : item)),
+      message.key,
+      previous.id
+    ).map((item) =>
+      item.key === message.key
+        ? {
+            ...item,
+            versions: item.versions.filter(
+              (version) => version.id !== current.id
+            ),
+          }
+        : item
+    )
+  }
+  return result
 }
 
 export function createRegeneratedMessages(
@@ -97,15 +200,15 @@ export function createRegeneratedMessages(
     selectedVersionId: _selected,
     ...state
   } = previous
+  // The reply's own branch keeps what followed it; the new reply starts fresh.
+  const tail = messages.slice(replyIndex + 1)
   const versions = previous.versions
     .map((version) =>
-      version.id === current.id ? { ...version, state } : version
+      version.id === current.id
+        ? withContinuation({ ...version, state }, tail)
+        : version
     )
-    .filter(
-      (version) =>
-        (!version.state?.status || version.state.status === 'complete') &&
-        version.content.trim()
-    )
+    .filter(isKeptVersion)
   return [
     ...messages.slice(0, replyIndex),
     {
@@ -152,25 +255,50 @@ export function applyMessageEdit(
     return null
   }
 
-  const updatedMessages = messages.map((message) =>
-    message.key === messageKey
-      ? {
-          ...updateCurrentVersionContent(message, content),
-          createdAt: shouldSubmit ? submittedAt : message.createdAt,
-        }
-      : message
-  )
-
-  if (
-    !shouldSubmit ||
-    updatedMessages[messageIndex].from !== MESSAGE_ROLES.USER
-  ) {
-    return { messages: updatedMessages, shouldSend: false }
+  const message = messages[messageIndex]
+  if (!shouldSubmit || message.from !== MESSAGE_ROLES.USER) {
+    return {
+      messages: messages.map((item) =>
+        item.key === messageKey
+          ? updateCurrentVersionContent(item, content)
+          : item
+      ),
+      shouldSend: false,
+    }
   }
 
+  // Sending an edited question starts a branch: the question gets a new
+  // version, and the version asked so far keeps the replies it received.
+  const current = getCurrentVersion(message)
+  const {
+    key,
+    from,
+    versions,
+    selectedVersionId: _selected,
+    ...state
+  } = message
+  const version = createMessageVersion(content)
+  const edited: Message = {
+    key,
+    from,
+    versions: [
+      ...versions.map((item) =>
+        item.id === current.id
+          ? withContinuation(
+              { ...item, state },
+              messages.slice(messageIndex + 1)
+            )
+          : item
+      ),
+      version,
+    ],
+    selectedVersionId: version.id,
+    createdAt: submittedAt,
+  }
   return {
     messages: [
-      ...updatedMessages.slice(0, messageIndex + 1),
+      ...messages.slice(0, messageIndex),
+      edited,
       createLoadingAssistantMessage(submittedAt),
     ],
     shouldSend: true,

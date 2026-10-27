@@ -26,12 +26,14 @@ import {
 } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
 import { Message } from '@/components/ai-elements/message'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 
 import {
   getChatMessageRenderState,
   getEditingMessageContent,
   getMessageAlignment,
+  getMessageErrorText,
   getPreviousUserMessage,
   isContextLengthError,
   isErrorMessage,
@@ -91,6 +93,13 @@ export function PlaygroundChat({
   const [sourceMessageKeys, setSourceMessageKeys] = useState<
     ReadonlySet<string>
   >(() => new Set())
+  // Deleting a message also drops its other versions and their replies, so
+  // the user confirms it first.
+  const [deleting, setDeleting] = useState<MessageType | null>(null)
+  const requestDelete = useCallback(
+    (message: MessageType) => setDeleting(message),
+    []
+  )
   const visibleMessageOffset = Math.max(0, messages.length - historyLimit)
   const visibleMessages = messages.slice(visibleMessageOffset)
 
@@ -127,7 +136,8 @@ export function PlaygroundChat({
     )
     const isError = isErrorMessage(message)
     const contextLengthError =
-      isError && isContextLengthError(message.errorCode, content)
+      isError &&
+      isContextLengthError(message.errorCode, getMessageErrorText(message))
     const previousUserMessage = isError
       ? getPreviousUserMessage(messages, messageIndex)
       : null
@@ -165,7 +175,7 @@ export function PlaygroundChat({
               onCopyMessage={onCopyMessage}
               onRegenerateMessage={onRegenerateMessage}
               onEditMessage={onEditMessage}
-              onDeleteMessage={onDeleteMessage}
+              onDeleteMessage={onDeleteMessage ? requestDelete : undefined}
               onToggleSource={handleToggleMessageSource}
               onCompress={onCompress}
             />
@@ -218,6 +228,24 @@ export function PlaygroundChat({
         </div>
       </ConversationContent>
       <ConversationScrollButton />
+      {deleting && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null)
+          }}
+          title={t('Delete message')}
+          desc={t(
+            'This message and all of its versions, including the replies that followed them, will be removed. This cannot be undone.'
+          )}
+          destructive
+          confirmText={t('Delete')}
+          handleConfirm={() => {
+            onDeleteMessage?.(deleting)
+            setDeleting(null)
+          }}
+        />
+      )}
     </Conversation>
   )
 }
