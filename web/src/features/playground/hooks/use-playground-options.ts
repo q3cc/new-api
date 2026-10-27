@@ -53,19 +53,21 @@ import type { GroupOption, ModelOption, PlaygroundConfig } from '../types'
 type UsePlaygroundOptionsParams = {
   currentGroup: string
   currentModel: string
-  setGroups: (groups: GroupOption[]) => void
-  setModels: (models: ModelOption[]) => void
   updateConfig: <K extends keyof PlaygroundConfig>(
     key: K,
     value: PlaygroundConfig[K]
   ) => void
 }
 
+// The available models and groups change rarely; switching conversations
+// within a few minutes reuses the answer instead of asking again.
+const OPTIONS_STALE_TIME = 5 * 60_000
+const NO_MODELS: ModelOption[] = []
+const NO_GROUPS: GroupOption[] = []
+
 export function usePlaygroundOptions({
   currentGroup,
   currentModel,
-  setGroups,
-  setModels,
   updateConfig,
 }: UsePlaygroundOptionsParams) {
   const { t } = useTranslation()
@@ -80,6 +82,7 @@ export function usePlaygroundOptions({
     queryFn: async () =>
       requireServerSuccess(await getUserModels(currentGroup)),
     enabled: currentGroup !== '',
+    staleTime: OPTIONS_STALE_TIME,
   })
 
   const {
@@ -89,6 +92,7 @@ export function usePlaygroundOptions({
   } = useQuery({
     queryKey: ['playground-groups'],
     queryFn: async () => requireServerSuccess(await getUserGroups()),
+    staleTime: OPTIONS_STALE_TIME,
   })
 
   useEffect(() => {
@@ -118,7 +122,6 @@ export function usePlaygroundOptions({
   useEffect(() => {
     if (!modelsData) return
 
-    setModels(modelsData)
     const fallback = getModelFallback(modelsData, currentModel)
 
     if (fallback) {
@@ -129,20 +132,21 @@ export function usePlaygroundOptions({
     if (shouldClearModelForGroup(modelsData, currentModel)) {
       updateConfig('model', '')
     }
-  }, [modelsData, currentModel, setModels, updateConfig])
+  }, [modelsData, currentModel, updateConfig])
 
   useEffect(() => {
     if (!groupsData) return
 
-    setGroups(groupsData)
     const fallback = getGroupFallback(groupsData, currentGroup)
 
     if (fallback) {
       updateConfig('group', fallback)
     }
-  }, [groupsData, currentGroup, setGroups, updateConfig])
+  }, [groupsData, currentGroup, updateConfig])
 
   return {
+    models: modelsData ?? NO_MODELS,
+    groups: groupsData ?? NO_GROUPS,
     isLoadingModels,
   }
 }

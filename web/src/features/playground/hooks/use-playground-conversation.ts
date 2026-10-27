@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   appendUserMessagePair,
@@ -43,25 +43,34 @@ export function usePlaygroundConversation({
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(
     null
   )
+  // The handlers read the messages when they run, so their identity does not
+  // change with every streamed token and memoized messages stay unrendered.
+  const latestMessages = useRef(messages)
+  useEffect(() => {
+    latestMessages.current = messages
+  }, [messages])
 
   const handleSendMessage = useCallback(
     (text: string) => {
-      const nextMessages = appendUserMessagePair(messages, text)
+      const nextMessages = appendUserMessagePair(latestMessages.current, text)
       updateMessages(nextMessages)
       sendChat(nextMessages)
     },
-    [messages, updateMessages, sendChat]
+    [updateMessages, sendChat]
   )
 
   const handleRegenerateMessage = useCallback(
     (message: Message) => {
-      const nextMessages = createRegeneratedMessages(messages, message.key)
+      const nextMessages = createRegeneratedMessages(
+        latestMessages.current,
+        message.key
+      )
       if (!nextMessages) return
 
       updateMessages(nextMessages)
       sendChat(nextMessages)
     },
-    [messages, updateMessages, sendChat]
+    [updateMessages, sendChat]
   )
 
   const handleEditMessage = useCallback((message: Message) => {
@@ -79,7 +88,7 @@ export function usePlaygroundConversation({
       if (!editingMessageKey) return
 
       const editResult = applyMessageEdit(
-        messages,
+        latestMessages.current,
         editingMessageKey,
         newContent,
         shouldSubmit
@@ -93,7 +102,7 @@ export function usePlaygroundConversation({
         sendChat(editResult.messages)
       }
     },
-    [editingMessageKey, messages, updateMessages, sendChat]
+    [editingMessageKey, updateMessages, sendChat]
   )
 
   const handleDeleteMessage = useCallback(
@@ -105,13 +114,18 @@ export function usePlaygroundConversation({
     [updateMessages]
   )
 
-  return {
-    handleSelectVersion: (message: Message, id: string) =>
+  const handleSelectVersion = useCallback(
+    (message: Message, id: string) =>
       updateMessages((previous) =>
         previous.map((item) =>
           item.key === message.key ? selectMessageVersion(item, id) : item
         )
       ),
+    [updateMessages]
+  )
+
+  return {
+    handleSelectVersion,
     editingMessageKey,
     handleSendMessage,
     handleRegenerateMessage,

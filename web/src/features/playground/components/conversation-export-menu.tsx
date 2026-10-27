@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { DownloadIcon } from 'lucide-react'
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -40,7 +41,9 @@ type Props = {
   busy: boolean
 }
 
-export function ConversationExportMenu(props: Props) {
+export const ConversationExportMenu = memo(function ConversationExportMenu(
+  props: Props
+) {
   const { t } = useTranslation()
   const disabled =
     props.busy || !props.conversation.document.messages.some(hasMessageContent)
@@ -78,4 +81,4 @@ export function ConversationExportMenu(props: Props) {
       </DropdownMenuContent>
     </DropdownMenu>
   )
-}
+})

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { PlusIcon } from 'lucide-react'
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '@/components/empty-state'
@@ -30,11 +31,15 @@ import {
   CONVERSATION_PAGE_SIZE,
   type ConversationSummary,
 } from '../conversations-api'
-import type { ConversationEntry } from '../lib/conversation-workspace'
+import { useListedEntries } from '../hooks/use-workspace'
+import {
+  isGeneratingDocument,
+  type ConversationWorkspace,
+} from '../lib/conversation-workspace'
 
 type Props = {
   items: ConversationSummary[]
-  entries: ConversationEntry[]
+  workspace: ConversationWorkspace
   activeId?: number
   activeKey: string
   keyword: string
@@ -49,8 +54,9 @@ type Props = {
   onSelectPending: (key: string) => void
   onRetry: () => void
 }
-export function ConversationList(props: Props) {
+export const ConversationList = memo(function ConversationList(props: Props) {
   const { t } = useTranslation()
+  const entries = useListedEntries(props.workspace)
   return (
     <div className='flex h-full min-h-0 flex-col gap-3 p-3'>
       <Button
@@ -71,7 +77,7 @@ export function ConversationList(props: Props) {
         aria-label={t('Conversations')}
         className='min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain'
       >
-        {props.entries
+        {entries
           .filter((entry) => !entry.row.id)
           .map((entry) => (
             <Button
@@ -97,11 +103,8 @@ export function ConversationList(props: Props) {
           <EmptyState title={t('No conversations')} />
         )}
         {props.items.map((item) => {
-          const local = props.entries.find((entry) => entry.row.id === item.id)
-          const pending = local?.row.document.messages.some(
-            (message) =>
-              message.status === 'loading' || message.status === 'streaming'
-          )
+          const local = entries.find((entry) => entry.row.id === item.id)
+          const pending = local && isGeneratingDocument(local.row.document)
           return (
             <Button
               key={item.id}
@@ -149,4 +152,4 @@ export function ConversationList(props: Props) {
       )}
     </div>
   )
-}
+})

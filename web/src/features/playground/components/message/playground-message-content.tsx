@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -61,7 +61,7 @@ type PlaygroundMessageContentProps = {
   versionContent: string
 }
 
-export function PlaygroundMessageContent({
+export const PlaygroundMessageContent = memo(function PlaygroundMessageContent({
   actions,
   alignment,
   errorActions,
@@ -170,4 +170,4 @@ export function PlaygroundMessageContent({
       )}
     </div>
   )
-}
+})

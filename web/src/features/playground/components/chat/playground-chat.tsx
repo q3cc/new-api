@@ -16,16 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import {
-  Branch,
-  BranchSelector,
-  BranchPrevious,
-  BranchNext,
-  BranchPage,
-} from '@/components/ai-elements/branch'
 import {
   Conversation,
   ConversationContent,
@@ -43,15 +36,12 @@ import {
   isContextLengthError,
   isErrorMessage,
 } from '../../lib'
-import { getCurrentVersion } from '../../lib/message/message-utils'
 import type {
   Message as MessageType,
   PlaygroundMessageLayoutMode,
 } from '../../types'
-import { MessageActions } from '../message/message-actions'
-import { MessageErrorActions } from '../message/message-error-actions'
-import { PlaygroundMessageContent } from '../message/playground-message-content'
 import { PlaygroundMessageEditor } from '../message/playground-message-editor'
+import { PlaygroundChatMessage } from './playground-chat-message'
 import { PlaygroundEmptyState } from './playground-empty-state'
 
 const MAX_RENDERED_HISTORY_MESSAGES = 24
@@ -104,7 +94,7 @@ export function PlaygroundChat({
   const visibleMessageOffset = Math.max(0, messages.length - historyLimit)
   const visibleMessages = messages.slice(visibleMessageOffset)
 
-  function handleToggleMessageSource(message: MessageType): void {
+  const handleToggleMessageSource = useCallback((message: MessageType) => {
     setSourceMessageKeys((currentKeys) => {
       const nextKeys = new Set(currentKeys)
 
@@ -116,7 +106,7 @@ export function PlaygroundChat({
 
       return nextKeys
     })
-  }
+  }, [])
 
   useEffect(() => {
     if (!editingKey) return
@@ -162,83 +152,22 @@ export function PlaygroundChat({
               originalText={originalText}
             />
           ) : (
-            <PlaygroundMessageContent
-              alignment={alignment}
-              actions={
-                <>
-                  {message.versions.length > 1 && onSelectVersion && (
-                    <Branch
-                      className='w-auto'
-                      branch={message.versions.findIndex(
-                        (version) =>
-                          version.id === getCurrentVersion(message).id
-                      )}
-                      branchCount={message.versions.length}
-                      onBranchChange={(index) =>
-                        onSelectVersion(message, message.versions[index].id)
-                      }
-                    >
-                      <BranchSelector
-                        from={message.from}
-                        className='self-start px-0'
-                      >
-                        <BranchPrevious
-                          aria-label={t('Previous reply')}
-                          disabled={isGenerating}
-                        />
-                        <BranchPage />
-                        <BranchNext
-                          aria-label={t('Next reply')}
-                          disabled={isGenerating}
-                        />
-                      </BranchSelector>
-                    </Branch>
-                  )}
-                  <MessageActions
-                    message={message}
-                    onCopy={onCopyMessage}
-                    onRegenerate={onRegenerateMessage}
-                    onToggleSource={handleToggleMessageSource}
-                    onEdit={onEditMessage}
-                    onDelete={onDeleteMessage}
-                    isSourceVisible={isSourceVisible}
-                    isGenerating={isGenerating}
-                    alwaysVisible={alwaysShowActions}
-                    className='mt-1.5'
-                  />
-                </>
-              }
-              isSourceVisible={isSourceVisible}
+            <PlaygroundChatMessage
               message={message}
-              errorActions={
-                isError ? (
-                  <MessageErrorActions
-                    disabled={isGenerating}
-                    contextLengthError={contextLengthError}
-                    onCompress={
-                      contextLengthError && onCompress
-                        ? () => onCompress(message)
-                        : undefined
-                    }
-                    onRetry={
-                      onRegenerateMessage
-                        ? () => onRegenerateMessage(message)
-                        : undefined
-                    }
-                    onEditPrompt={
-                      onEditMessage && previousUserMessage
-                        ? () => onEditMessage(previousUserMessage)
-                        : undefined
-                    }
-                    onDelete={
-                      onDeleteMessage
-                        ? () => onDeleteMessage(message)
-                        : undefined
-                    }
-                  />
-                ) : undefined
-              }
-              versionContent={content}
+              content={content}
+              alignment={alignment}
+              alwaysShowActions={alwaysShowActions}
+              isGenerating={isGenerating}
+              isSourceVisible={isSourceVisible}
+              contextLengthError={contextLengthError}
+              previousUserMessage={previousUserMessage}
+              onSelectVersion={onSelectVersion}
+              onCopyMessage={onCopyMessage}
+              onRegenerateMessage={onRegenerateMessage}
+              onEditMessage={onEditMessage}
+              onDeleteMessage={onDeleteMessage}
+              onToggleSource={handleToggleMessageSource}
+              onCompress={onCompress}
             />
           )}
         </div>

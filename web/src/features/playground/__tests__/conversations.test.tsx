@@ -41,6 +41,7 @@ import { afterEach, assert, beforeEach, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
+import * as chat from '../components/chat/playground-chat'
 import {
   clearContextEstimateCache,
   type ModelCapability,
@@ -769,6 +770,33 @@ it('continues each request after switching and writes replies to their originati
   expect(records.get(1)?.document.messages.at(-1)?.versions[0].content).toBe(
     'Reply to request A'
   )
+})
+
+it('does not re-render the open conversation when a reply arrives in another one', async () => {
+  const chatRenders = vi.spyOn(chat, 'PlaygroundChat')
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+    target: { value: 'request A' },
+  })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+  await waitFor(() => expect(completions).toHaveLength(1))
+  fireEvent.click(screen.getByRole('button', { name: 'Beta' }))
+  await screen.findByDisplayValue('draft Beta')
+  // Let the opened conversation finish loading its options and usage.
+  await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+  const rendered = chatRenders.mock.calls.length
+  await act(async () => completions[0].finish())
+  await waitFor(() =>
+    expect(records.get(1)?.document.messages.at(-1)?.versions[0].content).toBe(
+      'Reply to request A'
+    )
+  )
+  // The list stops marking Alpha as responding once its reply is saved.
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Alpha' })).toBeInTheDocument()
+  )
+  expect(chatRenders.mock.calls.length).toBe(rendered)
 })
 
 it('does not start a charged request when saving the user message fails', async () => {

@@ -26,6 +26,7 @@ import {
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -71,7 +72,7 @@ type MessageActionItem = {
   variant?: 'default' | 'destructive'
 }
 
-export function MessageActions({
+export const MessageActions = memo(function MessageActions({
   message,
   onCopy,
   onRegenerate,
@@ -218,4 +219,4 @@ export function MessageActions({
       </div>
     </>
   )
-}
+})

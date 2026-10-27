@@ -79,7 +79,7 @@ export type ConversationEntry = {
 // Streaming replies update many times a second; the crash-recovery cache is
 // written at most this often per conversation and at once when a reply ends.
 const CACHE_DELAY = 1000
-type Snapshot = {
+export type WorkspaceSnapshot = {
   entries: Record<string, ConversationEntry>
   migrationError?: unknown
   migrationProgress?: ImportProgress
@@ -118,11 +118,12 @@ export function interruptedDocument(
   }
 }
 
-function isGenerating(document: ConversationDocument): boolean {
+export function isGeneratingDocument(document: ConversationDocument): boolean {
   return document.messages.some(
     (message) => message.status === 'loading' || message.status === 'streaming'
   )
 }
+const isGenerating = isGeneratingDocument
 
 // Only the input draft differs: nothing a later reader depends on changed.
 function isDraftOnlyChange(
@@ -169,7 +170,7 @@ function describeWrite(
 }
 
 export class ConversationWorkspace {
-  private snapshot: Snapshot = { entries: {}, ready: false }
+  private snapshot: WorkspaceSnapshot = { entries: {}, ready: false }
   private listeners = new Set<() => void>()
   private controller = new AbortController()
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -213,7 +214,7 @@ export class ConversationWorkspace {
   }
   isActive = () =>
     !this.stopped && useAuthStore.getState().auth.user?.id === this.owner
-  private publish(patch: Partial<Snapshot>) {
+  private publish(patch: Partial<WorkspaceSnapshot>) {
     this.snapshot = { ...this.snapshot, ...patch }
     for (const listener of this.listeners) listener()
   }

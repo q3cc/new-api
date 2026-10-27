@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { isAxiosError } from 'axios'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -33,6 +33,7 @@ import {
   usePlaygroundOptions,
 } from '../hooks'
 import { usePlaygroundCompression } from '../hooks/use-playground-compression'
+import { useConversationEntry } from '../hooks/use-workspace'
 import { effectiveCapability, shouldCompress } from '../lib/context-compression'
 import {
   interruptedDocument,
@@ -45,7 +46,7 @@ import {
   discardFailedReply,
   getMessageContent,
 } from '../lib/message/message-utils'
-import type { Message, GroupOption, ModelOption } from '../types'
+import type { Message } from '../types'
 import { PlaygroundChat } from './chat/playground-chat'
 import { PlaygroundInput } from './input/playground-input'
 import {
@@ -53,15 +54,44 @@ import {
   PlaygroundCompressionStatus,
 } from './playground-compression-panel'
 
+type SessionProps = {
+  entryKey: string
+  workspace: ConversationWorkspace
+  active: boolean
+  onReload: (key: string) => void
+  onCopy: () => void
+}
+
+/**
+ * One conversation, open or in the background. It follows its own entry in
+ * the workspace, so a reply streaming into another conversation does not
+ * re-render it.
+ */
+export const ConversationSession = memo(function ConversationSession(
+  props: SessionProps
+) {
+  const entry = useConversationEntry(props.workspace, props.entryKey)
+  if (!entry) return null
+  return (
+    <ConversationSessionBody
+      entry={entry}
+      workspace={props.workspace}
+      active={props.active}
+      onReload={props.onReload}
+      onCopy={props.onCopy}
+    />
+  )
+})
+
 type Props = {
   entry: ConversationEntry
   workspace: ConversationWorkspace
   active: boolean
-  onReload: () => void
+  onReload: (key: string) => void
   onCopy: () => void
 }
 
-export function ConversationSession(props: Props) {
+function ConversationSessionBody(props: Props) {
   const [starting, setStarting] = useState(false)
   const [preparationError, setPreparationError] = useState<unknown>()
   const preparing = useRef<AbortController | null>(null)
@@ -133,6 +163,7 @@ export function ConversationSession(props: Props) {
     if (!workspace.getSnapshot().entries[key]?.error) void workspace.flush(key)
   }, [stopGeneration, workspace, key])
   useEffect(() => workspace.registerStop(key, stop), [key, workspace, stop])
+  const prepare = compression.prepare
   const sendChat = useCallback(
     (messages: Message[]) => {
       const saveError = workspace.getSnapshot().entries[key]?.error
@@ -153,10 +184,7 @@ export function ConversationSession(props: Props) {
         .then(async (saved) => {
           if (!workspace.isActive() || request !== generation.current) return
           if (saved) {
-            const context = await compression.prepare(
-              messages,
-              controller.signal
-            )
+            const context = await prepare(messages, controller.signal)
             if (!workspace.isActive() || request !== generation.current) return
             setStarting(false)
             sendRequest(context)
@@ -185,7 +213,7 @@ export function ConversationSession(props: Props) {
           if (request === generation.current) setStarting(false)
         })
     },
-    [sendRequest, key, workspace, compression]
+    [sendRequest, key, workspace, prepare]
   )
   const conversation = usePlaygroundConversation({
     messages: props.entry.row.document.messages,
@@ -229,8 +257,6 @@ type ViewProps = Props & {
 
 function ConversationView(props: ViewProps) {
   const { t } = useTranslation()
-  const [models, setModels] = useState<ModelOption[]>([])
-  const [groups, setGroups] = useState<GroupOption[]>([])
   const document = props.entry.row.document
   const updateConfig = useCallback(
     <K extends keyof typeof document.config>(
@@ -250,11 +276,9 @@ function ConversationView(props: ViewProps) {
     },
     [props.workspace, props.entry.key]
   )
-  const { isLoadingModels } = usePlaygroundOptions({
+  const { models, groups, isLoadingModels } = usePlaygroundOptions({
     currentGroup: document.config.group,
     currentModel: document.config.model,
-    setGroups,
-    setModels,
     updateConfig,
   })
   const error = props.entry.error
@@ -336,7 +360,11 @@ function ConversationView(props: ViewProps) {
               ` ${t('Saving will be retried automatically.')}`}
           </span>
           {status === 409 && (
-            <Button size='sm' variant='outline' onClick={props.onReload}>
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={() => props.onReload(props.entry.key)}
+            >
               {t('Load latest conversation')}
             </Button>
           )}

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -29,16 +30,20 @@ type MessageMetadataProps = {
   message: Message
 }
 
+// Message times follow the device's own locale; one formatter serves every
+// message instead of being built for each render.
+let timeFormat: Intl.DateTimeFormat | undefined
+
 function formatMessageTime(timestamp?: number): string | undefined {
   if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
     return undefined
   }
-
-  return new Intl.DateTimeFormat(undefined, {
+  timeFormat ??= new Intl.DateTimeFormat(undefined, {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-  }).format(new Date(timestamp))
+  })
+  return timeFormat.format(new Date(timestamp))
 }
 
 function formatDuration(
@@ -56,7 +61,9 @@ function formatDuration(
   return t('{{value}}s', { value: (durationMs / 1000).toFixed(2) })
 }
 
-export function MessageMetadata(props: MessageMetadataProps) {
+export const MessageMetadata = memo(function MessageMetadata(
+  props: MessageMetadataProps
+) {
   const { t } = useTranslation()
   const messageTime = formatMessageTime(props.message.createdAt)
   const duration = formatDuration(props.message.durationMs, t)
@@ -81,4 +88,4 @@ export function MessageMetadata(props: MessageMetadataProps) {
       )}
     </div>
   )
-}
+})
