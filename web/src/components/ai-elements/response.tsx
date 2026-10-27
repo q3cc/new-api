@@ -37,7 +37,12 @@ import { renderChildren, renderFootnotes } from './response-renderer'
 import type { ResponseProps } from './response-types'
 
 const DEFAULT_PARSER_ID = 'new-api-response'
-const MAX_PARSED_MARKDOWN_CHARS = 20_000
+// Beyond this length the per-word fade costs more each frame than it shows,
+// so long replies stream without it while keeping their Markdown.
+const MAX_ANIMATED_MARKDOWN_CHARS = 20_000
+// Each streaming message keeps its own parser so appends reuse the nodes it
+// already settled; the least recently used ones are dropped past this count.
+const MAX_CACHED_PARSERS = 64
 type MarkdownInstance = ReturnType<typeof getMarkdown>
 
 const markdownByParserId = new Map<string, MarkdownInstance>()
@@ -45,35 +50,51 @@ const markdownByParserId = new Map<string, MarkdownInstance>()
 function getCachedMarkdown(parserId: string): MarkdownInstance {
   const cached = markdownByParserId.get(parserId)
   if (cached != null) {
+    // Re-insert so the map's order reflects recent use.
+    markdownByParserId.delete(parserId)
+    markdownByParserId.set(parserId, cached)
     return cached
   }
   const markdown = getMarkdown(parserId)
   markdownByParserId.set(parserId, markdown)
+  while (markdownByParserId.size > MAX_CACHED_PARSERS) {
+    const oldest = markdownByParserId.keys().next().value
+    if (oldest === undefined) break
+    markdownByParserId.delete(oldest)
+  }
   return markdown
 }
 
 export const Response = memo((props: ResponseProps) => {
-  const content = getMarkdownContent(props.children)
+  const content = useMemo(
+    () => getMarkdownContent(props.children),
+    [props.children]
+  )
   const isFinal = props.final ?? true
   const shouldAnimate = !isFinal
   const parserId = props.parserId ?? DEFAULT_PARSER_ID
   const markdown = getCachedMarkdown(parserId)
-  const shouldParseMarkdown = content.length <= MAX_PARSED_MARKDOWN_CHARS
   const fadeStateRef = useRef<FadeState | null>(null)
   if (fadeStateRef.current == null) {
     fadeStateRef.current = createFadeState()
   }
 
   const nodes = useMemo(() => {
-    if (!shouldParseMarkdown) {
-      return []
+    if (isFinal) {
+      return parseMarkdownToStructure(content, markdown, {
+        final: true,
+        validateLink: markdown.options.validateLink,
+      })
     }
-
+    // A stream only appends, so the top-level nodes that were already
+    // complete are reused instead of parsed again on every token.
     return parseMarkdownToStructure(content, markdown, {
-      final: isFinal,
+      final: false,
       validateLink: markdown.options.validateLink,
+      reuseStableTopLevelNodes: true,
+      parserMetrics: {},
     })
-  }, [content, isFinal, markdown, shouldParseMarkdown])
+  }, [content, isFinal, markdown])
   const parsedContent = useMemo(() => parseResponseContent(nodes), [nodes])
 
   let fadeRun: FadeRun | undefined
@@ -84,7 +105,8 @@ export const Response = memo((props: ResponseProps) => {
     if (shouldAnimate) {
       const fadeState = fadeStateRef.current
       const suppress =
-        fadeState.firstRun && content.length > FADE_HYDRATION_THRESHOLD
+        (fadeState.firstRun && content.length > FADE_HYDRATION_THRESHOLD) ||
+        content.length > MAX_ANIMATED_MARKDOWN_CHARS
       fadeRun = beginRun(fadeState, suppress)
       renderedContent = renderChildren(parsedContent.bodyNodes, fadeRun)
       footnotes = renderFootnotes(parsedContent.footnotes, fadeRun)

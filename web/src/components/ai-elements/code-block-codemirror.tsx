@@ -253,6 +253,18 @@ export function CodeMirrorCodeView({
       return
     }
 
+    // A streaming code block only grows, so the new text is appended and the
+    // lines already shown are left alone instead of being rebuilt.
+    if (value.startsWith(currentValue)) {
+      editorView.dispatch({
+        changes: {
+          from: editorView.state.doc.length,
+          insert: value.slice(currentValue.length),
+        },
+      })
+      return
+    }
+
     editorView.dispatch({
       changes: {
         from: 0,

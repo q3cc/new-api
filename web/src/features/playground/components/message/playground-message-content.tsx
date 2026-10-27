@@ -128,7 +128,9 @@ export const PlaygroundMessageContent = memo(function PlaygroundMessageContent({
           isStreaming={message.isReasoningStreaming}
         >
           <ReasoningTrigger />
-          <ReasoningContent>{reasoningContent}</ReasoningContent>
+          <ReasoningContent parserId={`${message.key}-reasoning`}>
+            {reasoningContent}
+          </ReasoningContent>
         </Reasoning>
       )}
 
@@ -148,7 +150,9 @@ export const PlaygroundMessageContent = memo(function PlaygroundMessageContent({
               variant='flat'
               className={cn(getMessageContentStyles())}
             >
-              <Response final>{partialContent}</Response>
+              <Response final parserId={message.key}>
+                {partialContent}
+              </Response>
             </MessageContent>
           )}
           <MessageError message={message} className='mb-2' />
@@ -186,7 +190,9 @@ export const PlaygroundMessageContent = memo(function PlaygroundMessageContent({
               variant='flat'
               className={cn(getMessageContentStyles())}
             >
-              <Response final={isMessageFinal}>{displayContent}</Response>
+              <Response final={isMessageFinal} parserId={message.key}>
+                {displayContent}
+              </Response>
             </MessageContent>
           )}
           <MessageMetadata alignment={alignment} message={message} />

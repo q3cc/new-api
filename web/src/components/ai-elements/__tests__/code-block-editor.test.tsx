@@ -63,6 +63,21 @@ describe('CodeBlockEditor', () => {
     expect(gutters).toHaveStyle({ paddingTop: '0px', paddingBottom: '0px' })
   })
 
+  test('appends streamed text without rebuilding the lines already shown', async () => {
+    const { rerender } = render(editorTree('line one'))
+    await waitFor(() =>
+      expect(document.querySelector('.cm-line')).not.toBeNull()
+    )
+    const firstLine = document.querySelector('.cm-line')
+
+    rerender(editorTree('line one\nline two'))
+
+    const lines = [...document.querySelectorAll('.cm-line')]
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toBe(firstLine)
+    expect(lines[1]?.textContent).toBe('line two')
+  })
+
   test('keeps the same editor instance when value and onKeyDown change on rerender', async () => {
     const { rerender } = render(editorTree('h'))
 

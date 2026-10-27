@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { SSE } from 'sse.js'
 
 import { getFreshAuthHeaders } from '@/lib/api'
 
@@ -28,10 +27,13 @@ import {
   parseStreamErrorDetails,
   parseStreamMessage,
 } from '../lib'
+import { FetchEventSource } from '../lib/streaming/fetch-event-source'
 import type { ChatCompletionRequest } from '../types'
 
 interface StreamEventSource {
   readyState?: number
+  /** The HTTP status, once known. */
+  status?: number
   addEventListener: (
     type: string,
     listener: (event: Event & { data?: string; readyState?: number }) => void
@@ -192,11 +194,10 @@ export function useStreamRequest() {
     controllerRef.current = createStreamRequestController({
       getHeaders: getFreshAuthHeaders,
       createSource: (payload, headers) =>
-        new SSE(API_ENDPOINTS.CHAT_COMPLETIONS, {
+        new FetchEventSource(API_ENDPOINTS.CHAT_COMPLETIONS, {
           headers,
-          method: 'POST',
-          payload: JSON.stringify(payload),
-        }) as StreamEventSource,
+          body: JSON.stringify(payload),
+        }),
       setStreaming: setIsStreaming,
     })
   }
