@@ -144,6 +144,9 @@ func main() {
 	// Referral rebate task (every 5 minutes, credits rebates past confirmation)
 	service.StartAffiliateRebateTask()
 
+	// Playground upload cleanup (hourly, removes chunks nobody resumed in 7 days)
+	service.StartPlaygroundUploadCleanupTask()
+
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()

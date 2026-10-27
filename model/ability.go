@@ -2,9 +2,11 @@ package model
 
 import (
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -40,10 +42,40 @@ func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {
 	return abilities, err
 }
 
+// The models a group can use are asked for on every playground request and
+// change only when abilities change, so they are kept for a short while and
+// dropped by every ability write. Other nodes catch up within the TTL.
+const groupEnabledModelsTTL = 30 * time.Second
+
+var groupEnabledModels = struct {
+	sync.Mutex
+	entries map[string]groupEnabledModelsEntry
+}{entries: map[string]groupEnabledModelsEntry{}}
+
+type groupEnabledModelsEntry struct {
+	models  []string
+	expires time.Time
+}
+
+func InvalidateGroupEnabledModelsCache() {
+	groupEnabledModels.Lock()
+	groupEnabledModels.entries = map[string]groupEnabledModelsEntry{}
+	groupEnabledModels.Unlock()
+}
+
 func GetGroupEnabledModels(group string) []string {
+	groupEnabledModels.Lock()
+	entry, cached := groupEnabledModels.entries[group]
+	groupEnabledModels.Unlock()
+	if cached && time.Now().Before(entry.expires) {
+		return slices.Clone(entry.models)
+	}
 	var models []string
 	// Find distinct models
 	DB.Table("abilities").Where(commonGroupCol+" = ? and enabled = ?", group, true).Distinct("model").Pluck("model", &models)
+	groupEnabledModels.Lock()
+	groupEnabledModels.entries[group] = groupEnabledModelsEntry{models: slices.Clone(models), expires: time.Now().Add(groupEnabledModelsTTL)}
+	groupEnabledModels.Unlock()
 	return models
 }
 
@@ -254,6 +286,7 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 	if tx != nil {
 		useDB = tx
 	}
+	defer InvalidateGroupEnabledModelsCache()
 	for _, chunk := range lo.Chunk(abilities, 50) {
 		err := useDB.Clauses(clause.OnConflict{DoNothing: true}).Create(&chunk).Error
 		if err != nil {
@@ -264,12 +297,14 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 }
 
 func (channel *Channel) DeleteAbilities() error {
+	defer InvalidateGroupEnabledModelsCache()
 	return DB.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
 }
 
 // UpdateAbilities updates abilities of this channel.
 // Make sure the channel is completed before calling this function.
 func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
+	defer InvalidateGroupEnabledModelsCache()
 	isNewTx := false
 	// 如果没有传入事务，创建新的事务
 	if tx == nil {
@@ -340,10 +375,12 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 }
 
 func UpdateAbilityStatus(channelId int, status bool) error {
+	defer InvalidateGroupEnabledModelsCache()
 	return DB.Model(&Ability{}).Where("channel_id = ?", channelId).Select("enabled").Update("enabled", status).Error
 }
 
 func UpdateAbilityStatusByTag(tag string, status bool) error {
+	defer InvalidateGroupEnabledModelsCache()
 	return DB.Model(&Ability{}).Where("tag = ?", tag).Select("enabled").Update("enabled", status).Error
 }
 
@@ -358,6 +395,7 @@ func UpdateAbilityByTag(tag string, newTag *string, priority *int64, weight *uin
 	if weight != nil {
 		ability.Weight = *weight
 	}
+	defer InvalidateGroupEnabledModelsCache()
 	return DB.Model(&Ability{}).Where("tag = ?", tag).Updates(ability).Error
 }
 

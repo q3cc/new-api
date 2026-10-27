@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -103,6 +105,8 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 					t.Run("legacy_import_and_deletion", testPlaygroundImport)
 					t.Run("resumable_verified_upload", testPlaygroundUpload)
 					t.Run("compression_preferences_and_document", testPlaygroundCompression)
+					t.Run("per_user_limits", testPlaygroundLimits)
+					t.Run("metadata_patch", testPlaygroundPatch)
 				})
 			}
 		})
@@ -259,6 +263,20 @@ func testPlaygroundOwnership(t *testing.T) {
 	assert.Equal(t, int64(1), count)
 	require.Len(t, items, 1)
 	assert.Equal(t, row.Id, items[0].Id)
+	_, _, err = ListPlaygroundConversations(7, strings.Repeat("k", 201), page)
+	require.ErrorIs(t, err, ErrPlaygroundInvalid)
+	items, _, err = ListPlaygroundConversations(7, "", &common.PageInfo{Page: -3, PageSize: -1})
+	require.NoError(t, err, "a negative page size is clamped instead of removing the limit")
+	require.Len(t, items, 1)
+	for name, document := range map[string]string{
+		"unknown config key":       `{"messages":[],"config":{"model":"m","other":1},"parameterEnabled":{},"draft":""}`,
+		"stream is not a boolean":  `{"messages":[],"config":{"stream":"yes"},"parameterEnabled":{},"draft":""}`,
+		"selected version missing": `{"messages":[{"key":"a","from":"user","selectedVersionId":"missing","versions":[{"id":"v","content":"x"}]}],"config":{},"parameterEnabled":{},"draft":""}`,
+		"duplicate message key":    `{"messages":[{"key":"a","from":"user","versions":[{"id":"v","content":"x"}]},{"key":"a","from":"assistant","versions":[{"id":"v","content":"y"}]}],"config":{},"parameterEnabled":{},"draft":""}`,
+	} {
+		_, err = CreatePlaygroundConversation(7, PlaygroundWrite{OperationId: "invalid-" + strings.ReplaceAll(name, " ", "-"), Title: name, Document: json.RawMessage(document)})
+		assert.ErrorIs(t, err, ErrPlaygroundInvalid, name)
+	}
 	_, count, err = ListPlaygroundConversations(8, "", page)
 	require.NoError(t, err)
 	assert.Zero(t, count)
@@ -302,6 +320,110 @@ func testPlaygroundConcurrentSave(t *testing.T) {
 	saved, err := GetPlaygroundConversation(10, row.Id)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), saved.Revision)
+
+	// A save that landed is a success even when another writer lands right
+	// after it: the answer comes from the update itself, not from a re-read.
+	interleaved := false
+	require.NoError(t, DB.Callback().Update().After("gorm:update").Register("playground:interleave", func(tx *gorm.DB) {
+		if interleaved || tx.Statement.Table != "playground_conversations" || tx.Error != nil || tx.RowsAffected != 1 {
+			return
+		}
+		interleaved = true
+		later := playgroundTestWrite(t, "concurrency-later", "later writer")
+		later.Revision = 3
+		_, err := SavePlaygroundConversation(10, row.Id, later)
+		require.NoError(t, err)
+	}))
+	t.Cleanup(func() { DB.Callback().Update().Remove("playground:interleave") })
+	first := playgroundTestWrite(t, "concurrency-first", "first writer")
+	first.Revision = 2
+	result, err := SavePlaygroundConversation(10, row.Id, first)
+	require.NoError(t, err)
+	assert.True(t, interleaved)
+	assert.Equal(t, int64(3), result.Revision)
+	assert.JSONEq(t, string(first.Document), string(result.Document), "the writer keeps the document it sent")
+	latest, err := GetPlaygroundConversation(10, row.Id)
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), latest.Revision)
+	assert.Contains(t, string(latest.Document), "later writer")
+}
+
+func testPlaygroundLimits(t *testing.T) {
+	previousConversations, previousUploads := PlaygroundMaxConversationsPerUser, PlaygroundMaxUploadsPerUser
+	PlaygroundMaxConversationsPerUser, PlaygroundMaxUploadsPerUser = 2, 1
+	t.Cleanup(func() {
+		PlaygroundMaxConversationsPerUser, PlaygroundMaxUploadsPerUser = previousConversations, previousUploads
+	})
+	first, err := CreatePlaygroundConversation(30, playgroundTestWrite(t, "limit-create-0001", "one"))
+	require.NoError(t, err)
+	_, err = CreatePlaygroundConversation(30, playgroundTestWrite(t, "limit-create-0002", "two"))
+	require.NoError(t, err)
+	_, err = CreatePlaygroundConversation(30, playgroundTestWrite(t, "limit-create-0003", "three"))
+	require.ErrorIs(t, err, ErrPlaygroundLimit)
+	messages := `[{"key":"limit-import","from":"user","versions":[{"id":"v1","content":"imported"}]}]`
+	_, err = ImportPlaygroundConversation(30, PlaygroundLegacySource{Messages: &messages})
+	require.ErrorIs(t, err, ErrPlaygroundLimit, "imports count against the same limit")
+	_, err = CreatePlaygroundConversation(31, playgroundTestWrite(t, "limit-create-other", "other user"))
+	require.NoError(t, err, "the limit is per user")
+	require.NoError(t, DeletePlaygroundConversation(30, first.Id))
+	_, err = CreatePlaygroundConversation(30, playgroundTestWrite(t, "limit-create-0004", "after delete"))
+	require.NoError(t, err, "deleted conversations do not count")
+
+	raw := []byte(`{"messages":"[]"}`)
+	chunk := base64.StdEncoding.EncodeToString(raw)
+	digest := sha256.Sum256(raw)
+	hash := hex.EncodeToString(digest[:])
+	require.NoError(t, SavePlaygroundUploadChunk(30, strings.Repeat("a", 64), len(raw), 0, hash, chunk))
+	require.NoError(t, SavePlaygroundUploadChunk(30, strings.Repeat("a", 64), len(raw), 0, hash, chunk), "the same upload may be resumed")
+	require.ErrorIs(t, SavePlaygroundUploadChunk(30, strings.Repeat("b", 64), len(raw), 0, hash, chunk), ErrPlaygroundLimit, "a second upload in flight is refused")
+	require.NoError(t, SavePlaygroundUploadChunk(31, strings.Repeat("b", 64), len(raw), 0, hash, chunk), "another user has their own allowance")
+}
+
+func testPlaygroundPatch(t *testing.T) {
+	row, err := CreatePlaygroundConversation(40, playgroundTestWrite(t, "patch-create-0001", "patched body"))
+	require.NoError(t, err)
+	patch := PlaygroundPatch{OperationId: "patch-draft-0001", Revision: row.Revision, Patch: map[string]json.RawMessage{"draft": json.RawMessage(`"typed later"`)}}
+	patched, err := PatchPlaygroundConversation(40, row.Id, patch)
+	require.NoError(t, err)
+	assert.Equal(t, row.Revision+1, patched.Revision)
+	assert.Equal(t, row.Title, patched.Title)
+	var document PlaygroundDocument
+	require.NoError(t, common.Unmarshal(patched.Document, &document))
+	assert.Equal(t, "typed later", document.Draft)
+	require.Len(t, document.Messages, 1)
+	assert.Contains(t, string(document.Messages[0]), "patched body")
+	assert.Equal(t, "test-model", document.Config["model"])
+
+	replay, err := PatchPlaygroundConversation(40, row.Id, patch)
+	require.NoError(t, err)
+	assert.Equal(t, patched.Revision, replay.Revision, "the same operation is applied once")
+	_, err = PatchPlaygroundConversation(40, row.Id, PlaygroundPatch{OperationId: "patch-stale-0001", Revision: row.Revision, Patch: map[string]json.RawMessage{"draft": json.RawMessage(`"stale"`)}})
+	require.ErrorIs(t, err, ErrPlaygroundConflict)
+	_, err = PatchPlaygroundConversation(41, row.Id, PlaygroundPatch{OperationId: "patch-other-user", Revision: patched.Revision, Patch: map[string]json.RawMessage{"draft": json.RawMessage(`"mine"`)}})
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	for name, invalid := range map[string]map[string]json.RawMessage{
+		"messages":       {"messages": json.RawMessage(`[]`)},
+		"unknown key":    {"title": json.RawMessage(`"x"`)},
+		"invalid config": {"config": json.RawMessage(`{"model":"m","unknown":1}`)},
+		"empty":          {},
+	} {
+		_, err = PatchPlaygroundConversation(40, row.Id, PlaygroundPatch{OperationId: "patch-invalid-" + name, Revision: patched.Revision, Patch: invalid})
+		assert.ErrorIs(t, err, ErrPlaygroundInvalid, name)
+	}
+	_, err = PatchPlaygroundConversation(40, row.Id, PlaygroundPatch{OperationId: "patch-invalid-compression", Revision: patched.Revision, Patch: map[string]json.RawMessage{"compressionAttempt": json.RawMessage(`"maybe"`)}})
+	assert.ErrorIs(t, err, ErrPlaygroundSettingsInvalid, "the merged document goes through the same compression validation")
+	oversized := PlaygroundPatch{OperationId: "patch-oversized-01", Revision: patched.Revision, Patch: map[string]json.RawMessage{"draft": json.RawMessage(`"` + strings.Repeat("x", PlaygroundDocumentLimit) + `"`)}}
+	_, err = PatchPlaygroundConversation(40, row.Id, oversized)
+	require.ErrorIs(t, err, ErrPlaygroundTooLarge)
+	title := "renamed by patch"
+	renamed, err := PatchPlaygroundConversation(40, row.Id, PlaygroundPatch{OperationId: "patch-title-0001", Revision: patched.Revision, Title: &title, Patch: map[string]json.RawMessage{"contextLimits": json.RawMessage(`{"test-model":4096}`), "draft": json.RawMessage(`null`)}})
+	require.NoError(t, err)
+	assert.Equal(t, "renamed by patch", renamed.Title)
+	var renamedDocument PlaygroundDocument
+	require.NoError(t, common.Unmarshal(renamed.Document, &renamedDocument))
+	assert.Equal(t, map[string]int{"test-model": 4096}, renamedDocument.ContextLimits)
+	assert.Empty(t, renamedDocument.Draft, "a null value removes the key")
+	assert.Contains(t, string(renamedDocument.Messages[0]), "patched body")
 }
 
 func testPlaygroundImport(t *testing.T) {
@@ -434,4 +556,21 @@ func testPlaygroundUpload(t *testing.T) {
 	again, err = CompletePlaygroundUpload(601, fingerprint, size)
 	require.NoError(t, err)
 	assert.True(t, again.Deleted)
+
+	// Chunks and receipts older than the retention period are purged for every
+	// user, whether or not that user ever asks about the upload again.
+	stale := strings.Repeat("c", 64)
+	data := []byte(`{"messages":"[]"}`)
+	chunkDigest := sha256.Sum256(data)
+	require.NoError(t, SavePlaygroundUploadChunk(603, stale, len(data), 0, hex.EncodeToString(chunkDigest[:]), base64.StdEncoding.EncodeToString(data)))
+	require.NoError(t, DB.Model(&PlaygroundUploadChunk{}).Where("user_id = ? AND fingerprint = ?", 603, stale).Update("create_time", time.Now().Add(-8*24*time.Hour).Unix()).Error)
+	require.NoError(t, DB.Model(&PlaygroundUploadChunk{}).Where("user_id = ? AND fingerprint = ? AND chunk_index = -1", 601, fingerprint).Update("create_time", time.Now().Add(-8*24*time.Hour).Unix()).Error)
+	purged, err := PurgeExpiredPlaygroundUploads(time.Now().Add(-7 * 24 * time.Hour).Unix())
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, purged)
+	var remaining int64
+	require.NoError(t, DB.Model(&PlaygroundUploadChunk{}).Where("fingerprint IN ?", []string{stale, fingerprint}).Count(&remaining).Error)
+	assert.Zero(t, remaining)
+	require.NoError(t, DB.Model(&PlaygroundUploadChunk{}).Where("user_id = ? AND fingerprint = ?", 601, strings.Repeat("0", 64)).Count(&remaining).Error)
+	assert.NotZero(t, remaining, "an upload still within the retention period stays resumable")
 }

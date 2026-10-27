@@ -31,6 +31,7 @@ func SetApiRouter(router *gin.Engine) {
 	conversations.POST("/import/chunks/:fingerprint/complete", controller.PlaygroundUploadComplete)
 	conversations.GET("/:id", controller.GetPlaygroundConversation)
 	conversations.PUT("/:id", controller.SavePlaygroundConversation)
+	conversations.PATCH("/:id", controller.PatchPlaygroundConversation)
 	conversations.DELETE("/:id", controller.DeletePlaygroundConversation)
 	playground := apiRouter.Group("/playground", middleware.DisableCache(), middleware.UserAuth())
 	playground.GET("/settings", controller.GetPlaygroundSettings)

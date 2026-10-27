@@ -35,38 +35,56 @@ func validatePlaygroundUpload(fingerprint string, size int) error {
 	}
 	return nil
 }
+
+// PurgeExpiredPlaygroundUploads removes chunks and completion receipts of
+// every user created before the cutoff; an upload nobody resumes is not kept.
+func PurgeExpiredPlaygroundUploads(before int64) (int64, error) {
+	result := playgroundDB().Where("create_time < ?", before).Delete(&PlaygroundUploadChunk{})
+	return result.RowsAffected, result.Error
+}
+
+// playgroundUploadReceipt returns the import result of a completed upload, or
+// nil while the upload is still in progress.
+func playgroundUploadReceipt(userId int, fingerprint string, size int) (*PlaygroundImportResult, error) {
+	var receipts []PlaygroundUploadChunk
+	if err := playgroundDB().Select("total_size", "content").Where("user_id = ? AND fingerprint = ? AND chunk_index = -1", userId, fingerprint).Limit(1).Find(&receipts).Error; err != nil {
+		return nil, err
+	}
+	if len(receipts) == 0 {
+		return nil, nil
+	}
+	var result PlaygroundImportResult
+	if receipts[0].TotalSize != size || common.UnmarshalJsonStr(string(receipts[0].Content), &result) != nil {
+		return nil, ErrPlaygroundInvalid
+	}
+	// Preserve deletion semantics when retrying an already completed upload.
+	var conversation PlaygroundConversation
+	if err := playgroundDB().Unscoped().Where("user_id = ? AND id = ?", userId, result.ConversationId).First(&conversation).Error; err != nil {
+		return nil, err
+	}
+	result.Deleted = conversation.DeletedAt.Valid
+	return &result, nil
+}
+
 func GetPlaygroundUpload(userId int, fingerprint string, size int) (*PlaygroundUploadStatus, error) {
 	if err := validatePlaygroundUpload(fingerprint, size); err != nil {
 		return nil, err
 	}
-	query := playgroundDB().Where("user_id = ? AND fingerprint = ?", userId, fingerprint)
-	if err := playgroundDB().Where("user_id = ? AND chunk_index >= 0 AND create_time < ?", userId, time.Now().Add(-7*24*time.Hour).Unix()).Delete(&PlaygroundUploadChunk{}).Error; err != nil {
+	result, err := playgroundUploadReceipt(userId, fingerprint, size)
+	if err != nil {
 		return nil, err
 	}
+	status := &PlaygroundUploadStatus{Chunks: make(map[int]string), Result: result}
+	// Chunk bodies are not needed to report which chunks arrived.
 	var rows []PlaygroundUploadChunk
-	if err := query.Select("chunk_index", "total_size", "hash", "content").Find(&rows).Error; err != nil {
+	if err := playgroundDB().Select("chunk_index", "total_size", "hash").Where("user_id = ? AND fingerprint = ? AND chunk_index >= 0", userId, fingerprint).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	status := &PlaygroundUploadStatus{Chunks: make(map[int]string)}
 	for _, row := range rows {
 		if row.TotalSize != size {
 			return nil, ErrPlaygroundInvalid
 		}
-		if row.ChunkIndex >= 0 {
-			status.Chunks[row.ChunkIndex] = row.Hash
-			continue
-		}
-		var result PlaygroundImportResult
-		if common.UnmarshalJsonStr(string(row.Content), &result) != nil {
-			return nil, ErrPlaygroundInvalid
-		}
-		// Preserve deletion semantics when retrying an already completed upload.
-		var conversation PlaygroundConversation
-		if err := playgroundDB().Unscoped().Where("user_id = ? AND id = ?", userId, result.ConversationId).First(&conversation).Error; err != nil {
-			return nil, err
-		}
-		result.Deleted = conversation.DeletedAt.Valid
-		status.Result = &result
+		status.Chunks[row.ChunkIndex] = row.Hash
 	}
 	return status, nil
 }
@@ -84,6 +102,15 @@ func SavePlaygroundUploadChunk(userId int, fingerprint string, size, index int, 
 	if err != nil || len(data) != expectedSize || hash != hex.EncodeToString(digest[:]) {
 		return ErrPlaygroundInvalid
 	}
+	// Resuming an upload is always allowed; starting another one is not once
+	// the user already has the maximum in flight.
+	var inFlight []string
+	if err := playgroundDB().Model(&PlaygroundUploadChunk{}).Where("user_id = ? AND chunk_index >= 0 AND fingerprint <> ?", userId, fingerprint).Distinct("fingerprint").Pluck("fingerprint", &inFlight).Error; err != nil {
+		return err
+	}
+	if len(inFlight) >= PlaygroundMaxUploadsPerUser {
+		return ErrPlaygroundLimit
+	}
 	row := PlaygroundUploadChunk{UserId: userId, Fingerprint: fingerprint, ChunkIndex: index, TotalSize: size, Hash: hash, Content: LongText(content), CreateTime: time.Now().Unix()}
 	if err := playgroundDB().Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 		return err
@@ -98,12 +125,11 @@ func SavePlaygroundUploadChunk(userId int, fingerprint string, size, index int, 
 	return nil
 }
 func CompletePlaygroundUpload(userId int, fingerprint string, size int) (*PlaygroundImportResult, error) {
-	status, err := GetPlaygroundUpload(userId, fingerprint, size)
-	if err != nil {
+	if err := validatePlaygroundUpload(fingerprint, size); err != nil {
 		return nil, err
 	}
-	if status.Result != nil {
-		return status.Result, nil
+	if result, err := playgroundUploadReceipt(userId, fingerprint, size); err != nil || result != nil {
+		return result, err
 	}
 	var rows []PlaygroundUploadChunk
 	if err := playgroundDB().Where("user_id = ? AND fingerprint = ? AND chunk_index >= 0", userId, fingerprint).Order("chunk_index ASC").Find(&rows).Error; err != nil {
@@ -111,12 +137,9 @@ func CompletePlaygroundUpload(userId int, fingerprint string, size int) (*Playgr
 	}
 	count := (size + PlaygroundChunkSize - 1) / PlaygroundChunkSize
 	if len(rows) != count {
-		latest, err := GetPlaygroundUpload(userId, fingerprint, size)
-		if err != nil {
-			return nil, err
-		}
-		if latest.Result != nil {
-			return latest.Result, nil
+		// A concurrent completer may have finished and removed the chunks.
+		if result, err := playgroundUploadReceipt(userId, fingerprint, size); err != nil || result != nil {
+			return result, err
 		}
 		return nil, ErrPlaygroundInvalid
 	}

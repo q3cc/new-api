@@ -13,24 +13,29 @@ import (
 	"gorm.io/gorm"
 )
 
-func playgroundConversationError(c *gin.Context, err error) {
+// playgroundError answers a failed playground request with the status the
+// error calls for; its default is neutral because reads use it too.
+func playgroundError(c *gin.Context, err error) {
 	status := http.StatusInternalServerError
-	message := errors.New("Failed to save conversation")
+	message := common.NewMessage("Playground request failed")
 	var maxBytes *http.MaxBytesError
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		status, message = http.StatusNotFound, errors.New("Conversation not found")
+		status, message = http.StatusNotFound, common.NewMessage("Conversation not found")
 	case errors.Is(err, model.ErrPlaygroundConflict):
-		status, message = http.StatusConflict, err
+		status, message = http.StatusConflict, common.NewMessage(err.Error())
+	case errors.Is(err, model.ErrPlaygroundLimit):
+		status, message = http.StatusForbidden, common.NewMessage(err.Error())
 	case errors.Is(err, model.ErrPlaygroundInvalid), errors.Is(err, model.ErrPlaygroundSettingsInvalid):
-		status, message = http.StatusBadRequest, err
+		status, message = http.StatusBadRequest, common.NewMessage(err.Error())
 	case errors.As(err, &maxBytes), errors.Is(err, model.ErrPlaygroundTooLarge):
-		status, message = http.StatusRequestEntityTooLarge, model.ErrPlaygroundTooLarge
+		status, message = http.StatusRequestEntityTooLarge, common.NewMessage(model.ErrPlaygroundTooLarge.Error())
 	}
 	common.ApiErrorStatus(c, status, message)
 }
 
-func decodePlaygroundWrite(c *gin.Context, target any) bool {
+// decodePlaygroundRequest reads a JSON body bounded by the document limit.
+func decodePlaygroundRequest(c *gin.Context, target any) bool {
 	limit := int64(model.PlaygroundDocumentLimit)
 	if constant.MaxRequestBodyMB > 0 {
 		limit = min(limit, int64(constant.MaxRequestBodyMB)*1024*1024)
@@ -45,7 +50,7 @@ func decodePlaygroundWrite(c *gin.Context, target any) bool {
 		if !errors.As(err, &maxBytes) {
 			err = model.ErrPlaygroundInvalid
 		}
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return false
 	}
 	return true
@@ -55,7 +60,7 @@ func ListPlaygroundConversations(c *gin.Context) {
 	page := common.GetPageQuery(c)
 	rows, count, err := model.ListPlaygroundConversations(c.GetInt("id"), c.Query("keyword"), page)
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	page.SetItems(rows)
@@ -67,7 +72,7 @@ func GetPlaygroundConversation(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	row, err := model.GetPlaygroundConversation(c.GetInt("id"), id)
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	common.ApiSuccess(c, row)
@@ -87,12 +92,12 @@ func respondPlaygroundSaved(c *gin.Context, row *model.PlaygroundConversationDet
 
 func CreatePlaygroundConversation(c *gin.Context) {
 	var write model.PlaygroundWrite
-	if !decodePlaygroundWrite(c, &write) {
+	if !decodePlaygroundRequest(c, &write) {
 		return
 	}
 	row, err := model.CreatePlaygroundConversation(c.GetInt("id"), write)
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	respondPlaygroundSaved(c, row)
@@ -100,13 +105,27 @@ func CreatePlaygroundConversation(c *gin.Context) {
 
 func SavePlaygroundConversation(c *gin.Context) {
 	var write model.PlaygroundWrite
-	if !decodePlaygroundWrite(c, &write) {
+	if !decodePlaygroundRequest(c, &write) {
 		return
 	}
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	row, err := model.SavePlaygroundConversation(c.GetInt("id"), id, write)
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
+		return
+	}
+	respondPlaygroundSaved(c, row)
+}
+
+func PatchPlaygroundConversation(c *gin.Context) {
+	var patch model.PlaygroundPatch
+	if !decodePlaygroundRequest(c, &patch) {
+		return
+	}
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	row, err := model.PatchPlaygroundConversation(c.GetInt("id"), id, patch)
+	if err != nil {
+		playgroundError(c, err)
 		return
 	}
 	respondPlaygroundSaved(c, row)
@@ -115,7 +134,7 @@ func SavePlaygroundConversation(c *gin.Context) {
 func DeletePlaygroundConversation(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err := model.DeletePlaygroundConversation(c.GetInt("id"), id); err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	common.ApiSuccess(c, nil)
@@ -125,12 +144,12 @@ func ImportPlaygroundConversation(c *gin.Context) {
 	var request struct {
 		Source model.PlaygroundLegacySource `json:"source"`
 	}
-	if !decodePlaygroundWrite(c, &request) {
+	if !decodePlaygroundRequest(c, &request) {
 		return
 	}
 	result, err := model.ImportPlaygroundConversation(c.GetInt("id"), request.Source)
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	common.ApiSuccess(c, result)
@@ -140,7 +159,7 @@ func PlaygroundUploadStatus(c *gin.Context) {
 	size, _ := strconv.Atoi(c.Query("size"))
 	result, err := model.GetPlaygroundUpload(c.GetInt("id"), c.Param("fingerprint"), size)
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	common.ApiSuccess(c, result)
@@ -152,12 +171,12 @@ func PlaygroundUploadChunk(c *gin.Context) {
 		Hash    string `json:"hash"`
 		Content string `json:"content"`
 	}
-	if !decodePlaygroundWrite(c, &request) {
+	if !decodePlaygroundRequest(c, &request) {
 		return
 	}
 	err := model.SavePlaygroundUploadChunk(c.GetInt("id"), c.Param("fingerprint"), request.Size, request.Index, request.Hash, request.Content)
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	common.ApiSuccess(c, nil)
@@ -166,12 +185,12 @@ func PlaygroundUploadComplete(c *gin.Context) {
 	var request struct {
 		Size int `json:"size"`
 	}
-	if !decodePlaygroundWrite(c, &request) {
+	if !decodePlaygroundRequest(c, &request) {
 		return
 	}
 	result, err := model.CompletePlaygroundUpload(c.GetInt("id"), c.Param("fingerprint"), request.Size)
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	common.ApiSuccess(c, result)

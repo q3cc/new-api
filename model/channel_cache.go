@@ -102,6 +102,7 @@ func InitChannelCache() {
 	// loadPricingAdvancedCustomConfigs. channelSyncLock MUST be released before
 	// invalidating the pricing cache, otherwise the reversed order deadlocks.
 	InvalidatePricingCache()
+	InvalidateGroupEnabledModelsCache()
 	rebuildTaskAliasView()
 	common.SysLog(common.LogText("channels synced from database"))
 }

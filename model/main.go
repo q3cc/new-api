@@ -200,6 +200,7 @@ func InitDB() (err error) {
 			if err := checkMySQLChineseSupport(DB); err != nil {
 				panic(err)
 			}
+			warnMySQLPacketLimit(DB)
 		}
 		if err := ensureUserQuotaColumns(DB, common.MainDatabaseType()); err != nil {
 			return err

@@ -16,7 +16,7 @@ import (
 func playgroundModels(c *gin.Context, group string) ([]string, bool) {
 	user, err := model.GetUserCache(c.GetInt("id"))
 	if err != nil {
-		common.ApiError(c, err)
+		playgroundError(c, err)
 		return nil, false
 	}
 	groups := service.GetUserUsableGroups(user.Group, user.Id)
@@ -39,7 +39,7 @@ func playgroundModels(c *gin.Context, group string) ([]string, bool) {
 func GetPlaygroundSettings(c *gin.Context) {
 	row, err := model.GetPlaygroundPreference(c.GetInt("id"))
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	common.ApiSuccess(c, row)
@@ -47,7 +47,7 @@ func GetPlaygroundSettings(c *gin.Context) {
 
 func SavePlaygroundSettings(c *gin.Context) {
 	var write model.PlaygroundPreferenceWrite
-	if !decodePlaygroundWrite(c, &write) {
+	if !decodePlaygroundRequest(c, &write) {
 		return
 	}
 	if write.Model != "" || write.Group != "" {
@@ -62,7 +62,7 @@ func SavePlaygroundSettings(c *gin.Context) {
 	}
 	row, err := model.SavePlaygroundPreference(c.GetInt("id"), write)
 	if err != nil {
-		playgroundConversationError(c, err)
+		playgroundError(c, err)
 		return
 	}
 	common.ApiSuccess(c, row)
@@ -89,7 +89,7 @@ func EstimatePlaygroundContext(c *gin.Context) {
 			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
 	}
-	if !decodePlaygroundWrite(c, &request) {
+	if !decodePlaygroundRequest(c, &request) {
 		return
 	}
 	models, ok := playgroundModels(c, request.Group)
@@ -104,7 +104,7 @@ func EstimatePlaygroundContext(c *gin.Context) {
 	total := 3
 	for _, message := range request.Messages {
 		if !slices.Contains([]string{"system", "user", "assistant"}, message.Role) {
-			playgroundConversationError(c, model.ErrPlaygroundInvalid)
+			playgroundError(c, model.ErrPlaygroundInvalid)
 			return
 		}
 		var text string
@@ -117,7 +117,7 @@ func EstimatePlaygroundContext(c *gin.Context) {
 				Text string `json:"text"`
 			}
 			if common.Unmarshal(message.Content, &parts) != nil || parts == nil {
-				playgroundConversationError(c, model.ErrPlaygroundInvalid)
+				playgroundError(c, model.ErrPlaygroundInvalid)
 				return
 			}
 			for _, part := range parts {
@@ -127,7 +127,7 @@ func EstimatePlaygroundContext(c *gin.Context) {
 				case "image_url":
 					count += 8192 // Conservative planning estimate; never fetch a user URL.
 				default:
-					playgroundConversationError(c, model.ErrPlaygroundInvalid)
+					playgroundError(c, model.ErrPlaygroundInvalid)
 					return
 				}
 			}

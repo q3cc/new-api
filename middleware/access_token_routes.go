@@ -53,6 +53,8 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/playground/conversations/import/chunks/:fingerprint/complete": accessTokenSessionRule,
 	"GET /api/playground/conversations/:id":                                  accessTokenSessionRule,
 	"PUT /api/playground/conversations/:id":                                  accessTokenSessionRule,
+	"PATCH /api/playground/conversations/:id":                                accessTokenSessionRule,
+	"POST /pg/chat/completions":                                              accessTokenSessionRule,
 	"DELETE /api/playground/conversations/:id":                               accessTokenSessionRule,
 	"GET /api/trial-credit/types":                                            accessTokenScopeRule("user:read"),
 	"GET /api/trial-credit/config":                                           accessTokenScopeRule("option:read"),
@@ -356,7 +358,6 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"DELETE /api/deployments/:id":                       accessTokenScopeRule("deployment:write"),
 
 	// router/relay-router.go
-	"POST /pg/chat/completions": accessTokenSessionRule,
 }
 
 var (

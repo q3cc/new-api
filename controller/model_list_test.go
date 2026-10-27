@@ -50,6 +50,9 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	model.LOG_DB = db
 
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{}))
+	// Abilities are written straight into the table below, so the per-group
+	// model cache must not answer from the previous test's database.
+	model.InvalidateGroupEnabledModelsCache()
 
 	t.Cleanup(func() {
 		sqlDB, err := db.DB()

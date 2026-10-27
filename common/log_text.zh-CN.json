@@ -866,5 +866,8 @@
   "invitation of user %d by user %d restored by user %d": "用户 %d 与邀请人 %d 的邀请关系已由用户 %d 恢复",
   "user risk score task failed to restore paid invitations: %v": "用户风险评分任务恢复已付费邀请失败: %v",
   "user risk score task restored %d invitations whose invitee paid enough": "用户风险评分任务已恢复 %d 个被邀请人付费达标的邀请",
-  "leaderboard lock of activity %d failed: %v": "锁定排行榜活动 %d 的名次失败: %v"
+  "leaderboard lock of activity %d failed: %v": "锁定排行榜活动 %d 的名次失败: %v",
+  "playground upload cleanup failed: %v": "操练场上传分片清理失败: %v",
+  "playground upload cleanup removed %d expired chunks": "操练场上传分片清理已删除 %d 个过期分片",
+  "MySQL max_allowed_packet is %d bytes, below the %d bytes a playground conversation may need; raise it in the MySQL server configuration": "MySQL 的 max_allowed_packet 为 %d 字节，低于操练场会话可能需要的 %d 字节；请在 MySQL 服务端配置中调高"
 }

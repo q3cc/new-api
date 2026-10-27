@@ -1,10 +1,12 @@
 package model
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -17,10 +19,43 @@ import (
 
 const PlaygroundDocumentLimit = 8 * 1024 * 1024
 
+// Caps on what one user may keep; variables so tests can lower them.
+var (
+	PlaygroundMaxConversationsPerUser = 500
+	PlaygroundMaxUploadsPerUser       = 5
+)
+
+// playgroundPacketHeadroom leaves room in a MySQL packet for the rest of the
+// statement around a document at the size limit.
+const playgroundPacketHeadroom = 1024 * 1024
+
+// playgroundPacketWarning says whether a MySQL max_allowed_packet value is too
+// small to store the largest playground conversation, and how to report it.
+func playgroundPacketWarning(packet int64) (string, bool) {
+	needed := int64(PlaygroundDocumentLimit + playgroundPacketHeadroom)
+	if packet <= 0 || packet >= needed {
+		return "", false
+	}
+	return common.LogText("MySQL max_allowed_packet is %d bytes, below the %d bytes a playground conversation may need; raise it in the MySQL server configuration", packet, needed), true
+}
+
+// warnMySQLPacketLimit logs once at startup when the server would reject the
+// largest conversation the playground accepts. The setting is not changed.
+func warnMySQLPacketLimit(db *gorm.DB) {
+	var packet int64
+	if err := db.Raw("SELECT @@max_allowed_packet").Scan(&packet).Error; err != nil {
+		return
+	}
+	if text, warn := playgroundPacketWarning(packet); warn {
+		common.SysLog(text)
+	}
+}
+
 var (
 	ErrPlaygroundInvalid  = errors.New("Invalid conversation data")
 	ErrPlaygroundConflict = errors.New("This conversation has changed. Load the latest version or save a copy.")
 	ErrPlaygroundTooLarge = errors.New("Conversation exceeds the size limit")
+	ErrPlaygroundLimit    = errors.New("Playground limit reached")
 )
 
 // Deleted conversations retain only their identifiers, so delayed creation or
@@ -209,8 +244,23 @@ func ListPlaygroundConversations(userId int, keyword string, page *common.PageIn
 	if err := query.Count(&count).Error; err != nil {
 		return nil, 0, err
 	}
-	err := query.Select("id", "title", "revision", "create_time", "update_time").Order("update_time DESC, id DESC").Offset(page.GetStartIdx()).Limit(min(page.GetPageSize(), 100)).Find(&rows).Error
+	// Out-of-range paging falls back to the first page of a bounded size.
+	size := max(1, min(page.GetPageSize(), 100))
+	err := query.Select("id", "title", "revision", "create_time", "update_time").Order("update_time DESC, id DESC").Offset(max(page.GetPage()-1, 0) * size).Limit(size).Find(&rows).Error
 	return rows, count, err
+}
+
+// requirePlaygroundConversationRoom refuses a new conversation once the user
+// keeps the maximum; deleted conversations do not count.
+func requirePlaygroundConversationRoom(tx *gorm.DB, userId int) error {
+	var count int64
+	if err := tx.Model(&PlaygroundConversation{}).Where("user_id = ?", userId).Count(&count).Error; err != nil {
+		return err
+	}
+	if count >= int64(PlaygroundMaxConversationsPerUser) {
+		return ErrPlaygroundLimit
+	}
+	return nil
 }
 
 func CreatePlaygroundConversation(userId int, write PlaygroundWrite) (*PlaygroundConversationDetail, error) {
@@ -220,7 +270,21 @@ func CreatePlaygroundConversation(userId int, write PlaygroundWrite) (*Playgroun
 	hash := playgroundWriteHash(write)
 	now := time.Now().UnixMilli()
 	row := PlaygroundConversation{UserId: userId, CreationId: write.OperationId, CreationHash: hash, Title: write.Title, Revision: 1, Content: LongText(write.Document), LastOperation: write.OperationId, LastHash: hash, CreateTime: now, UpdateTime: now}
-	if err := playgroundDB().Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+	err := playgroundDB().Transaction(func(tx *gorm.DB) error {
+		// A replay of a known creation must succeed even when the user is at
+		// the limit, so the room check only guards an actual insert.
+		var existing int64
+		if err := tx.Model(&PlaygroundConversation{}).Unscoped().Where("user_id = ? AND creation_id = ?", userId, write.OperationId).Count(&existing).Error; err != nil {
+			return err
+		}
+		if existing == 0 {
+			if err := requirePlaygroundConversationRoom(tx, userId); err != nil {
+				return err
+			}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := playgroundDB().Unscoped().Where("user_id = ? AND creation_id = ?", userId, write.OperationId).First(&row).Error; err != nil {
@@ -235,19 +299,43 @@ func CreatePlaygroundConversation(userId int, write PlaygroundWrite) (*Playgroun
 	return &PlaygroundConversationDetail{PlaygroundConversation: row, Document: json.RawMessage(row.Content)}, nil
 }
 
+// playgroundSavedRow answers a write without reading the document back: the
+// caller already holds the document it sent, so only the metadata is read.
+func playgroundSavedRow(userId int, id int64, document json.RawMessage) (*PlaygroundConversationDetail, error) {
+	var row PlaygroundConversation
+	if err := playgroundDB().Select("id", "user_id", "title", "revision", "last_operation", "last_hash", "create_time", "update_time").
+		Where("user_id = ? AND id = ?", userId, id).First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &PlaygroundConversationDetail{PlaygroundConversation: row, Document: document}, nil
+}
+
 func SavePlaygroundConversation(userId int, id int64, write PlaygroundWrite) (*PlaygroundConversationDetail, error) {
 	if err := write.Validate(); err != nil {
 		return nil, err
 	}
 	hash := playgroundWriteHash(write)
+	now := time.Now().UnixMilli()
 	result := playgroundDB().Model(&PlaygroundConversation{}).Where("user_id = ? AND id = ? AND revision = ? AND last_operation <> ?", userId, id, write.Revision, write.OperationId).Updates(map[string]any{
 		"title": write.Title, "content": LongText(write.Document), "revision": write.Revision + 1,
-		"last_operation": write.OperationId, "last_hash": hash, "update_time": time.Now().UnixMilli(),
+		"last_operation": write.OperationId, "last_hash": hash, "update_time": now,
 	})
 	if result.Error != nil {
 		return nil, result.Error
 	}
-	row, err := GetPlaygroundConversation(userId, id)
+	if result.RowsAffected == 1 {
+		// The update itself is the answer; a writer that lands right after it
+		// must not turn this success into a conflict.
+		var row PlaygroundConversation
+		if err := playgroundDB().Select("id", "user_id", "create_time").Where("user_id = ? AND id = ?", userId, id).First(&row).Error; err != nil {
+			return nil, err
+		}
+		row.Title, row.Revision, row.LastOperation, row.LastHash, row.UpdateTime = write.Title, write.Revision+1, write.OperationId, hash, now
+		return &PlaygroundConversationDetail{PlaygroundConversation: row, Document: write.Document}, nil
+	}
+	// Nothing changed: the same operation was applied before, the revision is
+	// stale, or the conversation is gone.
+	row, err := playgroundSavedRow(userId, id, write.Document)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +343,84 @@ func SavePlaygroundConversation(userId int, id int64, write PlaygroundWrite) (*P
 		return nil, ErrPlaygroundConflict
 	}
 	return row, nil
+}
+
+// PlaygroundPatch changes a conversation's title or some document fields
+// other than its messages, so settings and drafts do not re-upload the whole
+// document.
+type PlaygroundPatch struct {
+	OperationId string                     `json:"operation_id"`
+	Revision    int64                      `json:"revision"`
+	Title       *string                    `json:"title"`
+	Patch       map[string]json.RawMessage `json:"patch"`
+}
+
+var playgroundPatchableKeys = []string{"config", "parameterEnabled", "draft", "compressionSettings", "contextLimits", "compression", "compressionAttempt", "titleGeneration"}
+
+func PatchPlaygroundConversation(userId int, id int64, patch PlaygroundPatch) (*PlaygroundConversationDetail, error) {
+	if len(patch.Patch) == 0 && patch.Title == nil {
+		return nil, ErrPlaygroundInvalid
+	}
+	for key := range patch.Patch {
+		if !slices.Contains(playgroundPatchableKeys, key) {
+			return nil, ErrPlaygroundInvalid
+		}
+	}
+	var saved *PlaygroundConversationDetail
+	err := playgroundDB().Transaction(func(tx *gorm.DB) error {
+		var current PlaygroundConversation
+		if err := lockForUpdate(tx).Where("user_id = ? AND id = ?", userId, id).First(&current).Error; err != nil {
+			return err
+		}
+		if current.LastOperation == patch.OperationId {
+			saved = &PlaygroundConversationDetail{PlaygroundConversation: current, Document: json.RawMessage(current.Content)}
+			return nil
+		}
+		if current.Revision != patch.Revision {
+			return ErrPlaygroundConflict
+		}
+		fields := map[string]json.RawMessage{}
+		if err := common.UnmarshalJsonStr(string(current.Content), &fields); err != nil {
+			return ErrPlaygroundInvalid
+		}
+		for key, value := range patch.Patch {
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				delete(fields, key)
+			} else {
+				fields[key] = value
+			}
+		}
+		merged, err := common.Marshal(fields)
+		if err != nil {
+			return ErrPlaygroundInvalid
+		}
+		write := PlaygroundWrite{OperationId: patch.OperationId, Revision: patch.Revision, Title: current.Title, Document: merged}
+		if patch.Title != nil {
+			write.Title = *patch.Title
+		}
+		if err := write.Validate(); err != nil {
+			return err
+		}
+		hash := playgroundWriteHash(write)
+		now := time.Now().UnixMilli()
+		result := tx.Model(&PlaygroundConversation{}).Where("id = ? AND revision = ?", current.Id, current.Revision).Updates(map[string]any{
+			"title": write.Title, "content": LongText(merged), "revision": current.Revision + 1,
+			"last_operation": write.OperationId, "last_hash": hash, "update_time": now,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrPlaygroundConflict
+		}
+		current.Title, current.Content, current.Revision, current.LastOperation, current.LastHash, current.UpdateTime = write.Title, LongText(merged), current.Revision+1, write.OperationId, hash, now
+		saved = &PlaygroundConversationDetail{PlaygroundConversation: current, Document: merged}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return saved, nil
 }
 
 func DeletePlaygroundConversation(userId int, id int64) error {
@@ -338,6 +504,9 @@ func ImportPlaygroundConversation(userId int, source PlaygroundLegacySource) (*P
 			return err
 		}
 		if receipt.ConversationId == 0 {
+			if err := requirePlaygroundConversationRoom(tx, userId); err != nil {
+				return err
+			}
 			now := time.Now().UnixMilli()
 			hash := playgroundWriteHash(write)
 			row := PlaygroundConversation{UserId: userId, CreationId: "import:" + fingerprint[:56], CreationHash: hash, Title: write.Title, Revision: 1, Content: LongText(content), LastOperation: fingerprint, LastHash: hash, CreateTime: now, UpdateTime: now}
