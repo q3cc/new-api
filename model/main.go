@@ -390,6 +390,7 @@ func migrateDB() error {
 		&LotteryEntry{},
 		&AffiliateRebate{},
 		&AffiliateInviteLog{},
+		&UserMessage{},
 	)
 	if err != nil {
 		return err

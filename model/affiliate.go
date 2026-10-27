@@ -195,7 +195,7 @@ func CancelAffiliateInvite(inviteeId int, inviterId int, reason string, sharedIp
 			}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&AffiliateInviteLog{
+		if err := tx.Create(&AffiliateInviteLog{
 			InviteeId:  inviteeId,
 			InviterId:  inviterId,
 			Action:     AffiliateInviteActionCancel,
@@ -203,7 +203,10 @@ func CancelAffiliateInvite(inviteeId int, inviterId int, reason string, sharedIp
 			SharedIps:  strings.Join(sharedIps, ","),
 			OperatorId: operatorId,
 			Note:       note,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return messageAffiliateInviteChangeTx(tx, inviteeId, inviterId, UserMessageInviteCancelledTitle, UserMessageInviteCancelledContent)
 	})
 	if err != nil {
 		return false, err
@@ -250,14 +253,17 @@ func RestoreAffiliateInvite(logId int, operatorId int, reason string, note strin
 			Update("aff_count", gorm.Expr("aff_count + 1")).Error; err != nil {
 			return err
 		}
-		return tx.Create(&AffiliateInviteLog{
+		if err := tx.Create(&AffiliateInviteLog{
 			InviteeId:  entry.InviteeId,
 			InviterId:  entry.InviterId,
 			Action:     AffiliateInviteActionRestore,
 			Reason:     reason,
 			OperatorId: operatorId,
 			Note:       note,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return messageAffiliateInviteChangeTx(tx, entry.InviteeId, entry.InviterId, UserMessageInviteRestoredTitle, UserMessageInviteRestoredContent)
 	})
 	if err != nil {
 		return err

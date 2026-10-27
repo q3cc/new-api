@@ -98,6 +98,35 @@ export async function getNotice(): Promise<{
   return res.data
 }
 
+/** A personal message; title and content are message keys for `t()`. */
+export type UserMessage = {
+  id: number
+  title: string
+  content: string
+  params?: Record<string, unknown> | null
+  read_at: number
+  created_at: number
+}
+
+export async function getUserMessages(): Promise<{
+  success: boolean
+  message?: string
+  data?: { unread: number; page: { items: UserMessage[] | null } }
+}> {
+  const res = await api.get('/api/user/messages', {
+    params: { p: 1, page_size: 20 },
+  })
+  return res.data
+}
+
+export async function readUserMessages(): Promise<{
+  success: boolean
+  message?: string
+}> {
+  const res = await api.post('/api/user/messages/read')
+  return res.data
+}
+
 // ============================================================================
 // 2FA Management APIs
 // ============================================================================

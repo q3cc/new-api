@@ -125,7 +125,7 @@ func TestRunUserRiskScoreOnceReplacesPreviousRound(t *testing.T) {
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}, &model.AuditLog{}, &model.UserRiskScore{}, &model.AffiliateRebate{}, &model.AffiliateInviteLog{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}, &model.AuditLog{}, &model.UserRiskScore{}, &model.AffiliateRebate{}, &model.AffiliateInviteLog{}, &model.UserMessage{}))
 	model.DB, model.LOG_DB = db, db
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	t.Cleanup(func() {

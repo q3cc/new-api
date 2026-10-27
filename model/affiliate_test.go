@@ -13,7 +13,7 @@ import (
 
 func setupAffiliateFixture(t *testing.T) {
 	t.Helper()
-	require.NoError(t, DB.AutoMigrate(&AffiliateRebate{}, &AffiliateInviteLog{}, &UserRiskScore{}))
+	require.NoError(t, DB.AutoMigrate(&AffiliateRebate{}, &AffiliateInviteLog{}, &UserRiskScore{}, &UserMessage{}))
 	previousRebate := *operation_setting.GetAffiliateRebateSetting()
 	previousPayment := *operation_setting.GetPaymentSetting()
 	*operation_setting.GetAffiliateRebateSetting() = operation_setting.AffiliateRebateSetting{
@@ -22,7 +22,7 @@ func setupAffiliateFixture(t *testing.T) {
 	operation_setting.GetPaymentSetting().ComplianceConfirmed = true
 	operation_setting.GetPaymentSetting().ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
 	clear := func() {
-		for _, table := range []any{&AffiliateRebate{}, &AffiliateInviteLog{}, &UserRiskScore{}, &TopUp{}, &SubscriptionOrder{}, &UserSubscription{}, &SubscriptionPlan{}, &User{}, &Log{}} {
+		for _, table := range []any{&AffiliateRebate{}, &AffiliateInviteLog{}, &UserRiskScore{}, &UserMessage{}, &TopUp{}, &SubscriptionOrder{}, &UserSubscription{}, &SubscriptionPlan{}, &User{}, &Log{}} {
 			// A fresh session per table: a reused one keeps the first table.
 			require.NoError(t, DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(table).Error)
 		}
@@ -254,6 +254,51 @@ func TestRestorePaidSharedIpInvites(t *testing.T) {
 	checkable, err := ListCheckableAffiliateInvites(paid)
 	require.NoError(t, err)
 	assert.Empty(t, checkable, "a restored invitation is not cancelled for the shared IP again")
+}
+
+// Cancelling or restoring an invitation tells both the inviter and the
+// invitee in their personal messages, naming the other side, whether an
+// administrator or the system made the change. The message never says what
+// would restore the invitation.
+func TestAffiliateInviteChangesMessageBothUsers(t *testing.T) {
+	setupAffiliateFixture(t)
+	inviterId, inviteeId := createInvitedPair(t)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", inviterId).Update("display_name", "Inviter Nick").Error)
+	cancelled, err := CancelAffiliateInvite(inviteeId, inviterId, AffiliateReasonSharedIp, []string{"203.0.113.1"}, 0, "")
+	require.NoError(t, err)
+	require.True(t, cancelled)
+	var cancel AffiliateInviteLog
+	require.NoError(t, DB.Where("action = ?", AffiliateInviteActionCancel).First(&cancel).Error)
+	require.NoError(t, RestoreAffiliateInvite(cancel.Id, 0, AffiliateReasonPaidRestore, ""))
+
+	for _, tc := range []struct {
+		userId    int
+		otherName string
+		otherId   int
+	}{
+		{inviterId, "aff_invitee", inviteeId},
+		{inviteeId, "Inviter Nick", inviterId},
+	} {
+		messages, total, unread, err := ListUserMessages(tc.userId, &common.PageInfo{Page: 1, PageSize: 10})
+		require.NoError(t, err)
+		assert.EqualValues(t, 2, total)
+		assert.EqualValues(t, 2, unread)
+		require.Len(t, messages, 2)
+		assert.Equal(t, []string{UserMessageInviteRestoredTitle, UserMessageInviteCancelledTitle}, []string{messages[0].Title, messages[1].Title}, "newest first")
+		assert.Equal(t, []string{UserMessageInviteRestoredContent, UserMessageInviteCancelledContent}, []string{messages[0].Content, messages[1].Content})
+		for _, message := range messages {
+			assert.Equal(t, map[string]any{"name": tc.otherName, "id": float64(tc.otherId)}, map[string]any(message.Params))
+			assert.Zero(t, message.ReadAt)
+		}
+	}
+
+	require.NoError(t, MarkUserMessagesRead(inviteeId))
+	_, _, unread, err := ListUserMessages(inviteeId, &common.PageInfo{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	assert.Zero(t, unread)
+	_, _, unread, err = ListUserMessages(inviterId, &common.PageInfo{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, unread, "reading one user's messages leaves the other's unread")
 }
 
 func TestSettleAffiliateRebate(t *testing.T) {

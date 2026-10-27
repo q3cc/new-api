@@ -16,13 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 
 import { useStatus } from '@/hooks/use-status'
-import { getNotice } from '@/lib/api'
+import { getNotice, getUserMessages, readUserMessages } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 import { useNotificationStore } from '@/stores/notification-store'
+
+export type NotificationTab = 'notice' | 'announcements' | 'messages'
+
+const USER_MESSAGES_KEY = ['user-messages'] as const
 
 function hashString(input: string): string {
   let hash = 0
@@ -60,14 +65,27 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
 }
 
 /**
- * Hook to manage notifications (Notice + Announcements)
+ * Hook to manage notifications (Notice + Announcements + personal Messages)
  * Provides unread counts and read status management
  */
 export function useNotifications() {
+  const queryClient = useQueryClient()
   const [popoverOpen, setPopoverOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'notice' | 'announcements'>(
-    'notice'
-  )
+  const [activeTab, setActiveTab] = useState<NotificationTab>('notice')
+
+  // Personal messages belong to the signed-in user; the server keeps their
+  // read state, so they are polled rather than tracked in this browser.
+  const userId = useAuthStore((s) => s.auth.user?.id)
+  const messagesEnabled = userId !== undefined
+  const { data: messagesData, isLoading: messagesLoading } = useQuery({
+    queryKey: [...USER_MESSAGES_KEY, userId],
+    queryFn: async () => requireServerSuccess(await getUserMessages()).data,
+    enabled: messagesEnabled,
+    refetchInterval: 60_000,
+    meta: { errorToast: false },
+  })
+  const messages = messagesData?.page.items ?? []
+  const unreadMessages = messagesEnabled ? (messagesData?.unread ?? 0) : 0
 
   // Fetch Notice from API
   const {
@@ -119,9 +137,28 @@ export function useNotifications() {
     return {
       notice: noticeUnread,
       announcements: announcementsUnread,
-      total: noticeUnread + announcementsUnread,
+      total: noticeUnread + announcementsUnread + unreadMessages,
     }
-  }, [noticeContent, lastReadNotice, announcements, isAnnouncementRead])
+  }, [
+    noticeContent,
+    lastReadNotice,
+    announcements,
+    isAnnouncementRead,
+    unreadMessages,
+  ])
+
+  // The list keeps showing which messages were new until the next refresh.
+  const markMessagesAsRead = () => {
+    if (unreadMessages === 0) return
+    readUserMessages()
+      .then(() =>
+        queryClient.setQueryData(
+          [...USER_MESSAGES_KEY, userId],
+          (old: typeof messagesData) => old && { ...old, unread: 0 }
+        )
+      )
+      .catch(() => {})
+  }
 
   const markAnnouncementsAsRead = () => {
     if (announcements.length > 0) {
@@ -132,9 +169,9 @@ export function useNotifications() {
     }
   }
 
-  // Handle popover open
-  const handleOpenPopover = (tab?: 'notice' | 'announcements') => {
-    const nextTab = tab || activeTab
+  // Handle popover open; unread personal messages are shown first
+  const handleOpenPopover = (tab?: NotificationTab) => {
+    const nextTab = tab || (unreadMessages > 0 ? 'messages' : activeTab)
 
     // Mark currently visible content as read when opening the notification center
     if (noticeContent) {
@@ -143,6 +180,9 @@ export function useNotifications() {
     if (nextTab === 'announcements') {
       markAnnouncementsAsRead()
     }
+    if (nextTab === 'messages') {
+      markMessagesAsRead()
+    }
 
     setActiveTab(nextTab)
     setPopoverOpen(true)
@@ -150,19 +190,22 @@ export function useNotifications() {
 
   const handlePopoverOpenChange = (open: boolean) => {
     if (open) {
-      handleOpenPopover(activeTab)
+      handleOpenPopover()
       return
     }
 
     setPopoverOpen(false)
   }
 
-  // Handle tab change - mark announcements as read when switching to that tab
-  const handleTabChange = (tab: 'notice' | 'announcements') => {
+  // Handle tab change - mark a tab's items as read when switching to it
+  const handleTabChange = (tab: NotificationTab) => {
     setActiveTab(tab)
 
     if (tab === 'announcements') {
       markAnnouncementsAsRead()
+    }
+    if (tab === 'messages') {
+      markMessagesAsRead()
     }
   }
 
@@ -170,7 +213,10 @@ export function useNotifications() {
     // Data
     notice: noticeContent,
     announcements,
+    messages,
+    messagesEnabled,
     loading: noticeLoading || statusLoading,
+    messagesLoading,
 
     // Unread counts
     unreadCount: unreadCounts.total,

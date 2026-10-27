@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
-import { Bell, Megaphone } from 'lucide-react'
+import { Bell, Inbox, Megaphone } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { RichContent } from '@/components/rich-content'
@@ -40,6 +40,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type { NotificationTab } from '@/hooks/use-notifications'
+import type { UserMessage } from '@/lib/api'
 import { getAnnouncementColorClass } from '@/lib/colors'
 import { formatDateTimeObject } from '@/lib/time'
 import { cn } from '@/lib/utils'
@@ -56,10 +58,14 @@ interface NotificationPopoverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   unreadCount: number
-  activeTab: 'notice' | 'announcements'
-  onTabChange: (tab: 'notice' | 'announcements') => void
+  activeTab: NotificationTab
+  onTabChange: (tab: NotificationTab) => void
   notice: string
   announcements: AnnouncementItem[]
+  /** Personal messages of the signed-in user. */
+  messages?: UserMessage[]
+  /** Shows the Messages tab; off for signed-out visitors. */
+  showMessages?: boolean
   loading: boolean
   className?: string
 }
@@ -288,7 +294,55 @@ function AnnouncementsContent({
 }
 
 /**
- * Notification popover with Notice and Announcements tabs
+ * Personal messages tab content; a dot marks messages that were unread
+ */
+function MessagesContent({
+  messages,
+  t,
+}: {
+  messages: UserMessage[]
+  t: TFunction
+}) {
+  if (messages.length === 0) {
+    return <EmptyState icon={<Inbox />} title={t('No messages')} />
+  }
+
+  return (
+    <ScrollArea className='h-[min(52vh,28rem)] pr-3'>
+      <div className='flex flex-col'>
+        {messages.map((message, idx) => {
+          const createdAt = new Date(message.created_at * 1000)
+          return (
+            <div key={message.id}>
+              <div className='flex items-start gap-3 py-3'>
+                <span
+                  aria-hidden='true'
+                  className={cn(
+                    'mt-1.5 inline-block size-2 shrink-0 rounded-full',
+                    message.read_at === 0 ? 'bg-primary' : 'bg-transparent'
+                  )}
+                />
+                <div className='flex min-w-0 flex-1 flex-col gap-1'>
+                  <div className='text-sm font-medium'>{t(message.title)}</div>
+                  <div className='text-muted-foreground text-sm'>
+                    {t(message.content, message.params ?? {})}
+                  </div>
+                  <div className='text-muted-foreground text-xs'>
+                    {`${getRelativeTime(createdAt, t)} • ${formatDateTimeObject(createdAt)}`}
+                  </div>
+                </div>
+              </div>
+              {idx < messages.length - 1 ? <Separator /> : null}
+            </div>
+          )
+        })}
+      </div>
+    </ScrollArea>
+  )
+}
+
+/**
+ * Notification popover with Notice, Announcements and personal Messages tabs
  */
 export function NotificationPopover({
   open,
@@ -298,6 +352,8 @@ export function NotificationPopover({
   onTabChange,
   notice,
   announcements,
+  messages = [],
+  showMessages = false,
   loading,
   className,
 }: NotificationPopoverProps) {
@@ -341,7 +397,12 @@ export function NotificationPopover({
           value={activeTab}
           onValueChange={onTabChange as (value: string) => void}
         >
-          <TabsList className='grid w-full grid-cols-2'>
+          <TabsList
+            className={cn(
+              'grid w-full',
+              showMessages ? 'grid-cols-3' : 'grid-cols-2'
+            )}
+          >
             <TabsTrigger value='notice' className='gap-1.5'>
               <Bell className='size-3.5' />
               {t('Notice')}
@@ -350,6 +411,12 @@ export function NotificationPopover({
               <Megaphone className='size-3.5' />
               {t('Timeline')}
             </TabsTrigger>
+            {showMessages ? (
+              <TabsTrigger value='messages' className='gap-1.5'>
+                <Inbox className='size-3.5' />
+                {t('Messages')}
+              </TabsTrigger>
+            ) : null}
           </TabsList>
 
           <TabsContent value='notice' className='mt-2'>
@@ -363,6 +430,12 @@ export function NotificationPopover({
               t={t}
             />
           </TabsContent>
+
+          {showMessages ? (
+            <TabsContent value='messages' className='mt-2'>
+              <MessagesContent messages={messages} t={t} />
+            </TabsContent>
+          ) : null}
         </Tabs>
 
         <div className='flex justify-end'>
