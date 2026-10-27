@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -29,6 +29,7 @@ import { Message } from '@/components/ai-elements/message'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 
+import { MESSAGE_STATUS } from '../../constants'
 import {
   getChatMessageRenderState,
   getEditingMessageContent,
@@ -100,6 +101,22 @@ export function PlaygroundChat({
     (message: MessageType) => setDeleting(message),
     []
   )
+  // Screen readers hear when a reply starts, ends or is stopped.
+  const [announcement, setAnnouncement] = useState('')
+  const wasGenerating = useRef(isGenerating)
+  const lastStatus = messages.at(-1)?.status
+  useEffect(() => {
+    if (isGenerating) {
+      setAnnouncement(t('Generating reply...'))
+    } else if (wasGenerating.current) {
+      setAnnouncement(
+        lastStatus === MESSAGE_STATUS.INTERRUPTED
+          ? t('Generation was interrupted')
+          : t('Reply complete')
+      )
+    }
+    wasGenerating.current = isGenerating
+  }, [isGenerating, lastStatus, t])
   const visibleMessageOffset = Math.max(0, messages.length - historyLimit)
   const visibleMessages = messages.slice(visibleMessageOffset)
 
@@ -205,6 +222,9 @@ export function PlaygroundChat({
 
   return (
     <Conversation className='h-full'>
+      <p className='sr-only' aria-live='polite' aria-atomic='true'>
+        {announcement}
+      </p>
       {/* Remove outer padding; apply padding to inner centered container to align with input */}
       <ConversationContent
         className='p-0'

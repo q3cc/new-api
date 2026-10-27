@@ -27,6 +27,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
+import { IMPORTED_CONVERSATION_TITLE } from '../constants'
 import { useConversationEntry } from '../hooks/use-workspace'
 import {
   isGeneratingDocument,
@@ -55,7 +56,7 @@ export function ConversationHeaderActions(
   return (
     <>
       <span className='min-w-0 flex-1 truncate'>
-        {entry.row.title === 'Imported conversation'
+        {entry.row.title === IMPORTED_CONVERSATION_TITLE
           ? t('Imported conversation')
           : entry.row.title || t('New conversation')}
       </span>
@@ -141,6 +142,41 @@ export function ConversationHeaderActions(
         />
       )}
     </>
+  )
+}
+
+/**
+ * Points out that the server holds a newer revision than the one open here,
+ * so a tab that was left behind can refresh before it edits.
+ */
+export function ConversationStaleNotice(
+  props: Props & { listedRevision?: number; onReload: (key: string) => void }
+) {
+  const { t } = useTranslation()
+  const entry = useConversationEntry(props.workspace, props.entryKey)
+  if (
+    !entry ||
+    entry.dirty ||
+    entry.saving ||
+    props.listedRevision === undefined ||
+    props.listedRevision <= entry.row.revision
+  ) {
+    return null
+  }
+  return (
+    <div
+      role='status'
+      className='flex flex-wrap items-center gap-2 px-3 py-2 text-sm'
+    >
+      <span>{t('This conversation was updated elsewhere.')}</span>
+      <Button
+        variant='outline'
+        size='sm'
+        onClick={() => props.onReload(entry.key)}
+      >
+        {t('Refresh')}
+      </Button>
+    </div>
   )
 }
 

@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import {
   PromptInput,
@@ -62,6 +63,7 @@ interface PlaygroundInputProps {
     key: keyof ParameterEnabled,
     value: boolean
   ) => void
+  onResetParameters?: () => void
   parameterEnabled: ParameterEnabled
 }
 
@@ -85,6 +87,7 @@ export function PlaygroundInput({
   onConfigChange,
   onClearMessages,
   onParameterEnabledChange,
+  onResetParameters,
   parameterEnabled,
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
@@ -101,10 +104,22 @@ export function PlaygroundInput({
   }
 
   return (
-    <div className='grid shrink-0 gap-4 px-1 md:pb-4'>
+    <div
+      className='grid shrink-0 gap-4 px-1 md:pb-4'
+      // Escape in the input stops the running reply, like the Stop button.
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && isGenerating && onStop) {
+          event.preventDefault()
+          onStop()
+        }
+      }}
+    >
       <PromptInput
         className='relative'
         groupClassName='bg-background/95 dark:bg-background/80 border-border/70 shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)] ring-1 ring-foreground/5 rounded-xl overflow-hidden transition-all duration-200 focus-within:border-primary/45 focus-within:ring-primary/15 focus-within:shadow-[0_22px_70px_-34px_rgba(0,0,0,0.75)]'
+        // Files are refused with a notice instead of being dropped silently.
+        maxFiles={0}
+        onError={() => toast.error(t('Attachments are not supported yet'))}
         onSubmit={handleSubmit}
       >
         <PromptInputTextarea
@@ -141,6 +156,7 @@ export function PlaygroundInput({
                 onConfigChange={onConfigChange}
                 onClearMessages={onClearMessages}
                 onParameterEnabledChange={onParameterEnabledChange}
+                onResetParameters={onResetParameters}
                 parameterEnabled={parameterEnabled}
               />
             }

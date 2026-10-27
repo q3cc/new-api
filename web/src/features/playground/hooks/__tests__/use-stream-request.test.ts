@@ -18,14 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test, vi } from 'vitest'
 
-import { ERROR_MESSAGES } from '../constants'
-import { updateAssistantMessageWithError } from '../lib/message/message-update-utils'
+import { ERROR_MESSAGES } from '../../constants'
+import { updateAssistantMessageWithError } from '../../lib/message/message-update-utils'
 import {
   createLoadingAssistantMessage,
   getMessageContent,
-} from '../lib/message/message-utils'
-import type { ChatCompletionRequest } from '../types'
-import { createStreamRequestController } from './use-stream-request'
+} from '../../lib/message/message-utils'
+import type { ChatCompletionRequest } from '../../types'
+import { createStreamRequestController } from '../use-stream-request'
 
 function deferred<T>() {
   let resolve!: (value: T) => void

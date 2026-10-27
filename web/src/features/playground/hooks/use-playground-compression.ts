@@ -27,7 +27,6 @@ import {
   estimateContext,
 } from '../compression-api'
 import {
-  chatMessages,
   shouldCompress,
   contextMessages,
   effectiveCapability,
@@ -39,6 +38,7 @@ import type {
   ConversationEntry,
   ConversationWorkspace,
 } from '../lib/conversation-workspace'
+import { toChatMessages } from '../lib/message/message-utils'
 import type { Message } from '../types'
 
 export function usePlaygroundCompression(
@@ -151,7 +151,7 @@ export function usePlaygroundCompression(
       estimateContext(
         document.config.model,
         group,
-        chatMessages(usageMessages),
+        toChatMessages(usageMessages),
         signal
       ),
     enabled:
@@ -167,7 +167,11 @@ export function usePlaygroundCompression(
   })
 
   const prepare = useCallback(
-    async (messages: Message[], signal: AbortSignal): Promise<Message[]> => {
+    async (
+      messages: Message[],
+      signal: AbortSignal,
+      options?: { skipCompression?: boolean }
+    ): Promise<Message[]> => {
       const [defaults, models] = await Promise.all([
         client.fetchQuery(preferenceOptions),
         client.fetchQuery(capabilityOptions),
@@ -195,11 +199,15 @@ export function usePlaygroundCompression(
       let count = await estimateContext(
         capability.model,
         group,
-        chatMessages(result),
+        toChatMessages(result),
         signal
       )
+      // An assumed window is a guess, so it never compresses on its own;
+      // the provider's answer decides, and compression is offered on refusal.
       if (
+        !options?.skipCompression &&
         settings.automatic &&
+        !capability.assumedWindow &&
         shouldCompress(document, count.input_tokens, budget)
       ) {
         if (document.compressionAttempt) {
@@ -229,14 +237,18 @@ export function usePlaygroundCompression(
         count = await estimateContext(
           capability.model,
           group,
-          chatMessages(result),
+          toChatMessages(result),
           signal
         )
       }
       signal.throwIfAborted()
       // An assumed window may be smaller than the real one; let the provider
       // decide, and the context-length error offers compression if it refuses.
-      if (!capability.assumedWindow && count.input_tokens > budget) {
+      if (
+        !options?.skipCompression &&
+        !capability.assumedWindow &&
+        count.input_tokens > budget
+      ) {
         throw new Error('Compressed context is still too large')
       }
       return result
@@ -254,6 +266,9 @@ export function usePlaygroundCompression(
       usage,
       budget,
       budgetAssumed,
+      assumedWindow: capability.assumedWindow
+        ? capability.context_window
+        : undefined,
       busy,
     }),
     [
@@ -266,6 +281,7 @@ export function usePlaygroundCompression(
       usage,
       budget,
       budgetAssumed,
+      capability,
       busy,
     ]
   )

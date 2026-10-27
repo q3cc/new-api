@@ -47,7 +47,12 @@ export type ModelCapability = {
   text_generation: boolean
   compression_warning: boolean
 }
-export type ContextEstimate = { input_tokens: number; message_tokens: number[] }
+export type ContextEstimate = {
+  input_tokens: number
+  message_tokens: number[]
+  /** The server counted with a fallback tokenizer rather than the model's own. */
+  estimated?: boolean
+}
 type Envelope<T> = { success: boolean; data: T }
 
 export async function getCompressionPreference(signal?: AbortSignal) {

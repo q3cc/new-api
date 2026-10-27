@@ -17,24 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import type { Message, MessageVersion } from '../../types'
 import {
   createLoadingAssistantMessage,
@@ -126,8 +108,10 @@ export function switchMessageVersion(
 }
 
 /**
- * Marks requests in progress as interrupted. A reply that received nothing
- * and has an earlier version returns to that version, with what followed it.
+ * Marks requests in progress as interrupted: every reply still generating,
+ * or exactly the given messages when the caller already settled them. A
+ * reply that received nothing and has an earlier version returns to that
+ * version, with what followed it.
  */
 export function interruptMessages(
   messages: Message[],
@@ -135,9 +119,8 @@ export function interruptMessages(
 ): Message[] {
   let result = messages
   for (const message of messages) {
-    if (!isGeneratingMessage(message) || (keys && !keys.has(message.key))) {
-      continue
-    }
+    const targeted = keys ? keys.has(message.key) : isGeneratingMessage(message)
+    if (!targeted) continue
     const interrupted: Message = {
       ...message,
       status: MESSAGE_STATUS.INTERRUPTED,
@@ -169,6 +152,35 @@ export function interruptMessages(
     )
   }
   return result
+}
+
+/**
+ * Takes back a question whose save failed before it was sent: the question
+ * and its empty reply, which the server never saw, leave the conversation
+ * and the text is returned so it can be sent again. Anything else, such as
+ * a regeneration, is left for the interruption handling.
+ */
+export function withdrawUnsavedQuestion(
+  messages: Message[],
+  savedMessages: Message[] | undefined
+): { messages: Message[]; text: string } | null {
+  const reply = messages.at(-1)
+  const question = messages.at(-2)
+  const known = new Set((savedMessages ?? []).map((message) => message.key))
+  if (
+    !reply ||
+    !question ||
+    !isGeneratingMessage(reply) ||
+    hasMessageContent(reply) ||
+    reply.versions.length !== 1 ||
+    question.from !== MESSAGE_ROLES.USER ||
+    question.versions.length !== 1 ||
+    known.has(question.key) ||
+    known.has(reply.key)
+  ) {
+    return null
+  }
+  return { messages: messages.slice(0, -2), text: getMessageContent(question) }
 }
 
 export function createRegeneratedMessages(

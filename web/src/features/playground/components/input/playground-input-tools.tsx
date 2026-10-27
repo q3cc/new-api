@@ -60,6 +60,7 @@ type PlaygroundInputToolsProps = {
     key: keyof ParameterEnabled,
     value: boolean
   ) => void
+  onResetParameters?: () => void
   parameterEnabled: ParameterEnabled
 }
 
@@ -71,6 +72,7 @@ export function PlaygroundInputTools({
   onClearMessages,
   onConfigChange,
   onParameterEnabledChange,
+  onResetParameters,
   parameterEnabled,
 }: PlaygroundInputToolsProps) {
   const { t } = useTranslation()
@@ -78,9 +80,7 @@ export function PlaygroundInputTools({
 
   const handleFileAction = (action: string) => {
     const notice = getAttachmentActionNotice(action)
-    toast.info(t(notice.title), {
-      description: notice.description,
-    })
+    toast.info(t(notice.title))
   }
 
   const handleSearchAction = () => {
@@ -152,6 +152,7 @@ export function PlaygroundInputTools({
 
         <PlaygroundParameterPanel
           config={config}
+          onResetParameters={onResetParameters}
           disabled={disabled}
           onConfigChange={onConfigChange}
           onParameterEnabledChange={onParameterEnabledChange}

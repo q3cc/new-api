@@ -16,11 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { SlidersHorizontalIcon } from 'lucide-react'
+import { RotateCcwIcon, SlidersHorizontalIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { PromptInputButton } from '@/components/ai-elements/prompt-input'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Popover,
@@ -64,11 +65,33 @@ type PlaygroundParameterPanelProps = {
     key: PlaygroundParameterKey,
     value: boolean
   ) => void
+  /** Puts every parameter and switch back to its default. */
+  onResetParameters?: () => void
   parameterEnabled: ParameterEnabled
 }
 
 type PlaygroundParameterContentProps = PlaygroundParameterPanelProps & {
   compact?: boolean
+}
+
+function ResetParametersButton(props: {
+  disabled?: boolean
+  onReset?: () => void
+}) {
+  const { t } = useTranslation()
+  if (!props.onReset) return null
+  return (
+    <Button
+      variant='ghost'
+      size='sm'
+      className='touch-manipulation pointer-coarse:min-h-11'
+      disabled={props.disabled}
+      onClick={props.onReset}
+    >
+      <RotateCcwIcon aria-hidden='true' />
+      {t('Restore defaults')}
+    </Button>
+  )
 }
 
 function PlaygroundParameterContent({
@@ -231,6 +254,10 @@ export function PlaygroundParameterPanel(props: PlaygroundParameterPanelProps) {
         >
           <SheetHeader>
             <SheetTitle>{t('Parameter settings')}</SheetTitle>
+            <ResetParametersButton
+              disabled={props.disabled}
+              onReset={props.onResetParameters}
+            />
           </SheetHeader>
           <PlaygroundParameterContent {...props} compact />
         </SheetContent>
@@ -253,11 +280,19 @@ export function PlaygroundParameterPanel(props: PlaygroundParameterPanelProps) {
         side='top'
         sideOffset={8}
       >
-        <div className='space-y-1 px-1'>
-          <div className='text-sm font-semibold'>{t('Parameter settings')}</div>
-          <div className='text-muted-foreground text-xs leading-4'>
-            {t('Only enabled parameters are sent with the request.')}
+        <div className='flex items-start justify-between gap-2 px-1'>
+          <div className='space-y-1'>
+            <div className='text-sm font-semibold'>
+              {t('Parameter settings')}
+            </div>
+            <div className='text-muted-foreground text-xs leading-4'>
+              {t('Only enabled parameters are sent with the request.')}
+            </div>
           </div>
+          <ResetParametersButton
+            disabled={props.disabled}
+            onReset={props.onResetParameters}
+          />
         </div>
         <PlaygroundParameterContent {...props} />
       </PopoverContent>

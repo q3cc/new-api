@@ -114,11 +114,12 @@ export interface ChatCompletionResponse {
   object: string
   created: number
   model: string
-  choices: Array<{
+  // Providers omit choices on failure and send tool-only replies without text.
+  choices?: Array<{
     index: number
     message: {
       role: MessageRole
-      content: string
+      content: string | null | undefined
       reasoning_content?: string | null
       reasoning?: string | null
     }

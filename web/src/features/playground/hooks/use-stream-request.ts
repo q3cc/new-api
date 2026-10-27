@@ -136,7 +136,10 @@ export function createStreamRequestController(
 
     nextSource.addEventListener('error', (event) => {
       if (!isCurrent() || completed) return
-      const { errorCode, errorMessage } = parseStreamErrorDetails(event.data)
+      const { errorCode, errorMessage } = parseStreamErrorDetails(
+        event.data,
+        (nextSource as { status?: number }).status
+      )
       handleError(errorMessage, errorCode)
     })
 

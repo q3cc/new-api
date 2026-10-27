@@ -22,7 +22,7 @@ import type {
   PlaygroundConfig,
   ParameterEnabled,
 } from '../../types'
-import { formatMessageForAPI, isValidMessage } from '../message/message-utils'
+import { toChatMessages } from '../message/message-utils'
 
 /**
  * Build API request payload from messages and config
@@ -32,15 +32,10 @@ export function buildChatCompletionPayload(
   config: PlaygroundConfig,
   parameterEnabled: ParameterEnabled
 ): ChatCompletionRequest {
-  // Filter and format valid messages
-  const processedMessages = messages
-    .filter(isValidMessage)
-    .map(formatMessageForAPI)
-
   const payload: ChatCompletionRequest = {
     model: config.model,
     group: config.group,
-    messages: processedMessages,
+    messages: toChatMessages(messages),
     stream: config.stream,
   }
 

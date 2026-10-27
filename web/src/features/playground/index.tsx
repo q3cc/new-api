@@ -49,6 +49,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import {
   ConversationHeaderActions,
+  ConversationStaleNotice,
   ConversationTitleNotice,
 } from './components/conversation-header'
 import { ConversationList } from './components/conversation-list'
@@ -377,7 +378,20 @@ function PlaygroundWorkspace(props: { owner: number }) {
           )}
         </header>
         {hasCurrent && (
-          <ConversationTitleNotice workspace={workspace} entryKey={activeKey} />
+          <>
+            <ConversationStaleNotice
+              workspace={workspace}
+              entryKey={activeKey}
+              listedRevision={
+                list.data?.items.find((item) => item.id === currentId)?.revision
+              }
+              onReload={reload}
+            />
+            <ConversationTitleNotice
+              workspace={workspace}
+              entryKey={activeKey}
+            />
+          </>
         )}
         {migrationProgress &&
           !migrationError &&

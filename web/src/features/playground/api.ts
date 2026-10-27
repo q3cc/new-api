@@ -38,7 +38,7 @@ export async function sendChatCompletion(
   const res = await api.post(API_ENDPOINTS.CHAT_COMPLETIONS, payload, {
     signal,
     skipErrorHandler: true,
-  } as Record<string, unknown>)
+  })
   return res.data
 }
 

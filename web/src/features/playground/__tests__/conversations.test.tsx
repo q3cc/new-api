@@ -76,6 +76,22 @@ function row(id: number, title: string): SavedConversation {
   document.titleGeneration = title ? 'manual' : 'awaiting_reply'
   return { id, title, revision: 1, create_time: id, update_time: id, document }
 }
+// The server's answer for a write against an older revision.
+function conflict() {
+  return new AxiosError(
+    'This conversation has changed.',
+    'ERR_BAD_REQUEST',
+    undefined,
+    undefined,
+    {
+      data: { success: false, message: 'This conversation has changed.' },
+      status: 409,
+      statusText: 'Conflict',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    }
+  )
+}
 // The server's answer for a conversation that was deleted.
 function notFound() {
   return new AxiosError(
@@ -176,6 +192,7 @@ beforeEach(() => {
     const id = Number(url?.split('/').at(-1))
     const previous = records.get(id)
     if (!previous) throw notFound()
+    if (previous.revision !== write.revision) throw conflict()
     const value = {
       ...previous,
       title: write.title,
@@ -191,6 +208,7 @@ beforeEach(() => {
     const id = Number(url?.split('/').at(-1))
     const previous = records.get(id)
     if (!previous) throw notFound()
+    if (previous.revision !== patch.revision) throw conflict()
     const value = {
       ...previous,
       title: patch.title ?? previous.title,
@@ -347,10 +365,11 @@ it('opens context actions on a touch long press without closing on release and s
   const ring = await screen.findByRole('button', {
     name: 'Model context usage',
   })
-  // Without a known window the count is shown alone, never a guessed share.
+  // Without a known window the count is shown with the assumption spelled
+  // out, never as a share of a guessed limit.
   await waitFor(() =>
     expect(ring).toHaveAccessibleDescription(
-      /^[\d,]+ tokens \(context limit unknown\)$/
+      /^[\d,]+ tokens \(assuming a [\d,]+ token window\)$/
     )
   )
   vi.useFakeTimers()
@@ -796,7 +815,9 @@ it('offers only saving as new when the open conversation was deleted elsewhere',
   )
   expect(within(alert).queryByRole('button', { name: 'Retry' })).toBeNull()
   expect(
-    within(alert).queryByRole('button', { name: 'Load latest conversation' })
+    within(alert).queryByRole('button', {
+      name: 'Discard local changes and load latest',
+    })
   ).toBeNull()
   expect(completions).toHaveLength(0)
   fireEvent.click(
@@ -893,12 +914,14 @@ it('does not start a charged request when saving the user message fails', async 
   fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
   await screen.findByRole('alert')
   expect(completions).toHaveLength(0)
+  // The question goes back into the input instead of sitting unsent in the chat.
+  expect(screen.getByPlaceholderText('Ask anything')).toHaveValue(
+    'keep this prompt'
+  )
   expect(
-    screen.getByRole('button', { name: 'Export conversation' })
-  ).toBeEnabled()
-  expect(screen.getByText('keep this prompt')).toBeInTheDocument()
+    screen.queryByText('keep this prompt', { ignore: 'textarea' })
+  ).not.toBeInTheDocument()
   failSave = false
-  // The banner's retry saves again; the stopped reply offers its own retry.
   fireEvent.click(
     within(screen.getByRole('alert')).getByRole('button', { name: 'Retry' })
   )
@@ -906,9 +929,87 @@ it('does not start a charged request when saving the user message fails', async 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   )
   expect(completions).toHaveLength(0)
-  expect(records.get(1)?.document.messages[0].versions[0].content).toBe(
-    'keep this prompt'
+  expect(records.get(1)?.document.messages).toHaveLength(0)
+  expect(records.get(1)?.document.draft).toBe('keep this prompt')
+})
+
+it('stops a running reply with Escape and announces the outcome to screen readers', async () => {
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  const input = screen.getByPlaceholderText('Ask anything')
+  fireEvent.change(input, { target: { value: 'take your time' } })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+  await waitFor(() => expect(completions).toHaveLength(1))
+  expect(await screen.findByText('Generating reply...')).toBeInTheDocument()
+  fireEvent.keyDown(input, { key: 'Escape' })
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: /^Stop/ })
+    ).not.toBeInTheDocument()
   )
+  expect(
+    screen.getByText('Generation was interrupted', { selector: '.sr-only' })
+  ).toBeInTheDocument()
+})
+
+it('asks before discarding local changes on a conflict and points out a conversation updated elsewhere', async () => {
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  const first = records.get(1)
+  assert(first)
+  records.set(1, { ...first, revision: 3, title: 'Alpha (elsewhere)' })
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ['playground-conversations'] })
+  })
+  expect(
+    await screen.findByText('This conversation was updated elsewhere.')
+  ).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await screen.findByDisplayValue('draft Alpha')
+  await waitFor(() =>
+    expect(
+      screen.queryByText('This conversation was updated elsewhere.')
+    ).not.toBeInTheDocument()
+  )
+
+  records.set(1, { ...first, revision: 7 })
+  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+    target: { value: 'conflicting' },
+  })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+  const alert = await screen.findByRole('alert')
+  fireEvent.click(
+    within(alert).getByRole('button', {
+      name: 'Discard local changes and load latest',
+    })
+  )
+  const dialog = await screen.findByRole('alertdialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Load latest' }))
+  await waitFor(() =>
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  )
+  expect(screen.queryByText('conflicting')).not.toBeInTheDocument()
+})
+
+it('restores the default parameters from the panel', async () => {
+  const first = records.get(1)
+  assert(first)
+  first.document.config = { ...first.document.config, temperature: 1.5 }
+  first.document.parameterEnabled = {
+    ...first.document.parameterEnabled,
+    seed: true,
+  }
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  fireEvent.click(screen.getByRole('button', { name: 'Parameters' }))
+  expect(await screen.findByText('1.5')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Restore defaults' }))
+  await waitFor(() => expect(screen.queryByText('1.5')).not.toBeInTheDocument())
+  expect(screen.getByText('0.7')).toBeInTheDocument()
+  await waitFor(() =>
+    expect(records.get(1)?.document.config.temperature).toBe(0.7)
+  )
+  expect(records.get(1)?.document.parameterEnabled.seed).toBe(false)
 })
 
 it('keeps the conversation editable after a save failure and sends once saving works again', async () => {

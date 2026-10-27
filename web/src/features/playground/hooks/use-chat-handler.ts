@@ -226,17 +226,22 @@ export function useChatHandler({
       flushStreamUpdates(generation)
       setIsRequesting(false)
       const displayError = getDisplayError(error)
-      handleServerError(new Error(displayError))
       const errorTitle = t(ERROR_MESSAGES.API_REQUEST_ERROR)
+      // The failure is shown on the reply itself; a toast is only needed when
+      // there is no reply to show it on.
+      let shownInline = false
       onMessageUpdate((prev) => {
         if (generation !== requestGenerationRef.current) return prev
-        return updateAssistantMessageWithError(
+        const next = updateAssistantMessageWithError(
           prev,
           displayError,
           errorCode,
           errorTitle
         )
+        shownInline = next !== prev
+        return next
       })
+      if (!shownInline) handleServerError(new Error(displayError))
     },
     [flushStreamUpdates, getDisplayError, onMessageUpdate, t]
   )

@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 
+import { IMPORTED_CONVERSATION_TITLE } from '../constants'
 import {
   CONVERSATION_PAGE_SIZE,
   type ConversationSummary,
@@ -120,7 +121,8 @@ export const ConversationList = memo(function ConversationList(props: Props) {
                 />
               )}
               <span className='truncate'>
-                {(local?.row.title || item.title) === 'Imported conversation'
+                {(local?.row.title || item.title) ===
+                IMPORTED_CONVERSATION_TITLE
                   ? t('Imported conversation')
                   : local?.row.title || item.title || t('New conversation')}
               </span>

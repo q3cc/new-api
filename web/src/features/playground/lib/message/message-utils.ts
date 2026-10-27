@@ -100,6 +100,11 @@ export function selectMessageVersion(message: Message, id: string): Message {
   }
 }
 
+/** The messages a request or an estimate sends, in the API's shape. */
+export function toChatMessages(messages: Message[]): ChatCompletionMessage[] {
+  return messages.filter(isValidMessage).map(formatMessageForAPI)
+}
+
 /** A reply that is still being requested or streamed. */
 export function isGeneratingMessage(message: Message): boolean {
   return (

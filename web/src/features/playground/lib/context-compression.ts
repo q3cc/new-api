@@ -32,6 +32,7 @@ import {
   getCurrentVersion,
   getMessageContent,
   isValidMessage,
+  toChatMessages,
 } from './message/message-utils'
 
 const messageHashes = new WeakMap<Message, string>()
@@ -247,10 +248,6 @@ export function shouldCompress(
   )
 }
 
-export function chatMessages(messages: Message[]): ChatCompletionMessage[] {
-  return messages.filter(isValidMessage).map(formatMessageForAPI)
-}
-
 type CompressOptions = {
   document: ConversationDocument
   capability: EffectiveCapability
@@ -426,13 +423,13 @@ export async function compressContext(
         estimateContext(
           document.config.model,
           document.config.group,
-          chatMessages(contextMessages(document)),
+          toChatMessages(contextMessages(document)),
           signal
         ),
         estimateContext(
           document.config.model,
           document.config.group,
-          chatMessages(contextMessages({ ...document, compression })),
+          toChatMessages(contextMessages({ ...document, compression })),
           signal
         ),
       ])

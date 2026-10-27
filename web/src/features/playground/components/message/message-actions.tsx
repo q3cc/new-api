@@ -30,6 +30,7 @@ import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { CopyButton } from '@/components/copy-button'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -41,7 +42,10 @@ import {
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 
-import { MESSAGE_ACTION_LABELS } from '../../constants'
+import {
+  MESSAGE_ACTION_BUTTON_STYLES,
+  MESSAGE_ACTION_LABELS,
+} from '../../constants'
 import { useMessageActionGuard } from '../../hooks/use-message-action-guard'
 import {
   getMessageActionState,
@@ -67,6 +71,8 @@ type MessageActionItem = {
   className?: string
   disabled?: boolean
   icon: LucideIcon
+  /** The shared copy button renders this action on wide screens. */
+  kind?: 'copy'
   label: string
   onClick: () => void
   variant?: 'default' | 'destructive'
@@ -113,6 +119,7 @@ export const MessageActions = memo(function MessageActions({
     actions.push({
       className: isCopied ? 'text-green-600' : '',
       icon: isCopied ? Check : Copy,
+      kind: 'copy',
       label: isCopied
         ? MESSAGE_ACTION_LABELS.COPIED
         : MESSAGE_ACTION_LABELS.COPY,
@@ -166,17 +173,28 @@ export const MessageActions = memo(function MessageActions({
         <div
           className={`hidden items-center gap-0.5 transition-opacity md:flex ${visibilityClass} ${className}`}
         >
-          {actions.map((action) => (
-            <MessageActionButton
-              className={action.className}
-              disabled={action.disabled}
-              icon={action.icon}
-              key={action.label}
-              label={t(action.label)}
-              onClick={action.onClick}
-              variant={action.variant}
-            />
-          ))}
+          {actions.map((action) =>
+            action.kind === 'copy' ? (
+              <CopyButton
+                key='copy'
+                value={content}
+                className={MESSAGE_ACTION_BUTTON_STYLES.BASE}
+                iconClassName={MESSAGE_ACTION_BUTTON_STYLES.ICON}
+                tooltip={t(MESSAGE_ACTION_LABELS.COPY)}
+                successTooltip={t(MESSAGE_ACTION_LABELS.COPIED)}
+              />
+            ) : (
+              <MessageActionButton
+                className={action.className}
+                disabled={action.disabled}
+                icon={action.icon}
+                key={action.label}
+                label={t(action.label)}
+                onClick={action.onClick}
+                variant={action.variant}
+              />
+            )
+          )}
         </div>
       </TooltipProvider>
 

@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { DEFAULT_CONFIG } from '../../constants'
 import type { PlaygroundConfig, ParameterEnabled } from '../../types'
 
 type ParameterValue = PlaygroundConfig[keyof PlaygroundConfig]
@@ -38,8 +39,8 @@ export const PLAYGROUND_PARAMETER_CONTROLS = [
     labelKey: 'Temperature',
     descriptionKey: 'Controls randomness and creativity',
     valueType: 'slider',
-    min: 0.1,
-    max: 1,
+    min: 0,
+    max: 2,
     step: 0.1,
   },
   {
@@ -47,7 +48,7 @@ export const PLAYGROUND_PARAMETER_CONTROLS = [
     labelKey: 'Top P',
     descriptionKey: 'Limits token selection to a probability mass',
     valueType: 'slider',
-    min: 0.1,
+    min: 0,
     max: 1,
     step: 0.1,
   },
@@ -74,7 +75,7 @@ export const PLAYGROUND_PARAMETER_CONTROLS = [
     labelKey: 'Max Tokens',
     descriptionKey: 'Caps the response length',
     valueType: 'number',
-    min: 0,
+    min: 1,
     max: 200000,
     step: 1,
   },
@@ -92,19 +93,37 @@ export const PLAYGROUND_PARAMETER_CONTROLS = [
 export const PLAYGROUND_PARAMETER_PANEL_SCROLL_CLASS =
   'max-h-[min(28rem,calc(100dvh-10rem))] overflow-y-auto overscroll-contain pr-1'
 
+/** The parameter values a conversation starts with. */
+export function defaultParameterConfig(): Pick<
+  PlaygroundConfig,
+  PlaygroundParameterKey
+> {
+  return {
+    temperature: DEFAULT_CONFIG.temperature,
+    top_p: DEFAULT_CONFIG.top_p,
+    max_tokens: DEFAULT_CONFIG.max_tokens,
+    frequency_penalty: DEFAULT_CONFIG.frequency_penalty,
+    presence_penalty: DEFAULT_CONFIG.presence_penalty,
+    seed: DEFAULT_CONFIG.seed,
+  }
+}
+
+// An emptied or unreadable field returns to the parameter's default, not to
+// zero, which is a real and unusual value for most of them.
 export function normalizeParameterNumberValue(
   key: PlaygroundParameterKey,
   value: string | number
 ): number | null {
+  const fallback = DEFAULT_CONFIG[key]
   if (value === '') {
-    return key === 'seed' ? null : 0
+    return fallback
   }
 
   const control = PLAYGROUND_PARAMETER_CONTROLS.find((item) => item.key === key)
   const parsed = typeof value === 'number' ? value : Number.parseFloat(value)
 
   if (!control || Number.isNaN(parsed)) {
-    return key === 'seed' ? null : 0
+    return fallback
   }
 
   const clamped = Math.min(control.max, Math.max(control.min, parsed))

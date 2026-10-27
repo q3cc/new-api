@@ -37,7 +37,10 @@ export function updateAssistantMessageWithError(
       status: MESSAGE_STATUS.ERROR,
       isReasoningStreaming: false,
       errorCode: errorCode || null,
-      errorMessage: `${title}: ${errorMessage}`,
+      errorMessage:
+        title && !errorMessage.startsWith(title)
+          ? `${title}: ${errorMessage}`
+          : errorMessage,
     })
   )
 }

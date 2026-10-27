@@ -16,8 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { z } from 'zod'
+
 import { ERROR_MESSAGES } from '../../constants'
-import type { ChatCompletionChunk } from '../../types'
 import { normalizeMessageErrorCode } from '../message/message-error-utils'
 
 const STREAM_DONE_MESSAGE = '[DONE]'
@@ -30,47 +31,79 @@ export type StreamMessageUpdate = {
   chunk: string
 }
 
-type StreamErrorPayload = {
-  error?:
-    | string
-    | {
-        code?: unknown
-        message?: unknown
-      }
-}
+// What arrives over the wire is checked rather than assumed; a payload of
+// another shape is ignored instead of crashing the stream.
+const streamErrorPayloadSchema = z.object({
+  error: z
+    .union([
+      z.string(),
+      z.object({
+        code: z.unknown().optional(),
+        message: z.unknown().optional(),
+      }),
+    ])
+    .nullish(),
+})
+const streamChunkSchema = z.object({
+  choices: z
+    .array(
+      z.object({
+        delta: z
+          .object({
+            content: z.string().nullish(),
+            reasoning_content: z.string().nullish(),
+            reasoning: z.string().nullish(),
+          })
+          .optional(),
+      })
+    )
+    .optional(),
+})
 
 export type StreamErrorDetails = {
   errorCode?: string
   errorMessage: string
 }
 
-export function parseStreamErrorDetails(data?: string): StreamErrorDetails {
-  const fallbackMessage = data || ERROR_MESSAGES.API_REQUEST_ERROR
-
+/**
+ * Reads the error a stream reported. A connection that never reached the
+ * server has no status and no body, which is a network failure, not a
+ * request error.
+ */
+export function parseStreamErrorDetails(
+  data?: string,
+  status?: number
+): StreamErrorDetails {
   if (!data) {
-    return { errorMessage: fallbackMessage }
-  }
-
-  try {
-    const parsed = JSON.parse(data) as StreamErrorPayload
-
-    if (!parsed?.error) {
-      return { errorMessage: fallbackMessage }
-    }
-
-    if (typeof parsed.error === 'string') {
-      return { errorMessage: parsed.error }
-    }
-
     return {
-      errorCode: normalizeMessageErrorCode(parsed.error.code),
       errorMessage:
-        typeof parsed.error.message === 'string' && parsed.error.message
-          ? parsed.error.message
-          : fallbackMessage,
+        status === 0 || status === undefined
+          ? ERROR_MESSAGES.NETWORK_ERROR
+          : ERROR_MESSAGES.API_REQUEST_ERROR,
     }
+  }
+  const fallbackMessage = data
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(data)
   } catch {
     return { errorMessage: fallbackMessage }
+  }
+  const payload = streamErrorPayloadSchema.safeParse(parsed)
+  if (!payload.success || !payload.data.error) {
+    return { errorMessage: fallbackMessage }
+  }
+  const error = payload.data.error
+  if (typeof error === 'string') {
+    return { errorMessage: error }
+  }
+  return {
+    errorCode: normalizeMessageErrorCode(error.code),
+    errorMessage:
+      typeof error.message === 'string' && error.message
+        ? error.message
+        : fallbackMessage,
   }
 }
 
@@ -78,11 +111,13 @@ export function parseStreamMessage(data: string): {
   updates: StreamMessageUpdate[]
   error?: StreamErrorDetails
 } {
-  const chunk = JSON.parse(data) as ChatCompletionChunk & StreamErrorPayload
-  if (chunk?.error != null) {
+  const parsed: unknown = JSON.parse(data)
+  const failure = streamErrorPayloadSchema.safeParse(parsed)
+  if (failure.success && failure.data.error != null) {
     return { updates: [], error: parseStreamErrorDetails(data) }
   }
-  const delta = chunk?.choices?.[0]?.delta
+  const chunk = streamChunkSchema.safeParse(parsed)
+  const delta = chunk.success ? chunk.data.choices?.[0]?.delta : undefined
 
   if (!delta) {
     return { updates: [] }

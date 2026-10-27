@@ -52,6 +52,7 @@ import {
   type CompressionSettings,
   type PlaygroundPreference,
 } from '../compression-api'
+import { MAX_CUSTOM_CONTEXT_LIMIT } from '../constants'
 import type { usePlaygroundCompression } from '../hooks/use-playground-compression'
 import { shouldCompress, validCompression } from '../lib/context-compression'
 import type {
@@ -61,7 +62,6 @@ import type {
 import type { GroupOption } from '../types'
 
 // Mirrors the server's bound for models the capability table does not know.
-const MAX_CUSTOM_CONTEXT_LIMIT = 10_000_000
 
 type Props = {
   entry: ConversationEntry
@@ -140,10 +140,11 @@ export function PlaygroundCompressionPanel(props: Props) {
   const models = (settingsCapabilities.data ?? [])
     .filter((item) => item.text_generation)
     .map((item) => ({ value: item.model, label: item.model }))
-  const { usage, budget, budgetAssumed, busy } = props.compression
+  const { usage, budget, budgetAssumed, assumedWindow, busy } =
+    props.compression
   const used = busy ? undefined : usage.data?.input_tokens
-  // An assumed window is only a trigger for compression, so like RikkaHub the
-  // count is shown on its own instead of a share of a guessed limit.
+  // An assumed window is a guess, so the count is shown with the assumption
+  // spelled out instead of as a share of a limit nobody confirmed.
   const shownBudget = budgetAssumed ? undefined : budget
   let usageText = t('Context size unavailable')
   if (budget !== undefined) {
@@ -154,8 +155,9 @@ export function PlaygroundCompressionPanel(props: Props) {
     } else if (shownBudget) {
       usageText = `${formatNumber(used, locale)} / ${formatNumber(shownBudget, locale)} tokens · ${formatNumber((used / shownBudget) * 100, locale)}%`
     } else {
-      usageText = t('{{tokens}} tokens (context limit unknown)', {
+      usageText = t('{{tokens}} tokens (assuming a {{window}} token window)', {
         tokens: formatNumber(used, locale),
+        window: formatNumber(assumedWindow ?? 0, locale),
       })
     }
   }
@@ -323,11 +325,6 @@ export function PlaygroundCompressionPanel(props: Props) {
                         ...row.document,
                         compression: undefined,
                         compressionAttempt: undefined,
-                        compressionSettings: {
-                          model: selected?.model ?? '',
-                          group: selected?.group,
-                          automatic: false,
-                        },
                       },
                     }))
                   }

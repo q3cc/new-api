@@ -88,7 +88,7 @@ function conversation(): SavedConversation {
     id: 12,
     title: '中文/测试:会话?',
     revision: 1,
-    create_time: 1700000000,
+    create_time: 1700000000000,
     update_time: 1700000001,
     document,
   }

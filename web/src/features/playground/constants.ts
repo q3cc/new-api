@@ -66,12 +66,12 @@ export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
   seed: false,
 }
 
-// Storage keys
-export const STORAGE_KEYS = {
-  CONFIG: 'playground_config',
-  MESSAGES: 'playground_messages',
-  PARAMETER_ENABLED: 'playground_parameter_enabled',
-} as const
+/** The title the server gives a conversation imported from local storage. */
+export const IMPORTED_CONVERSATION_TITLE = 'Imported conversation'
+/** The server refuses a conversation document above this size. */
+export const CONVERSATION_SIZE_LIMIT_BYTES = 8 * 1024 * 1024
+/** The largest context window a user may enter by hand. */
+export const MAX_CUSTOM_CONTEXT_LIMIT = 10_000_000
 
 // Error messages
 export const ERROR_MESSAGES = {

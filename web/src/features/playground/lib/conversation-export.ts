@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { nanoid } from 'nanoid'
 
+import { MESSAGE_STATUS } from '../constants'
 import type { SavedConversation } from '../conversations-api'
 import { getMessageContent } from './message/message-utils'
 
@@ -63,7 +64,11 @@ export function exportConversation(
     // Leave message Markdown intact, especially nested code fences and images.
     const content = `${[
       `# ${title.replaceAll(/[\r\n]+/g, ' ')}`,
-      ...messages.map(({ message, text }) => `## ${message.from}\n\n${text}`),
+      ...messages.map(({ message, text }) =>
+        message.status === MESSAGE_STATUS.INTERRUPTED
+          ? `## ${message.from}\n\n${text}\n\n_(generation was interrupted)_`
+          : `## ${message.from}\n\n${text}`
+      ),
     ].join('\n\n')}\n`
     return { filename, content, mimeType: 'text/markdown;charset=utf-8' }
   }
@@ -81,9 +86,10 @@ export function exportConversation(
         : {}),
     })),
   }
+  // The server records creation time in milliseconds already.
   const createdAt =
     conversation.create_time > 0
-      ? conversation.create_time * 1000
+      ? conversation.create_time
       : exportedAt.getTime()
   const backup = {
     configVersion: 15,

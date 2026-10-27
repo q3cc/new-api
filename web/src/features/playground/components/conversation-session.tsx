@@ -20,12 +20,14 @@ import { isAxiosError } from 'axios'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import {
   getServerErrorMessage,
   translateServerText,
 } from '@/lib/server-error-message'
 
+import { DEFAULT_PARAMETER_ENABLED } from '../constants'
 import { CONVERSATION_SIZE_LIMIT_MESSAGE } from '../conversations-api'
 import {
   useChatHandler,
@@ -41,12 +43,16 @@ import {
   type ConversationEntry,
   type ConversationWorkspace,
 } from '../lib/conversation-workspace'
-import { interruptMessages } from '../lib/message/conversation-message-utils'
+import {
+  interruptMessages,
+  withdrawUnsavedQuestion,
+} from '../lib/message/conversation-message-utils'
 import {
   getMessageErrorText,
   parseContextLimit,
 } from '../lib/message/message-error-utils'
 import { isGeneratingMessage } from '../lib/message/message-utils'
+import { defaultParameterConfig } from '../lib/parameters/playground-parameters'
 import type { Message } from '../types'
 import { PlaygroundChat } from './chat/playground-chat'
 import { PlaygroundInput } from './input/playground-input'
@@ -97,6 +103,8 @@ function ConversationSessionBody(props: Props) {
   const [preparationError, setPreparationError] = useState<unknown>()
   const preparing = useRef<AbortController | null>(null)
   const generation = useRef(0)
+  // The messages of the last request, so a failed preparation can be retried.
+  const lastRequest = useRef<Message[]>([])
   const key = props.entry.key
   const workspace = props.workspace
   const compression = usePlaygroundCompression(
@@ -155,7 +163,7 @@ function ConversationSessionBody(props: Props) {
   useEffect(() => workspace.registerStop(key, stop), [key, workspace, stop])
   const prepare = compression.prepare
   const sendChat = useCallback(
-    (messages: Message[]) => {
+    (messages: Message[], options?: { skipCompression?: boolean }) => {
       const saveError = workspace.getSnapshot().entries[key]?.error
       if (
         !workspace.isActive() ||
@@ -163,6 +171,7 @@ function ConversationSessionBody(props: Props) {
       ) {
         return
       }
+      lastRequest.current = messages
       const request = ++generation.current
       const controller = new AbortController()
       preparing.current?.abort()
@@ -174,16 +183,32 @@ function ConversationSessionBody(props: Props) {
         .then(async (saved) => {
           if (!workspace.isActive() || request !== generation.current) return
           if (saved) {
-            const context = await prepare(messages, controller.signal)
+            const context = await prepare(messages, controller.signal, options)
             if (!workspace.isActive() || request !== generation.current) return
             setStarting(false)
             sendRequest(context)
-          } else {
-            workspace.update(key, (row) => ({
-              ...row,
-              document: interruptedDocument(row.document),
-            }))
+            return
           }
+          // The question was never saved: give its text back to the input
+          // rather than leaving an unsent question in the chat.
+          workspace.update(key, (row) => {
+            const withdrawn = withdrawUnsavedQuestion(
+              row.document.messages,
+              workspace.getSnapshot().entries[key]?.saved?.document.messages
+            )
+            if (!withdrawn) {
+              return { ...row, document: interruptedDocument(row.document) }
+            }
+            const draft = row.document.draft.trim()
+            return {
+              ...row,
+              document: {
+                ...row.document,
+                messages: withdrawn.messages,
+                draft: draft ? `${withdrawn.text}\n${draft}` : withdrawn.text,
+              },
+            }
+          })
         })
         .catch((error: unknown) => {
           if (
@@ -222,6 +247,13 @@ function ConversationSessionBody(props: Props) {
       stop()
     }
   }, [props.entry.error, stop])
+  const retryPreparation = useCallback(
+    (skipCompression: boolean) => {
+      const messages = lastRequest.current
+      if (messages.length) sendChat(messages, { skipCompression })
+    },
+    [sendChat]
+  )
   if (!props.active) return null
   return (
     <ConversationView
@@ -233,6 +265,7 @@ function ConversationSessionBody(props: Props) {
       stop={stop}
       compression={compression}
       preparationError={preparationError}
+      onRetryPreparation={retryPreparation}
     />
   )
 }
@@ -243,10 +276,13 @@ type ViewProps = Props & {
   conversation: ReturnType<typeof usePlaygroundConversation>
   generating: boolean
   stop: () => void
+  /** Sends the last request again, with or without compressing first. */
+  onRetryPreparation: (skipCompression: boolean) => void
 }
 
 function ConversationView(props: ViewProps) {
   const { t } = useTranslation()
+  const [confirmReload, setConfirmReload] = useState(false)
   const document = props.entry.row.document
   const updateConfig = useCallback(
     <K extends keyof typeof document.config>(
@@ -319,15 +355,33 @@ function ConversationView(props: ViewProps) {
       />
       {!!props.preparationError && (
         <div
-          className='text-destructive shrink-0 px-4 py-2 text-sm'
+          className='text-destructive flex shrink-0 flex-wrap items-center gap-2 px-4 py-2 text-sm'
           role='alert'
         >
-          {t(
-            getServerErrorMessage(
-              props.preparationError,
-              'Compression did not complete'
-            )
-          )}
+          <span>
+            {t(
+              getServerErrorMessage(
+                props.preparationError,
+                'Compression did not complete'
+              )
+            )}
+          </span>
+          <Button
+            size='sm'
+            variant='outline'
+            disabled={props.generating}
+            onClick={() => props.onRetryPreparation(false)}
+          >
+            {t('Retry compression')}
+          </Button>
+          <Button
+            size='sm'
+            variant='outline'
+            disabled={props.generating}
+            onClick={() => props.onRetryPreparation(true)}
+          >
+            {t('Send without compressing')}
+          </Button>
         </div>
       )}
       {!!error && (
@@ -353,9 +407,9 @@ function ConversationView(props: ViewProps) {
             <Button
               size='sm'
               variant='outline'
-              onClick={() => props.onReload(props.entry.key)}
+              onClick={() => setConfirmReload(true)}
             >
-              {t('Load latest conversation')}
+              {t('Discard local changes and load latest')}
             </Button>
           )}
           {status !== 409 && !deleted && (
@@ -371,6 +425,24 @@ function ConversationView(props: ViewProps) {
             {t('Save as new conversation')}
           </Button>
         </div>
+      )}
+      {confirmReload && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setConfirmReload(false)
+          }}
+          title={t('Load the latest version?')}
+          desc={t(
+            'The changes made here since the last save will be lost. Save as a new conversation first to keep them.'
+          )}
+          destructive
+          confirmText={t('Load latest')}
+          handleConfirm={() => {
+            setConfirmReload(false)
+            props.onReload(props.entry.key)
+          }}
+        />
       )}
       <div className='min-h-0 flex-1 overflow-hidden'>
         <PlaygroundChat
@@ -433,6 +505,16 @@ function ConversationView(props: ViewProps) {
                   ...row.document.parameterEnabled,
                   [key]: value,
                 },
+              },
+            }))
+          }
+          onResetParameters={() =>
+            props.workspace.update(props.entry.key, (row) => ({
+              ...row,
+              document: {
+                ...row.document,
+                config: { ...row.document.config, ...defaultParameterConfig() },
+                parameterEnabled: { ...DEFAULT_PARAMETER_ENABLED },
               },
             }))
           }

@@ -28,7 +28,12 @@ import {
   type Compression,
   type CompressionSettings,
 } from './compression-api'
-import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from './constants'
+import {
+  CONVERSATION_SIZE_LIMIT_BYTES,
+  DEFAULT_CONFIG,
+  DEFAULT_PARAMETER_ENABLED,
+  IMPORTED_CONVERSATION_TITLE,
+} from './constants'
 import {
   messagesSchema,
   parameterEnabledSchema,
@@ -157,7 +162,7 @@ export function emptyConversationDocument(
 
 export function parseConversation(row: SavedConversation): SavedConversation {
   let titleGeneration: ConversationDocument['titleGeneration'] = 'manual'
-  if (row.title === 'Imported conversation') titleGeneration = 'ready'
+  if (row.title === IMPORTED_CONVERSATION_TITLE) titleGeneration = 'ready'
   else if (!row.title) titleGeneration = 'awaiting_reply'
   return {
     ...row,
@@ -220,7 +225,6 @@ export async function getConversation(id: number, signal?: AbortSignal) {
 /** The server's own wording for a document over its 8MB limit. */
 export const CONVERSATION_SIZE_LIMIT_MESSAGE =
   'Conversation exceeds the size limit'
-export const CONVERSATION_SIZE_LIMIT_BYTES = 8 * 1024 * 1024
 
 // The body is measured without encoding a second copy of it.
 function serializeWithinLimit(value: unknown): string {

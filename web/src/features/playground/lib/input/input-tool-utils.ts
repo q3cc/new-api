@@ -46,11 +46,9 @@ export const ATTACHMENT_ACTIONS = [
   { action: 'take-photo', icon: CameraIcon, label: 'Take photo' },
 ] satisfies AttachmentAction[]
 
-export function getAttachmentActionNotice(action: string): InputToolNotice {
-  return {
-    description: action,
-    title: 'Feature in development',
-  }
+// The action id is for the menu, not for the user.
+export function getAttachmentActionNotice(_action: string): InputToolNotice {
+  return { title: 'Feature in development' }
 }
 
 export function getSearchActionNotice(): InputToolNotice {
