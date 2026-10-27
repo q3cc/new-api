@@ -65,3 +65,54 @@ it('leaves a failed reply out of the request but keeps a stopped one', () => {
   expect(sent).toContain('2 + 2 is')
   expect(sent).not.toContain('HTTP 429')
 })
+
+it('sends only the enabled parameters and leaves an unset seed out', () => {
+  const messages: Message[] = [
+    { key: 'q', from: 'user', versions: [{ id: 'q', content: 'hi' }] },
+  ]
+  const config = {
+    model: 'm',
+    group: 'g',
+    temperature: 0.3,
+    top_p: 0.5,
+    max_tokens: 64,
+    frequency_penalty: 1,
+    presence_penalty: -1,
+    seed: null,
+    stream: false,
+  }
+  const minimal = buildChatCompletionPayload(messages, config, {
+    temperature: false,
+    top_p: false,
+    max_tokens: false,
+    frequency_penalty: false,
+    presence_penalty: false,
+    seed: true,
+  })
+  expect(minimal).toEqual({
+    model: 'm',
+    group: 'g',
+    stream: false,
+    messages: [{ role: 'user', content: 'hi' }],
+  })
+  const full = buildChatCompletionPayload(
+    messages,
+    { ...config, seed: 7 },
+    {
+      temperature: true,
+      top_p: true,
+      max_tokens: true,
+      frequency_penalty: true,
+      presence_penalty: true,
+      seed: true,
+    }
+  )
+  expect(full).toMatchObject({
+    temperature: 0.3,
+    top_p: 0.5,
+    max_tokens: 64,
+    frequency_penalty: 1,
+    presence_penalty: -1,
+    seed: 7,
+  })
+})
