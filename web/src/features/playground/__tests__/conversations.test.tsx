@@ -48,8 +48,10 @@ import {
 } from '../compression-api'
 import * as conversationsApi from '../conversations-api'
 import {
+  applyConversationPatch,
   conversationSearchSchema,
   emptyConversationDocument,
+  type ConversationPatch,
   type SavedConversation,
   type ConversationWrite,
 } from '../conversations-api'
@@ -177,6 +179,21 @@ beforeEach(() => {
       ...previous,
       title: write.title,
       document: write.document,
+      revision: previous.revision + 1,
+    }
+    records.set(id, structuredClone(value))
+    return { data: { success: true, data: value } }
+  })
+  vi.spyOn(api, 'patch').mockImplementation(async (url, body) => {
+    if (failSave) throw new Error('Save unavailable')
+    const patch = JSON.parse(body as string) as ConversationPatch
+    const id = Number(url?.split('/').at(-1))
+    const previous = records.get(id)
+    if (!previous) throw notFound()
+    const value = {
+      ...previous,
+      title: patch.title ?? previous.title,
+      document: applyConversationPatch(previous.document, patch.patch),
       revision: previous.revision + 1,
     }
     records.set(id, structuredClone(value))

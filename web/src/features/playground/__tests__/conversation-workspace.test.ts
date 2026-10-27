@@ -26,11 +26,16 @@ import { useAuthStore } from '@/stores/auth-store'
 import * as conversationsApi from '../conversations-api'
 import {
   emptyConversationDocument,
+  type ConversationDocument,
+  type ConversationPatch,
   type ConversationWrite,
   type SavedConversation,
 } from '../conversations-api'
 import * as compression from '../lib/context-compression'
-import { ConversationWorkspace } from '../lib/conversation-workspace'
+import {
+  ConversationWorkspace,
+  saveErrorKind,
+} from '../lib/conversation-workspace'
 import * as pending from '../lib/storage/pending-conversations'
 import type { ChatCompletionRequest } from '../types'
 
@@ -41,6 +46,7 @@ let failSave: boolean
 let loseResponse: boolean
 let failImport: boolean
 let writes: ConversationWrite[]
+let patches: ConversationPatch[]
 const operationResults = new Map<string, SavedConversation>()
 let titleCalls: {
   payload: ChatCompletionRequest
@@ -181,6 +187,7 @@ beforeEach(() => {
   cached = new Map()
   workspaces = []
   writes = []
+  patches = []
   titleCalls = []
   failSave = loseResponse = failImport = false
   operationResults.clear()
@@ -272,6 +279,36 @@ beforeEach(() => {
     }
     return { data: { success: true, data: structuredClone(row) } }
   })
+  vi.spyOn(api, 'patch').mockImplementation(async (url, body) => {
+    const patch = JSON.parse(body as string) as ConversationPatch
+    patches.push(structuredClone(patch))
+    if (failSave) throw networkError()
+    const id = Number(url?.split('/').at(-1))
+    const previous = rows.get(id)
+    if (!previous) throw responseError(404)
+    let row = operationResults.get(patch.operation_id)
+    if (!row) {
+      if (previous.revision !== patch.revision) throw responseError(409)
+      const document = { ...previous.document } as Record<string, unknown>
+      for (const [key, value] of Object.entries(patch.patch)) {
+        if (value === null) delete document[key]
+        else document[key] = value
+      }
+      row = {
+        ...previous,
+        title: patch.title ?? previous.title,
+        document: document as unknown as ConversationDocument,
+        revision: previous.revision + 1,
+      }
+      rows.set(id, structuredClone(row))
+      operationResults.set(patch.operation_id, structuredClone(row))
+    }
+    if (loseResponse) {
+      loseResponse = false
+      throw networkError()
+    }
+    return { data: { success: true, data: structuredClone(row) } }
+  })
   vi.spyOn(api, 'delete').mockImplementation(async (url) => {
     rows.delete(Number(url?.split('/').at(-1)))
     return { data: { success: true, data: null } }
@@ -328,14 +365,17 @@ it('retains offline edits and retries a lost response with the same operation ID
   failSave = true
   expect(await client.flush(key)).toBe(false)
   expect([...cached.values()][0].row.document.draft).toBe('must survive')
-  const operation = writes.at(-1)?.operation_id
+  // Only the draft changed, so the retried write is a settings patch.
+  const operation = patches.at(-1)?.operation_id
+  expect(operation).toBeTruthy()
   failSave = false
   loseResponse = true
   expect(await client.flush(key)).toBe(false)
   expect(rows.get(1)?.revision).toBe(2)
   expect(await client.flush(key)).toBe(true)
-  expect(writes.at(-1)?.operation_id).toBe(operation)
+  expect(patches.at(-1)?.operation_id).toBe(operation)
   expect(rows.get(1)?.revision).toBe(2)
+  expect(rows.get(1)?.document.draft).toBe('must survive')
   expect(cached.size).toBe(0)
 })
 
@@ -350,14 +390,130 @@ it('joins concurrent opens and caches edits before the next scheduled server sav
     ...row,
     document: { ...row.document, draft: 'just typed' },
   }))
-  await waitFor(() =>
-    expect(
-      [...cached.values()].some(
-        (item) => item.row.document.draft === 'just typed'
-      )
-    ).toBe(true)
+  await waitFor(
+    () =>
+      expect(
+        [...cached.values()].some(
+          (item) => item.row.document.draft === 'just typed'
+        )
+      ).toBe(true),
+    { timeout: 3000 }
   )
   expect(rows.get(1)?.document.draft).toBe('')
+})
+
+it('writes the local cache at most once a second while a reply streams and at once when it settles', async () => {
+  vi.useFakeTimers()
+  const client = workspace()
+  const key = (await client.create(emptyConversationDocument())) ?? ''
+  const cacheWrites = vi.mocked(pending.writePendingConversation)
+  const before = cacheWrites.mock.calls.length
+  for (let step = 1; step <= 60; step++) {
+    client.update(key, (row) => ({
+      ...row,
+      document: {
+        ...row.document,
+        messages: [message('x'.repeat(step), 'streaming')],
+      },
+    }))
+    await vi.advanceTimersByTimeAsync(50)
+  }
+  expect(cacheWrites.mock.calls.length - before).toBeLessThanOrEqual(4)
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, messages: [message('x'.repeat(60))] },
+  }))
+  await vi.advanceTimersByTimeAsync(10)
+  // The finished reply reaches the cache before the save that then clears it.
+  expect(
+    cacheWrites.mock.calls.some(
+      ([, , value]) =>
+        value?.row.document.messages[0]?.versions[0].content === 'x'.repeat(60)
+    )
+  ).toBe(true)
+  expect(cached.size).toBe(0)
+})
+
+function savedRow(id: number): SavedConversation {
+  return {
+    id,
+    title: 'Saved',
+    revision: 1,
+    create_time: 1,
+    update_time: 1,
+    document: { ...emptyConversationDocument(), messages: [message('kept')] },
+  }
+}
+
+it('patches only the changed settings while the messages are unchanged and writes the whole document once they change', async () => {
+  rows.set(1, savedRow(1))
+  const client = workspace()
+  const key = (await client.open(1)) ?? ''
+  client.update(key, (row) => ({
+    ...row,
+    document: {
+      ...row.document,
+      config: { ...row.document.config, temperature: 0.2 },
+      draft: 'typed',
+    },
+  }))
+  expect(await client.flush(key)).toBe(true)
+  expect(writes).toHaveLength(0)
+  expect(patches).toHaveLength(1)
+  expect(Object.keys(patches[0].patch).sort()).toEqual(['config', 'draft'])
+  expect(patches[0].title).toBeUndefined()
+  expect(JSON.stringify(patches[0])).not.toContain('kept')
+  expect(rows.get(1)?.document.config.temperature).toBe(0.2)
+  expect(rows.get(1)?.document.messages[0].versions[0].content).toBe('kept')
+  expect(client.getSnapshot().entries[key].row.revision).toBe(2)
+
+  client.rename(key, 'Renamed')
+  expect(await client.flush(key)).toBe(true)
+  expect(patches).toHaveLength(2)
+  expect(patches[1].revision).toBe(2)
+  expect(patches[1].title).toBe('Renamed')
+  expect(Object.keys(patches[1].patch)).toEqual(['titleGeneration'])
+  expect(rows.get(1)?.title).toBe('Renamed')
+
+  client.update(key, (row) => ({
+    ...row,
+    document: {
+      ...row.document,
+      messages: [
+        ...row.document.messages,
+        { ...message('new reply'), key: 'second' },
+      ],
+    },
+  }))
+  expect(await client.flush(key)).toBe(true)
+  expect(patches).toHaveLength(2)
+  expect(writes).toHaveLength(1)
+  expect(writes[0].document.messages).toHaveLength(2)
+  expect(writes[0].revision).toBe(3)
+})
+
+it('keeps a conflicting settings patch waiting for the user like a conflicting save', async () => {
+  rows.set(1, savedRow(1))
+  const client = workspace()
+  const key = (await client.open(1)) ?? ''
+  rows.set(1, { ...savedRow(1), revision: 5 })
+  client.update(key, (row) => ({
+    ...row,
+    document: { ...row.document, draft: 'typed elsewhere too' },
+  }))
+  client.update(key, (row) => ({
+    ...row,
+    document: {
+      ...row.document,
+      config: { ...row.document.config, temperature: 0.1 },
+    },
+  }))
+  expect(await client.flush(key)).toBe(false)
+  const entry = client.getSnapshot().entries[key]
+  expect(saveErrorKind(entry.error)).toBe('conflict')
+  expect(entry.saving).toBe(false)
+  expect(entry.pending).toBeUndefined()
+  expect(patches).toHaveLength(1)
 })
 
 it('keeps a draft-only edit local until the next real save carries it to the server', async () => {
@@ -426,14 +582,14 @@ it('backs off after rate limiting and preserves a single pending operation', asy
   }))
   const error = responseError(429)
   if (error.response) error.response.headers['retry-after'] = '3'
-  vi.mocked(api.put).mockRejectedValueOnce(error)
+  vi.mocked(api.patch).mockRejectedValueOnce(error)
   expect(await client.flush(key)).toBe(false)
   const operation = client.getSnapshot().entries[key].pending?.operation_id
   expect(await client.flush(key)).toBe(false)
   expect(rows.get(1)?.revision).toBe(1)
   await vi.advanceTimersByTimeAsync(4000)
   expect(rows.get(1)?.document.draft).toBe('rate limited')
-  expect(writes.at(-1)?.operation_id).toBe(operation)
+  expect(patches.at(-1)?.operation_id).toBe(operation)
   expect(cached.size).toBe(0)
 })
 

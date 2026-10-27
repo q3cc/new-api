@@ -23,12 +23,17 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import type { ModelCapability } from '../compression-api'
 import {
+  applyConversationPatch,
+  changedDocumentKeys,
   deleteConversation,
   getConversation,
   importConversation,
+  isConversationPatch,
   parseConversation,
+  patchConversation,
   writeConversation,
   type ConversationDocument,
+  type ConversationPatch,
   type ConversationWrite,
   type SavedConversation,
   type ImportProgress,
@@ -63,9 +68,17 @@ export type ConversationEntry = {
   failures?: number
   /** When a save that failed on the network or the server is tried again. */
   retryAt?: number
-  pending?: ConversationWrite
+  pending?: ConversationWrite | ConversationPatch
   pendingVersion?: number
+  /**
+   * The conversation as the server last confirmed it. While the messages are
+   * still that array, a save sends only the fields that differ from it.
+   */
+  saved?: SavedConversation
 }
+// Streaming replies update many times a second; the crash-recovery cache is
+// written at most this often per conversation and at once when a reply ends.
+const CACHE_DELAY = 1000
 type Snapshot = {
   entries: Record<string, ConversationEntry>
   migrationError?: unknown
@@ -90,6 +103,7 @@ export function saveErrorKind(
 export function interruptedDocument(
   document: ConversationDocument
 ): ConversationDocument {
+  if (!isGenerating(document)) return document
   return {
     ...document,
     messages: document.messages.map((message) =>
@@ -115,12 +129,43 @@ function isDraftOnlyChange(
   previous: SavedConversation,
   next: SavedConversation
 ): boolean {
-  if (previous.title !== next.title) return false
-  const before = previous.document as Record<string, unknown>
-  const after = next.document as Record<string, unknown>
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
-  keys.delete('draft')
-  return [...keys].every((key) => before[key] === after[key])
+  return (
+    previous.title === next.title &&
+    changedDocumentKeys(previous.document, next.document).every(
+      (key) => key === 'draft'
+    )
+  )
+}
+
+// What a save has to send: the whole document for a new conversation or
+// changed messages, otherwise only the fields that differ from the server's
+// copy, or nothing when the two already agree.
+function describeWrite(
+  entry: ConversationEntry
+): ConversationWrite | ConversationPatch | undefined {
+  const row = entry.row
+  const saved = entry.saved
+  const operation_id = crypto.randomUUID()
+  if (!row.id || !saved || row.document.messages !== saved.document.messages) {
+    return {
+      operation_id,
+      revision: row.revision,
+      title: row.title,
+      document: row.document,
+    }
+  }
+  const patch: Record<string, unknown> = {}
+  for (const key of changedDocumentKeys(saved.document, row.document)) {
+    patch[key] = row.document[key] ?? null
+  }
+  const title = row.title === saved.title ? undefined : row.title
+  if (!Object.keys(patch).length && title === undefined) return undefined
+  return {
+    operation_id,
+    revision: row.revision,
+    title,
+    patch: patch as ConversationPatch['patch'],
+  }
 }
 
 export class ConversationWorkspace {
@@ -130,6 +175,7 @@ export class ConversationWorkspace {
   private timer: ReturnType<typeof setTimeout> | undefined
   private taskQueue: Promise<unknown> = Promise.resolve()
   private cacheQueue: Promise<unknown> = Promise.resolve()
+  private cacheTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private stopped = false
   private stopHandlers = new Map<string, () => void>()
   private unsubscribeAuth?: () => void
@@ -201,7 +247,24 @@ export class ConversationWorkspace {
         .catch(() => resolve(false))
     })
   }
+  // The cache is written soon, with whatever the entry holds by then.
+  private cacheLater(key: string) {
+    if (this.cacheTimers.has(key) || !this.isActive()) return
+    this.cacheTimers.set(
+      key,
+      setTimeout(() => {
+        this.cacheTimers.delete(key)
+        const entry = this.snapshot.entries[key]
+        if (entry) void this.cache(entry)
+      }, CACHE_DELAY)
+    )
+  }
   private cache(entry: ConversationEntry) {
+    const timer = this.cacheTimers.get(entry.key)
+    if (timer) {
+      clearTimeout(timer)
+      this.cacheTimers.delete(entry.key)
+    }
     const value: PendingConversation = {
       owner: this.owner,
       key: entry.key,
@@ -309,6 +372,7 @@ export class ConversationWorkspace {
       localVersion: 0,
       dirty: false,
       saving: false,
+      saved: row,
     }
     // A reload discards pending edits only after fetching a valid replacement.
     this.setEntry(entry)
@@ -390,14 +454,19 @@ export class ConversationWorkspace {
       error,
     }
     this.setEntry(entry)
-    void this.cache(entry)
     const wasPending = isGenerating(previous.row.document)
     const isPending = isGenerating(row.document)
-    if (wasPending && !isPending && !entry.error) void this.flush(key)
+    if (wasPending && !isPending) {
+      // A finished reply is kept at once; a save follows unless one failed.
+      void this.cache(entry)
+      if (!entry.error) void this.flush(key)
+      return
+    }
+    this.cacheLater(key)
     // A reply in progress is saved once when it settles, and a draft rides
     // along with the next save; both stay in the local cache meanwhile, so
     // neither re-uploads the whole document every few seconds.
-    else if (!isPending && !draftOnly) this.schedule()
+    if (!isPending && !draftOnly) this.schedule()
   }
   rename(key: string, title: string) {
     this.cancelTitle(key)
@@ -642,11 +711,13 @@ export class ConversationWorkspace {
       this.schedule()
       return false
     }
-    const write = entry.pending ?? {
-      operation_id: crypto.randomUUID(),
-      revision: entry.row.revision,
-      title: entry.row.title,
-      document: entry.row.document,
+    const write = entry.pending ?? describeWrite(entry)
+    if (!write) {
+      // The server already holds this state; there is nothing to send.
+      const clean = { ...entry, dirty: false, draftOnly: false }
+      this.setEntry(clean)
+      await this.cache(clean)
+      return true
     }
     const sentVersion = entry.pendingVersion ?? entry.localVersion
     // Once a save is requested the change is no longer local-only, so a
@@ -664,14 +735,22 @@ export class ConversationWorkspace {
     await this.cache(entry)
     if (!this.isActive() || !this.snapshot.entries[key]) return false
     try {
-      const saved = await writeConversation(
-        entry.row.id || null,
-        write,
-        this.controller.signal
-      )
+      const saved = isConversationPatch(write)
+        ? await patchConversation(entry.row.id, write, this.controller.signal)
+        : await writeConversation(
+            entry.row.id || null,
+            write,
+            this.controller.signal
+          )
       const current = this.snapshot.entries[key]
       if (!this.isActive() || !current) return false
       const dirty = current.localVersion !== sentVersion
+      const sentDocument = isConversationPatch(write)
+        ? applyConversationPatch(
+            current.saved?.document ?? entry.row.document,
+            write.patch
+          )
+        : write.document
       const next = {
         ...current,
         row: {
@@ -679,6 +758,7 @@ export class ConversationWorkspace {
           title: current.row.title,
           document: current.row.document,
         },
+        saved: { ...saved, document: sentDocument },
         dirty,
         draftOnly: false,
         saving: false,
@@ -777,6 +857,8 @@ export class ConversationWorkspace {
     this.stopped = true
     this.controller.abort()
     if (this.timer) clearTimeout(this.timer)
+    for (const timer of this.cacheTimers.values()) clearTimeout(timer)
+    this.cacheTimers.clear()
     this.unsubscribeAuth?.()
     void this.cacheQueue.finally(() => {
       for (const release of this.leases.values()) release()

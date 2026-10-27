@@ -69,6 +69,62 @@ export type ConversationWrite = {
   title: string
   document: ConversationDocument
 }
+/** Every field of a document, so comparisons never miss a new one. */
+export const DOCUMENT_KEYS = [
+  'messages',
+  'config',
+  'parameterEnabled',
+  'draft',
+  'compressionSettings',
+  'contextLimits',
+  'compression',
+  'compressionAttempt',
+  'titleGeneration',
+] as const satisfies readonly (keyof ConversationDocument)[]
+export type PatchableDocumentKey = Exclude<
+  keyof ConversationDocument,
+  'messages'
+>
+/**
+ * A change to the title or to document fields other than the messages. A
+ * `null` value removes the field; the server merges it into the saved
+ * document so the messages are not uploaded again.
+ */
+export type ConversationPatch = {
+  operation_id: string
+  revision: number
+  title?: string
+  patch: Partial<
+    Record<
+      PatchableDocumentKey,
+      ConversationDocument[PatchableDocumentKey] | null
+    >
+  >
+}
+export function isConversationPatch(
+  write: ConversationWrite | ConversationPatch
+): write is ConversationPatch {
+  return 'patch' in write
+}
+export function changedDocumentKeys(
+  before: ConversationDocument,
+  after: ConversationDocument
+): (keyof ConversationDocument)[] {
+  return DOCUMENT_KEYS.filter((key) => before[key] !== after[key])
+}
+export function applyConversationPatch(
+  document: ConversationDocument,
+  patch: ConversationPatch['patch']
+): ConversationDocument {
+  const merged: Record<string, unknown> = { ...document }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete merged[key]
+    else merged[key] = value
+  }
+  return merged as unknown as ConversationDocument
+}
+/** The server lists this many conversations per page. */
+export const CONVERSATION_PAGE_SIZE = 30
 export type LegacySource = {
   messages: string | null
   config: string | null
@@ -150,7 +206,7 @@ export async function listConversations(
   const res = await api.get<
     Envelope<{ items: ConversationSummary[]; total: number }>
   >(path, {
-    params: { keyword, p: page, page_size: 30 },
+    params: { keyword, p: page, page_size: CONVERSATION_PAGE_SIZE },
     signal,
   })
   return requireServerSuccess(res.data).data
@@ -164,23 +220,44 @@ export async function getConversation(id: number, signal?: AbortSignal) {
 /** The server's own wording for a document over its 8MB limit. */
 export const CONVERSATION_SIZE_LIMIT_MESSAGE =
   'Conversation exceeds the size limit'
+export const CONVERSATION_SIZE_LIMIT_BYTES = 8 * 1024 * 1024
+
+// The body is measured without encoding a second copy of it.
+function serializeWithinLimit(value: unknown): string {
+  const body = JSON.stringify(value)
+  if (new Blob([body]).size > CONVERSATION_SIZE_LIMIT_BYTES) {
+    throw new Error(CONVERSATION_SIZE_LIMIT_MESSAGE)
+  }
+  return body
+}
+
+// The caller keeps the document it sent, so only the saved metadata comes
+// back instead of a second copy of the whole conversation.
+function savedConfig(signal?: AbortSignal) {
+  return {
+    signal,
+    params: { return: 'meta' },
+    headers: { 'Content-Type': 'application/json' },
+  }
+}
+
+function summaryOf(saved: ConversationSummary): ConversationSummary {
+  return {
+    id: saved.id,
+    title: saved.title,
+    revision: saved.revision,
+    create_time: saved.create_time,
+    update_time: saved.update_time,
+  }
+}
 
 export async function writeConversation(
   id: number | null,
   write: ConversationWrite,
   signal?: AbortSignal
 ) {
-  const body = JSON.stringify(write)
-  if (new TextEncoder().encode(body).byteLength > 8 * 1024 * 1024) {
-    throw new Error(CONVERSATION_SIZE_LIMIT_MESSAGE)
-  }
-  // The caller keeps the document it sent, so only the saved metadata comes
-  // back instead of a second copy of the whole conversation.
-  const config = {
-    signal,
-    params: { return: 'meta' },
-    headers: { 'Content-Type': 'application/json' },
-  }
+  const body = serializeWithinLimit(write)
+  const config = savedConfig(signal)
   const res =
     id === null
       ? await api.post<Envelope<ConversationSummary>>(path, body, config)
@@ -189,14 +266,19 @@ export async function writeConversation(
           body,
           config
         )
-  const saved = requireServerSuccess(res.data).data
-  return {
-    id: saved.id,
-    title: saved.title,
-    revision: saved.revision,
-    create_time: saved.create_time,
-    update_time: saved.update_time,
-  }
+  return summaryOf(requireServerSuccess(res.data).data)
+}
+export async function patchConversation(
+  id: number,
+  patch: ConversationPatch,
+  signal?: AbortSignal
+) {
+  const res = await api.patch<Envelope<ConversationSummary>>(
+    `${path}/${id}`,
+    serializeWithinLimit(patch),
+    savedConfig(signal)
+  )
+  return summaryOf(requireServerSuccess(res.data).data)
 }
 export async function deleteConversation(id: number, signal?: AbortSignal) {
   const res = await api.delete<Envelope<null>>(`${path}/${id}`, { signal })
@@ -208,7 +290,7 @@ export async function importConversation(
   onProgress?: (progress: ImportProgress) => void
 ) {
   const bytes = new TextEncoder().encode(JSON.stringify(source))
-  if (bytes.length > 8 * 1024 * 1024) {
+  if (bytes.length > CONVERSATION_SIZE_LIMIT_BYTES) {
     throw new Error(CONVERSATION_SIZE_LIMIT_MESSAGE)
   }
   const controller = new AbortController()

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type {
+  ConversationPatch,
   ConversationWrite,
   LegacySource,
   SavedConversation,
@@ -26,45 +27,61 @@ export type PendingConversation = {
   owner: number
   key: string
   row: SavedConversation
-  pending?: ConversationWrite
+  pending?: ConversationWrite | ConversationPatch
   pendingVersion?: number
   localVersion: number
 }
 const databaseName = 'new-api-playground-pending'
+const unavailable = 'Unable to keep unsaved conversations on this device'
+
+// One connection serves every read and write; it is dropped when the browser
+// closes it or another tab upgrades the database, and reopened on demand.
+let database: Promise<IDBDatabase> | undefined
 
 function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (database) return database
+  const opening: Promise<IDBDatabase> = new Promise((resolve, reject) => {
     const request = indexedDB.open(databaseName, 1)
     request.addEventListener('upgradeneeded', () =>
       request.result.createObjectStore('pending', { keyPath: ['owner', 'key'] })
     )
-    request.addEventListener('success', () => resolve(request.result))
-    request.addEventListener('error', () =>
-      reject(new Error('Unable to keep unsaved conversations on this device'))
-    )
+    request.addEventListener('success', () => {
+      const db = request.result
+      const forget = () => {
+        if (database === opening) database = undefined
+      }
+      db.addEventListener('close', forget)
+      db.addEventListener('versionchange', () => {
+        forget()
+        db.close()
+      })
+      resolve(db)
+    })
+    request.addEventListener('error', () => {
+      if (database === opening) database = undefined
+      reject(new Error(unavailable))
+    })
   })
+  database = opening
+  return opening
 }
 
 export async function readPendingConversations(
   owner: number
 ): Promise<PendingConversation[]> {
   const db = await openDatabase()
-  try {
-    return await new Promise((resolve, reject) => {
-      const transaction = db.transaction('pending', 'readonly')
-      const request = transaction
-        .objectStore('pending')
-        .getAll(IDBKeyRange.bound([owner, ''], [owner, '\uffff']))
-      request.addEventListener('success', () =>
-        resolve(request.result as PendingConversation[])
-      )
-      request.addEventListener('error', () =>
-        reject(new Error('Unable to read unsaved conversations'))
-      )
-    })
-  } finally {
-    db.close()
-  }
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('pending', 'readonly')
+    const request = transaction
+      .objectStore('pending')
+      .getAll(IDBKeyRange.bound([owner, ''], [owner, '\uffff']))
+    request.addEventListener('success', () =>
+      resolve(request.result as PendingConversation[])
+    )
+    request.addEventListener('error', () =>
+      reject(new Error('Unable to read unsaved conversations'))
+    )
+  })
 }
 
 export async function writePendingConversation(
@@ -73,23 +90,15 @@ export async function writePendingConversation(
   value?: PendingConversation
 ): Promise<void> {
   const db = await openDatabase()
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction('pending', 'readwrite')
-      const store = transaction.objectStore('pending')
-      if (value) store.put(value)
-      else store.delete([owner, key])
-      transaction.addEventListener('complete', () => resolve())
-      transaction.addEventListener('error', () =>
-        reject(new Error('Unable to keep unsaved conversations on this device'))
-      )
-      transaction.addEventListener('abort', () =>
-        reject(new Error('Unable to keep unsaved conversations on this device'))
-      )
-    })
-  } finally {
-    db.close()
-  }
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction('pending', 'readwrite')
+    const store = transaction.objectStore('pending')
+    if (value) store.put(value)
+    else store.delete([owner, key])
+    transaction.addEventListener('complete', () => resolve())
+    transaction.addEventListener('error', () => reject(new Error(unavailable)))
+    transaction.addEventListener('abort', () => reject(new Error(unavailable)))
+  })
 }
 
 const legacyKeys = {

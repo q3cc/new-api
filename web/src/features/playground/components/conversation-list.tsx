@@ -26,7 +26,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 
-import type { ConversationSummary } from '../conversations-api'
+import {
+  CONVERSATION_PAGE_SIZE,
+  type ConversationSummary,
+} from '../conversations-api'
 import type { ConversationEntry } from '../lib/conversation-workspace'
 
 type Props = {
@@ -122,7 +125,7 @@ export function ConversationList(props: Props) {
           )
         })}
       </nav>
-      {props.total > 30 && (
+      {props.total > CONVERSATION_PAGE_SIZE && (
         <div className='flex items-center justify-between gap-2'>
           <Button
             variant='outline'
@@ -137,7 +140,7 @@ export function ConversationList(props: Props) {
             variant='outline'
             size='sm'
             className='touch-manipulation pointer-coarse:min-h-11'
-            disabled={props.page * 30 >= props.total}
+            disabled={props.page * CONVERSATION_PAGE_SIZE >= props.total}
             onClick={() => props.onPage(props.page + 1)}
           >
             {t('Next')}
