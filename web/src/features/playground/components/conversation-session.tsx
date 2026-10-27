@@ -36,7 +36,7 @@ import {
 } from '../hooks'
 import { usePlaygroundCompression } from '../hooks/use-playground-compression'
 import { useConversationEntry } from '../hooks/use-workspace'
-import { effectiveCapability, shouldCompress } from '../lib/context-compression'
+import { shouldCompress } from '../lib/context-compression'
 import {
   interruptedDocument,
   saveErrorKind,
@@ -47,10 +47,6 @@ import {
   interruptMessages,
   withdrawUnsavedQuestion,
 } from '../lib/message/conversation-message-utils'
-import {
-  getMessageErrorText,
-  parseContextLimit,
-} from '../lib/message/message-error-utils'
 import { isGeneratingMessage } from '../lib/message/message-utils'
 import { defaultParameterConfig } from '../lib/parameters/playground-parameters'
 import type { Message } from '../types'
@@ -320,33 +316,6 @@ function ConversationView(props: ViewProps) {
   // Compressing only helps when there are older turns to summarize; a single
   // over-long message gets an explanation instead of a button.
   const canCompressContext = shouldCompress(document, 1, 1)
-  const compressAndRetry = async (message: Message) => {
-    const model = document.config.model
-    const learned = parseContextLimit(getMessageErrorText(message))
-    const limit = document.contextLimits?.[model] ?? learned
-    if (learned && document.contextLimits?.[model] === undefined) {
-      props.workspace.update(props.entry.key, (row) => ({
-        ...row,
-        document: {
-          ...row.document,
-          contextLimits: { ...row.document.contextLimits, [model]: learned },
-        },
-      }))
-    }
-    let compressionModel = props.compression.compressionModel
-    // The fallback is the conversation's own model; budget it with the limit
-    // the provider just reported instead of the assumed window.
-    if (compressionModel.model === model && compressionModel.assumedWindow) {
-      compressionModel = effectiveCapability(model, undefined, limit)
-    }
-    const compressed = await props.workspace.compress(
-      props.entry.key,
-      compressionModel,
-      props.compression.compressionGroup
-    )
-    // One retry; if the provider still refuses, the error offers it again.
-    if (compressed) props.conversation.handleRegenerateMessage(message)
-  }
   return (
     <div className='flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'>
       <PlaygroundCompressionStatus
@@ -461,7 +430,11 @@ function ConversationView(props: ViewProps) {
           }
           onCompress={
             canCompressContext
-              ? (message) => void compressAndRetry(message)
+              ? (message) =>
+                  void props.compression.compressAndRetry(
+                    message,
+                    props.conversation.handleRegenerateMessage
+                  )
               : undefined
           }
         />

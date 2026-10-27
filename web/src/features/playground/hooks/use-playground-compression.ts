@@ -38,6 +38,10 @@ import type {
   ConversationEntry,
   ConversationWorkspace,
 } from '../lib/conversation-workspace'
+import {
+  getMessageErrorText,
+  parseContextLimit,
+} from '../lib/message/message-error-utils'
 import { toChatMessages } from '../lib/message/message-utils'
 import type { Message } from '../types'
 
@@ -255,6 +259,41 @@ export function usePlaygroundCompression(
     },
     [client, preferenceOptions, capabilityOptions, workspace, key, owner, group]
   )
+  // The provider refused the request as too long: remember the limit it
+  // named, compress with a model budgeted against it, and ask again once.
+  const compressAndRetry = useCallback(
+    async (message: Message, regenerate: (message: Message) => void) => {
+      const current = workspace.getSnapshot().entries[key]
+      if (!current) return
+      const document = current.row.document
+      const model = document.config.model
+      const learned = parseContextLimit(getMessageErrorText(message))
+      const limit = document.contextLimits?.[model] ?? learned
+      if (learned && document.contextLimits?.[model] === undefined) {
+        workspace.update(key, (row) => ({
+          ...row,
+          document: {
+            ...row.document,
+            contextLimits: { ...row.document.contextLimits, [model]: learned },
+          },
+        }))
+      }
+      let summarizer = compressionModel
+      // The fallback is the conversation's own model; budget it with the limit
+      // the provider just reported instead of the assumed window.
+      if (summarizer.model === model && summarizer.assumedWindow) {
+        summarizer = effectiveCapability(model, undefined, limit)
+      }
+      const compressed = await workspace.compress(
+        key,
+        summarizer,
+        resolvedCompressionGroup
+      )
+      // One retry; if the provider still refuses, the error offers it again.
+      if (compressed) regenerate(message)
+    },
+    [workspace, key, compressionModel, resolvedCompressionGroup]
+  )
   return useMemo(
     () => ({
       preference,
@@ -263,6 +302,7 @@ export function usePlaygroundCompression(
       compressionModel,
       compressionGroup: resolvedCompressionGroup,
       prepare,
+      compressAndRetry,
       usage,
       budget,
       budgetAssumed,
@@ -278,6 +318,7 @@ export function usePlaygroundCompression(
       compressionModel,
       resolvedCompressionGroup,
       prepare,
+      compressAndRetry,
       usage,
       budget,
       budgetAssumed,

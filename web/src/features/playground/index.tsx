@@ -21,9 +21,8 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query'
-import { useNavigate, useSearch } from '@tanstack/react-router'
 import { MessageSquareOffIcon, PanelLeftIcon } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '@/components/empty-state'
@@ -55,16 +54,13 @@ import {
 import { ConversationList } from './components/conversation-list'
 import { ConversationSession } from './components/conversation-session'
 import {
-  emptyConversationDocument,
   listConversations,
   type ConversationSummary,
   type SavedConversation,
 } from './conversations-api'
+import { useActiveConversation } from './hooks/use-active-conversation'
 import { useWorkspaceSelector } from './hooks/use-workspace'
-import {
-  ConversationWorkspace,
-  interruptedDocument,
-} from './lib/conversation-workspace'
+import { ConversationWorkspace } from './lib/conversation-workspace'
 
 type ConversationPage = { items: ConversationSummary[]; total: number }
 
@@ -104,8 +100,6 @@ function updateListedConversation(
 function PlaygroundWorkspace(props: { owner: number }) {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
-  const navigate = useNavigate({ from: '/playground/' })
-  const search = useSearch({ from: '/_authenticated/playground/' })
   const isMobile = useIsMobile()
   const [workspace] = useState(
     () =>
@@ -135,13 +129,6 @@ function PlaygroundWorkspace(props: { owner: number }) {
     () => (entryKeyList ? entryKeyList.split('\n') : []),
     [entryKeyList]
   )
-  const [activeKey, setActiveKey] = useState('')
-  // The open conversation's server ID; undefined while nothing is open.
-  const currentId = useWorkspaceSelector(
-    workspace,
-    (snapshot) => snapshot.entries[activeKey]?.row.id
-  )
-  const hasCurrent = currentId !== undefined
   const [keywordInput, setKeywordInput] = useState('')
   const keyword = useDebounce(keywordInput, 300)
   // A new search starts on its first page.
@@ -149,13 +136,6 @@ function PlaygroundWorkspace(props: { owner: number }) {
   const page = paging.keyword === keyword ? paging.page : 1
   const [expanded, setExpanded] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [opening, setOpening] = useState(false)
-  const [openError, setOpenError] = useState<unknown>()
-  const [retry, setRetry] = useState(0)
-  const blankConversation = useRef<Promise<string | undefined> | null>(null)
-  // The last conversation that failed to open; it is not reopened until the
-  // user retries or picks another one, so a list refresh does not flicker it.
-  const failedOpen = useRef<{ id: number; retry: number } | null>(null)
   const list = useQuery({
     queryKey: ['playground-conversations', props.owner, keyword, page],
     queryFn: ({ signal }) => listConversations(keyword, page, signal),
@@ -163,148 +143,36 @@ function PlaygroundWorkspace(props: { owner: number }) {
     meta: { errorToast: false },
   })
   useEffect(() => workspace.attach(), [workspace])
-  const firstId = list.data?.items[0]?.id
-  useEffect(() => {
-    if (!ready) return
-    if (
-      !search.conversation &&
-      activeKey &&
-      workspace.getSnapshot().entries[activeKey]
-    ) {
-      return
-    }
-    const id = search.conversation ?? firstId
-    if (!id) {
-      const pending = Object.keys(workspace.getSnapshot().entries)[0]
-      if (pending) {
-        setActiveKey(pending)
-      } else if (list.isSuccess && !keyword && page === 1) {
-        setOpening(true)
-        blankConversation.current ??= workspace.create(
-          emptyConversationDocument(),
-          '',
-          false
-        )
-        void blankConversation.current
-          .then((key) => {
-            if (key && workspace.isActive()) setActiveKey(key)
-          })
-          .finally(() => {
-            blankConversation.current = null
-            setOpening(false)
-          })
-      }
-      return
-    }
-    if (failedOpen.current?.id === id && failedOpen.current.retry === retry) {
-      return
-    }
-    failedOpen.current = null
-    const existing = Object.values(workspace.getSnapshot().entries).find(
-      (entry) => entry.row.id === id
-    )
-    if (existing) {
-      if (existing.key !== activeKey) setActiveKey(existing.key)
-      setOpening(false)
-      setOpenError(undefined)
-      return
-    }
-    let cancelled = false
-    setOpening(true)
-    setOpenError(undefined)
-    void workspace
-      .open(id)
-      .then((key) => {
-        if (cancelled || !key) return
-        setActiveKey(key)
-        if (!search.conversation) {
-          void navigate({ search: { conversation: id }, replace: true })
-        }
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return
-        failedOpen.current = { id, retry }
-        setOpenError(error)
-        // Deleted elsewhere: drop it from a list that may still show it.
-        if (getServerErrorStatus(error) === 404) {
-          void queryClient.invalidateQueries({
-            queryKey: ['playground-conversations', props.owner],
-          })
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setOpening(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [
+  const active = useActiveConversation({
     workspace,
-    queryClient,
-    props.owner,
+    owner: props.owner,
     ready,
-    search.conversation,
-    firstId,
-    navigate,
-    retry,
-    activeKey,
-    list.isSuccess,
+    firstId: list.data?.items[0]?.id,
+    listLoaded: list.isSuccess,
     keyword,
     page,
-  ])
-  useEffect(() => {
-    if (
-      !currentId ||
-      search.conversation === currentId ||
-      opening ||
-      openError
-    ) {
-      return
-    }
-    // A recovered creation receives its server ID after an idempotent retry.
-    if (!search.conversation) {
-      void navigate({ search: { conversation: currentId }, replace: true })
-    }
-  }, [currentId, search.conversation, navigate, opening, openError])
-
-  const create = useCallback(
-    async (copy = false) => {
-      setOpenError(undefined)
-      const current = workspace.getSnapshot().entries[activeKey]
-      const document =
-        copy && current
-          ? interruptedDocument(current.row.document)
-          : emptyConversationDocument(
-              current?.row.document.config,
-              current?.row.document.parameterEnabled
-            )
-      const key = await workspace.create(
-        document,
-        copy ? current?.row.title : ''
-      )
-      if (!key) return
-      setActiveKey(key)
-      const id = workspace.getSnapshot().entries[key].row.id
-      void navigate({ search: id ? { conversation: id } : {} })
-      setMobileOpen(false)
-    },
-    [workspace, activeKey, navigate]
-  )
+  })
+  const {
+    activeKey,
+    currentId,
+    hasCurrent,
+    opening,
+    openError,
+    create,
+    reload,
+  } = active
   const copyConversation = useCallback(() => void create(true), [create])
-  const reload = useCallback(
-    (key: string) => {
-      const id = workspace.getSnapshot().entries[key]?.row.id
-      if (id) void workspace.open(id, true).catch(setOpenError)
-    },
-    [workspace]
-  )
   const openedMissing = getServerErrorStatus(openError) === 404
   const latestId = list.data?.items.find(
-    (item) => item.id !== search.conversation
+    (item) => item.id !== active.searchConversation
   )?.id
   function select(id: number) {
     setMobileOpen(false)
-    void navigate({ search: { conversation: id } })
+    active.select(id)
+  }
+  function startConversation(copy = false) {
+    setMobileOpen(false)
+    void create(copy)
   }
   const listProps = {
     items: list.data?.items ?? [],
@@ -318,11 +186,10 @@ function PlaygroundWorkspace(props: { owner: number }) {
     error: list.error,
     onSearch: setKeywordInput,
     onPage: (next: number) => setPaging({ keyword, page: next }),
-    onNew: () => void create(),
+    onNew: () => startConversation(),
     onSelect: select,
     onSelectPending: (key: string) => {
-      setActiveKey(key)
-      void navigate({ search: {} })
+      active.selectPending(key)
       setMobileOpen(false)
     },
     onRetry: () => {
@@ -368,8 +235,7 @@ function PlaygroundWorkspace(props: { owner: number }) {
               workspace={workspace}
               entryKey={activeKey}
               onDeleted={async () => {
-                setActiveKey('')
-                void navigate({ search: {} })
+                active.close()
                 await list.refetch()
               }}
             />
@@ -453,7 +319,7 @@ function PlaygroundWorkspace(props: { owner: number }) {
             )}
             action={
               <>
-                <Button onClick={() => void create()}>
+                <Button onClick={() => startConversation()}>
                   {t('Start a new conversation')}
                 </Button>
                 {latestId !== undefined && (
@@ -471,12 +337,12 @@ function PlaygroundWorkspace(props: { owner: number }) {
               openError,
               t('Failed to load conversations')
             )}
-            onRetry={() => setRetry((value) => value + 1)}
+            onRetry={active.retryOpen}
           />
         )}
         {ready && !opening && !openError && !hasCurrent && (
           <div className='flex flex-1 items-center justify-center'>
-            <Button onClick={() => void create()}>
+            <Button onClick={() => startConversation()}>
               {t('New conversation')}
             </Button>
           </div>
