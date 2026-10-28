@@ -96,15 +96,17 @@ function isDraftOnlyChange(
 }
 
 // What a save has to send: the whole document for a new conversation or
-// changed messages, otherwise only the fields that differ from the server's
-// copy, or nothing when the two already agree.
+// when the server's copy is unknown, otherwise only the fields that differ
+// and the messages from the first one that changed, or nothing when the two
+// already agree. Messages are replaced, never edited in place, so a message
+// object shared with the saved copy is unchanged.
 function describeWrite(
   entry: ConversationEntry
 ): ConversationWrite | ConversationPatch | undefined {
   const row = entry.row
   const saved = entry.saved
   const operation_id = crypto.randomUUID()
-  if (!row.id || !saved || row.document.messages !== saved.document.messages) {
+  if (!row.id || !saved) {
     return {
       operation_id,
       revision: row.revision,
@@ -114,15 +116,32 @@ function describeWrite(
   }
   const patch: Record<string, unknown> = {}
   for (const key of changedDocumentKeys(saved.document, row.document)) {
-    patch[key] = row.document[key] ?? null
+    if (key !== 'messages') patch[key] = row.document[key] ?? null
   }
+  const before = saved.document.messages
+  const after = row.document.messages
+  let keep = 0
+  while (
+    keep < before.length &&
+    keep < after.length &&
+    before[keep] === after[keep]
+  ) {
+    keep++
+  }
+  const messages =
+    keep === before.length && keep === after.length
+      ? undefined
+      : { keep, append: after.slice(keep) }
   const title = row.title === saved.title ? undefined : row.title
-  if (!Object.keys(patch).length && title === undefined) return undefined
+  if (!Object.keys(patch).length && title === undefined && !messages) {
+    return undefined
+  }
   return {
     operation_id,
     revision: row.revision,
     title,
     patch: patch as ConversationPatch['patch'],
+    messages,
   }
 }
 
@@ -571,12 +590,13 @@ export class ConversationWorkspace {
       const current = this.snapshot.entries[key]
       if (!this.isActive() || !current) return false
       const dirty = current.localVersion !== sentVersion
-      const sentDocument = isConversationPatch(write)
-        ? applyConversationPatch(
-            current.saved?.document ?? entry.row.document,
-            write.patch
-          )
-        : write.document
+      // A patch is applied to the copy it was built against. A write replayed
+      // from the device cache has no such copy, so the next save sends the
+      // whole document instead of guessing what the server holds.
+      const base = entry.saved?.document
+      let sentDocument: ConversationDocument | undefined
+      if (!isConversationPatch(write)) sentDocument = write.document
+      else if (base) sentDocument = applyConversationPatch(base, write)
       const next = {
         ...current,
         row: {
@@ -584,7 +604,7 @@ export class ConversationWorkspace {
           title: current.row.title,
           document: current.row.document,
         },
-        saved: { ...saved, document: sentDocument },
+        saved: sentDocument ? { ...saved, document: sentDocument } : undefined,
         dirty,
         draftOnly: false,
         saving: false,
@@ -616,9 +636,16 @@ export class ConversationWorkspace {
         // the server refused was never applied, so the next attempt sends the
         // document as it is by then rather than the refused one.
         const failures = (current.failures ?? 0) + 1
-        const transient = saveErrorKind(error) === 'transient'
+        const kind = saveErrorKind(error)
+        const transient = kind === 'transient'
         this.setEntry({
           ...current,
+          // A refused patch may rest on a stale idea of the server's copy;
+          // the next attempt sends the whole document instead.
+          saved:
+            kind === 'rejected' && isConversationPatch(write)
+              ? undefined
+              : current.saved,
           saving: false,
           error,
           failures,

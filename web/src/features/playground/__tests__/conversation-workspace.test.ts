@@ -294,6 +294,15 @@ beforeEach(() => {
         if (value === null) delete document[key]
         else document[key] = value
       }
+      if (patch.messages) {
+        if (patch.messages.keep > previous.document.messages.length) {
+          throw responseError(400)
+        }
+        document.messages = [
+          ...previous.document.messages.slice(0, patch.messages.keep),
+          ...patch.messages.append,
+        ]
+      }
       row = {
         ...previous,
         title: patch.title ?? previous.title,
@@ -445,7 +454,7 @@ function savedRow(id: number): SavedConversation {
   }
 }
 
-it('patches only the changed settings while the messages are unchanged and writes the whole document once they change', async () => {
+it('patches only the changed settings while the messages are unchanged and only the new messages once they change', async () => {
   rows.set(1, savedRow(1))
   const client = workspace()
   const key = (await client.open(1)) ?? ''
@@ -486,10 +495,151 @@ it('patches only the changed settings while the messages are unchanged and write
     },
   }))
   expect(await client.flush(key)).toBe(true)
-  expect(patches).toHaveLength(2)
-  expect(writes).toHaveLength(1)
-  expect(writes[0].document.messages).toHaveLength(2)
-  expect(writes[0].revision).toBe(3)
+  expect(writes).toHaveLength(0)
+  expect(patches).toHaveLength(3)
+  expect(patches[2].revision).toBe(3)
+  expect(patches[2].messages?.keep).toBe(1)
+  expect(patches[2].messages?.append.map((item) => item.key)).toEqual([
+    'second',
+  ])
+  expect(Object.keys(patches[2].patch)).toEqual([])
+  expect(JSON.stringify(patches[2])).not.toContain('kept')
+  expect(rows.get(1)?.document.messages.map((item) => item.key)).toEqual([
+    'message',
+    'second',
+  ])
+})
+
+it('uploads only the messages from the first change when a turn is sent, completed or an earlier message is edited', async () => {
+  rows.set(1, savedRow(1))
+  const client = workspace()
+  const key = (await client.open(1)) ?? ''
+  const question = {
+    ...message('next question'),
+    key: 'question',
+    from: 'user' as const,
+  }
+  client.update(key, (row) => ({
+    ...row,
+    document: {
+      ...row.document,
+      messages: [
+        ...row.document.messages,
+        question,
+        { ...message('', 'streaming'), key: 'reply' },
+      ],
+    },
+  }))
+  expect(await client.flush(key)).toBe(true)
+  expect(patches.at(-1)?.messages?.keep).toBe(1)
+  expect(patches.at(-1)?.messages?.append.map((item) => item.key)).toEqual([
+    'question',
+    'reply',
+  ])
+
+  client.update(key, (row) => ({
+    ...row,
+    document: {
+      ...row.document,
+      messages: [
+        ...row.document.messages.slice(0, 2),
+        { ...message('full answer'), key: 'reply' },
+      ],
+    },
+  }))
+  expect(await client.flush(key)).toBe(true)
+  expect(patches.at(-1)?.messages?.keep).toBe(2)
+  expect(patches.at(-1)?.messages?.append.map((item) => item.key)).toEqual([
+    'reply',
+  ])
+  expect(JSON.stringify(patches.at(-1))).not.toContain('next question')
+
+  client.update(key, (row) => ({
+    ...row,
+    document: {
+      ...row.document,
+      messages: [
+        { ...message('rewritten'), key: 'message' },
+        ...row.document.messages.slice(1),
+      ],
+    },
+  }))
+  expect(await client.flush(key)).toBe(true)
+  expect(patches.at(-1)?.messages?.keep).toBe(0)
+  expect(patches.at(-1)?.messages?.append).toHaveLength(3)
+  expect(writes).toHaveLength(0)
+  const stored = rows.get(1)?.document.messages
+  expect(stored?.map((item) => item.versions[0].content)).toEqual([
+    'rewritten',
+    'next question',
+    'full answer',
+  ])
+})
+
+it('saves the whole document after replaying a cached patch whose saved copy is unknown, so later messages are not lost', async () => {
+  rows.set(1, savedRow(1))
+  const local = savedRow(1)
+  local.document = {
+    ...local.document,
+    draft: 'cached draft',
+    messages: [
+      ...local.document.messages,
+      { ...message('written offline'), key: 'offline' },
+    ],
+  }
+  cached.set('1:cached', {
+    owner: 1,
+    key: 'cached',
+    row: local,
+    localVersion: 2,
+    pendingVersion: 1,
+    pending: {
+      operation_id: 'cached-patch-0001',
+      revision: 1,
+      patch: { draft: 'cached draft' },
+    },
+  })
+  const client = workspace()
+  await waitFor(() => expect(client.getSnapshot().ready).toBe(true))
+  expect(await client.flush('cached')).toBe(true)
+  expect(patches[0].operation_id).toBe('cached-patch-0001')
+  await waitFor(() =>
+    expect(rows.get(1)?.document.messages.map((item) => item.key)).toEqual([
+      'message',
+      'offline',
+    ])
+  )
+  expect(writes.at(-1)?.document.messages).toHaveLength(2)
+})
+
+it('falls back to a full save after the server refuses a message patch', async () => {
+  rows.set(1, savedRow(1))
+  const client = workspace()
+  const key = (await client.open(1)) ?? ''
+  // Another writer shortened the conversation without changing its revision,
+  // so the kept prefix no longer exists on the server.
+  rows.set(1, {
+    ...savedRow(1),
+    document: { ...savedRow(1).document, messages: [] },
+  })
+  client.update(key, (row) => ({
+    ...row,
+    document: {
+      ...row.document,
+      messages: [
+        ...row.document.messages,
+        { ...message('added'), key: 'added' },
+      ],
+    },
+  }))
+  expect(await client.flush(key)).toBe(false)
+  expect(patches.at(-1)?.messages?.keep).toBe(1)
+  expect(await client.flush(key)).toBe(true)
+  expect(writes.at(-1)?.document.messages.map((item) => item.key)).toEqual([
+    'message',
+    'added',
+  ])
+  expect(rows.get(1)?.document.messages).toHaveLength(2)
 })
 
 it('keeps a conflicting settings patch waiting for the user like a conflicting save', async () => {
@@ -520,13 +670,14 @@ it('keeps a draft-only edit local until the next real save carries it to the ser
   vi.useFakeTimers()
   const client = workspace()
   const key = (await client.create(emptyConversationDocument())) ?? ''
-  const before = writes.length
+  const saves = () => writes.length + patches.length
+  const before = saves()
   client.update(key, (row) => ({
     ...row,
     document: { ...row.document, draft: 'typing…' },
   }))
   await vi.advanceTimersByTimeAsync(60_000)
-  expect(writes).toHaveLength(before)
+  expect(saves()).toBe(before)
   expect(
     [...cached.values()].some((item) => item.row.document.draft === 'typing…')
   ).toBe(true)
@@ -536,15 +687,17 @@ it('keeps a draft-only edit local until the next real save carries it to the ser
     document: { ...row.document, messages: [message('sent')] },
   }))
   await vi.advanceTimersByTimeAsync(2000)
-  expect(writes).toHaveLength(before + 1)
-  expect(writes.at(-1)?.document.draft).toBe('typing…')
+  expect(saves()).toBe(before + 1)
+  expect(patches.at(-1)?.patch.draft).toBe('typing…')
+  expect(rows.get(1)?.document.draft).toBe('typing…')
 })
 
 it('saves a streaming reply once when it settles instead of every few seconds', async () => {
   vi.useFakeTimers()
   const client = workspace()
   const key = (await client.create(emptyConversationDocument())) ?? ''
-  const before = writes.length
+  const saves = () => writes.length + patches.length
+  const before = saves()
   for (const text of ['Hel', 'Hello', 'Hello, wor']) {
     client.update(key, (row) => ({
       ...row,
@@ -552,7 +705,7 @@ it('saves a streaming reply once when it settles instead of every few seconds', 
     }))
     await vi.advanceTimersByTimeAsync(5000)
   }
-  expect(writes).toHaveLength(before)
+  expect(saves()).toBe(before)
   // The local cache still holds the partial reply for crash recovery.
   expect(
     [...cached.values()].some(
@@ -566,8 +719,11 @@ it('saves a streaming reply once when it settles instead of every few seconds', 
     document: { ...row.document, messages: [message('Hello, world')] },
   }))
   await vi.advanceTimersByTimeAsync(5000)
-  expect(writes).toHaveLength(before + 1)
-  expect(writes.at(-1)?.document.messages[0].versions[0].content).toBe(
+  expect(saves()).toBe(before + 1)
+  expect(patches.at(-1)?.messages?.append[0].versions[0].content).toBe(
+    'Hello, world'
+  )
+  expect(rows.get(1)?.document.messages[0].versions[0].content).toBe(
     'Hello, world'
   )
 })
@@ -601,18 +757,18 @@ it('retries a save that failed on the network with growing delays and clears the
     ...row,
     document: { ...row.document, messages: [message('offline edit')] },
   }))
-  vi.mocked(api.put)
+  vi.mocked(api.patch)
     .mockRejectedValueOnce(networkError())
     .mockRejectedValueOnce(responseError(502))
   expect(await client.flush(key)).toBe(false)
   expect(client.getSnapshot().entries[key].error).toBeInstanceOf(AxiosError)
-  const attempts = vi.mocked(api.put).mock.calls.length
+  const attempts = vi.mocked(api.patch).mock.calls.length
 
   await vi.advanceTimersByTimeAsync(2000)
-  expect(vi.mocked(api.put).mock.calls).toHaveLength(attempts + 1)
+  expect(vi.mocked(api.patch).mock.calls).toHaveLength(attempts + 1)
   expect(client.getSnapshot().entries[key].error).toBeInstanceOf(AxiosError)
   await vi.advanceTimersByTimeAsync(2000)
-  expect(vi.mocked(api.put).mock.calls).toHaveLength(attempts + 1)
+  expect(vi.mocked(api.patch).mock.calls).toHaveLength(attempts + 1)
   await vi.advanceTimersByTimeAsync(2000)
 
   expect(rows.get(1)?.document.messages[0]?.versions[0].content).toBe(
@@ -659,9 +815,11 @@ it('keeps a conflicting save waiting for the user instead of retrying it', async
     ...row,
     document: { ...row.document, messages: [message('mine')] },
   }))
-  vi.mocked(api.put).mockRejectedValueOnce(responseError(409))
+  vi.mocked(api.patch).mockRejectedValueOnce(responseError(409))
   expect(await client.flush(key)).toBe(false)
-  const attempts = vi.mocked(api.put).mock.calls.length
+  const attempts =
+    vi.mocked(api.put).mock.calls.length +
+    vi.mocked(api.patch).mock.calls.length
 
   client.update(key, (row) => ({
     ...row,
@@ -669,7 +827,10 @@ it('keeps a conflicting save waiting for the user instead of retrying it', async
   }))
   await vi.advanceTimersByTimeAsync(60_000)
 
-  expect(vi.mocked(api.put).mock.calls).toHaveLength(attempts)
+  expect(
+    vi.mocked(api.put).mock.calls.length +
+      vi.mocked(api.patch).mock.calls.length
+  ).toBe(attempts)
   expect(client.getSnapshot().entries[key].error).toBeInstanceOf(AxiosError)
 })
 

@@ -91,9 +91,10 @@ export type PatchableDocumentKey = Exclude<
   'messages'
 >
 /**
- * A change to the title or to document fields other than the messages. A
- * `null` value removes the field; the server merges it into the saved
- * document so the messages are not uploaded again.
+ * A change to the title, to document fields, or to the tail of the messages.
+ * A `null` field removes it. `messages` keeps the first `keep` saved messages
+ * and replaces the rest with `append`, so a turn uploads only what it added;
+ * the revision guarantees the server holds the same saved prefix.
  */
 export type ConversationPatch = {
   operation_id: string
@@ -105,6 +106,7 @@ export type ConversationPatch = {
       ConversationDocument[PatchableDocumentKey] | null
     >
   >
+  messages?: { keep: number; append: Message[] }
 }
 export function isConversationPatch(
   write: ConversationWrite | ConversationPatch
@@ -119,12 +121,18 @@ export function changedDocumentKeys(
 }
 export function applyConversationPatch(
   document: ConversationDocument,
-  patch: ConversationPatch['patch']
+  patch: Pick<ConversationPatch, 'patch' | 'messages'>
 ): ConversationDocument {
   const merged: Record<string, unknown> = { ...document }
-  for (const [key, value] of Object.entries(patch)) {
+  for (const [key, value] of Object.entries(patch.patch)) {
     if (value === null) delete merged[key]
     else merged[key] = value
+  }
+  if (patch.messages) {
+    merged.messages = [
+      ...document.messages.slice(0, patch.messages.keep),
+      ...patch.messages.append,
+    ]
   }
   return merged as unknown as ConversationDocument
 }

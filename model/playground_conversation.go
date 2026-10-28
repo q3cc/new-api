@@ -345,20 +345,32 @@ func SavePlaygroundConversation(userId int, id int64, write PlaygroundWrite) (*P
 	return row, nil
 }
 
-// PlaygroundPatch changes a conversation's title or some document fields
-// other than its messages, so settings and drafts do not re-upload the whole
-// document.
+// PlaygroundPatch changes a conversation's title, some document fields, or
+// the tail of its messages, so a save uploads only what changed instead of the
+// whole document.
 type PlaygroundPatch struct {
 	OperationId string                     `json:"operation_id"`
 	Revision    int64                      `json:"revision"`
 	Title       *string                    `json:"title"`
 	Patch       map[string]json.RawMessage `json:"patch"`
+	Messages    *PlaygroundMessagesPatch   `json:"messages"`
+}
+
+// PlaygroundMessagesPatch keeps the first Keep stored messages and replaces
+// everything after them with Append. The revision check guarantees the stored
+// prefix is the one the client last saw.
+type PlaygroundMessagesPatch struct {
+	Keep   int               `json:"keep"`
+	Append []json.RawMessage `json:"append"`
 }
 
 var playgroundPatchableKeys = []string{"config", "parameterEnabled", "draft", "compressionSettings", "contextLimits", "compression", "compressionAttempt", "titleGeneration"}
 
 func PatchPlaygroundConversation(userId int, id int64, patch PlaygroundPatch) (*PlaygroundConversationDetail, error) {
-	if len(patch.Patch) == 0 && patch.Title == nil {
+	if len(patch.Patch) == 0 && patch.Title == nil && patch.Messages == nil {
+		return nil, ErrPlaygroundInvalid
+	}
+	if patch.Messages != nil && (patch.Messages.Keep < 0 || patch.Messages.Append == nil) {
 		return nil, ErrPlaygroundInvalid
 	}
 	for key := range patch.Patch {
@@ -389,6 +401,17 @@ func PatchPlaygroundConversation(userId int, id int64, patch PlaygroundPatch) (*
 			} else {
 				fields[key] = value
 			}
+		}
+		if patch.Messages != nil {
+			var messages []json.RawMessage
+			if err := common.Unmarshal(fields["messages"], &messages); err != nil || patch.Messages.Keep > len(messages) {
+				return ErrPlaygroundInvalid
+			}
+			combined, err := common.Marshal(append(messages[:patch.Messages.Keep:patch.Messages.Keep], patch.Messages.Append...))
+			if err != nil {
+				return ErrPlaygroundInvalid
+			}
+			fields["messages"] = combined
 		}
 		merged, err := common.Marshal(fields)
 		if err != nil {

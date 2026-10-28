@@ -424,6 +424,71 @@ func testPlaygroundPatch(t *testing.T) {
 	assert.Equal(t, map[string]int{"test-model": 4096}, renamedDocument.ContextLimits)
 	assert.Empty(t, renamedDocument.Draft, "a null value removes the key")
 	assert.Contains(t, string(renamedDocument.Messages[0]), "patched body")
+
+	// Messages change by keeping the stored prefix and replacing the rest, so a
+	// turn uploads only what it added and the other fields stay as stored.
+	message := func(key, content string) json.RawMessage {
+		return json.RawMessage(`{"key":"` + key + `","from":"assistant","status":"complete","versions":[{"id":"` + key + `-v","content":"` + content + `"}]}`)
+	}
+	stored := func(id int64) PlaygroundDocument {
+		detail, err := GetPlaygroundConversation(40, id)
+		require.NoError(t, err)
+		var document PlaygroundDocument
+		require.NoError(t, common.Unmarshal(detail.Document, &document))
+		return document
+	}
+	keys := func(document PlaygroundDocument) []string {
+		result := make([]string, 0, len(document.Messages))
+		for _, raw := range document.Messages {
+			var item struct {
+				Key string `json:"key"`
+			}
+			require.NoError(t, common.Unmarshal(raw, &item))
+			result = append(result, item.Key)
+		}
+		return result
+	}
+	appendPatch := PlaygroundPatch{OperationId: "patch-append-0001", Revision: renamed.Revision, Messages: &PlaygroundMessagesPatch{Keep: 1, Append: []json.RawMessage{message("reply-1", "thinking")}}}
+	appended, err := PatchPlaygroundConversation(40, row.Id, appendPatch)
+	require.NoError(t, err)
+	assert.Equal(t, renamed.Revision+1, appended.Revision)
+	assert.Equal(t, "renamed by patch", appended.Title)
+	document = stored(row.Id)
+	assert.Equal(t, []string{"user-1", "reply-1"}, keys(document))
+	assert.Contains(t, string(document.Messages[0]), "patched body", "the kept prefix is the stored message")
+	assert.Equal(t, map[string]int{"test-model": 4096}, document.ContextLimits)
+	assert.Equal(t, "test-model", document.Config["model"])
+
+	replayed, err := PatchPlaygroundConversation(40, row.Id, appendPatch)
+	require.NoError(t, err)
+	assert.Equal(t, appended.Revision, replayed.Revision, "a replayed message patch is applied once")
+	assert.Equal(t, []string{"user-1", "reply-1"}, keys(stored(row.Id)))
+
+	completed, err := PatchPlaygroundConversation(40, row.Id, PlaygroundPatch{OperationId: "patch-complete-01", Revision: appended.Revision, Messages: &PlaygroundMessagesPatch{Keep: 1, Append: []json.RawMessage{message("reply-1", "final answer")}}})
+	require.NoError(t, err)
+	document = stored(row.Id)
+	assert.Equal(t, []string{"user-1", "reply-1"}, keys(document))
+	assert.Contains(t, string(document.Messages[1]), "final answer", "the tail after the kept prefix is replaced")
+
+	replacedAll, err := PatchPlaygroundConversation(40, row.Id, PlaygroundPatch{OperationId: "patch-replace-all", Revision: completed.Revision, Messages: &PlaygroundMessagesPatch{Keep: 0, Append: []json.RawMessage{message("edited-1", "edited")}}})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"edited-1"}, keys(stored(row.Id)))
+
+	for name, invalid := range map[string]*PlaygroundMessagesPatch{
+		"keep beyond the stored messages": {Keep: 2, Append: []json.RawMessage{}},
+		"negative keep":                   {Keep: -1, Append: []json.RawMessage{}},
+		"missing append":                  {Keep: 1},
+		"duplicate key across the prefix": {Keep: 1, Append: []json.RawMessage{message("edited-1", "again")}},
+		"malformed message":               {Keep: 0, Append: []json.RawMessage{json.RawMessage(`{"key":"x"}`)}},
+	} {
+		_, err = PatchPlaygroundConversation(40, row.Id, PlaygroundPatch{OperationId: "patch-bad-" + strings.ReplaceAll(name, " ", "-"), Revision: replacedAll.Revision, Messages: invalid})
+		assert.ErrorIs(t, err, ErrPlaygroundInvalid, name)
+	}
+	_, err = PatchPlaygroundConversation(40, row.Id, PlaygroundPatch{OperationId: "patch-big-messages", Revision: replacedAll.Revision, Messages: &PlaygroundMessagesPatch{Keep: 1, Append: []json.RawMessage{message("huge", strings.Repeat("x", PlaygroundDocumentLimit))}}})
+	require.ErrorIs(t, err, ErrPlaygroundTooLarge)
+	_, err = PatchPlaygroundConversation(40, row.Id, PlaygroundPatch{OperationId: "patch-stale-messages", Revision: completed.Revision, Messages: &PlaygroundMessagesPatch{Keep: 1, Append: []json.RawMessage{}}})
+	require.ErrorIs(t, err, ErrPlaygroundConflict, "a message patch against an older revision is a conflict")
+	assert.Equal(t, []string{"edited-1"}, keys(stored(row.Id)))
 }
 
 func testPlaygroundImport(t *testing.T) {

@@ -268,7 +268,7 @@ export function setupPlaygroundServer() {
       const value = {
         ...previous,
         title: patch.title ?? previous.title,
-        document: applyConversationPatch(previous.document, patch.patch),
+        document: applyConversationPatch(previous.document, patch),
         revision: previous.revision + 1,
       }
       records.set(id, structuredClone(value))
