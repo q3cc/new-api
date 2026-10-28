@@ -30,7 +30,7 @@ import { AxiosError, AxiosHeaders } from 'axios'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, vi } from 'vitest'
 
-import { api } from '@/lib/api'
+import { api, type ApiRequestConfig } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
@@ -184,57 +184,62 @@ export function setupPlaygroundServer() {
     })
     vi.spyOn(pending, 'readPendingConversations').mockResolvedValue([])
     vi.spyOn(pending, 'writePendingConversation').mockResolvedValue()
-    vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
-      if (url === '/api/playground/settings') {
-        return {
-          data: {
-            success: true,
-            data: preference,
-          },
-        }
-      }
-      if (url === '/api/playground/model-capabilities') {
-        return {
-          data: {
-            success: true,
-            data: groupCapabilities[config?.params.group] ?? modelCapabilities,
-          },
-        }
-      }
-      if (url === '/api/user/self/groups') {
-        return {
-          data: {
-            success: true,
+    vi.spyOn(api, 'get').mockImplementation(
+      async (url, config?: ApiRequestConfig) => {
+        if (url === '/api/playground/settings') {
+          return {
             data: {
-              default: { desc: 'Default', ratio: 1 },
-              DSS: { desc: 'DSS', ratio: 1 },
+              success: true,
+              data: preference,
             },
-          },
+          }
         }
-      }
-      if (url === '/api/user/models') {
-        return { data: { success: true, data: ['test-model', 'other-model'] } }
-      }
-      if (url === '/api/playground/conversations') {
-        const keyword = config?.params.keyword ?? ''
-        const items = [...records.values()]
-          .filter((item) => item.title.includes(keyword))
-          .sort((a, b) => b.update_time - a.update_time)
-        const offset = ((config?.params.p ?? 1) - 1) * 30
-        return {
-          data: {
-            success: true,
+        if (url === '/api/playground/model-capabilities') {
+          return {
             data: {
-              items: structuredClone(items.slice(offset, offset + 30)),
-              total: items.length,
+              success: true,
+              data:
+                groupCapabilities[config?.params.group] ?? modelCapabilities,
             },
-          },
+          }
         }
+        if (url === '/api/user/self/groups') {
+          return {
+            data: {
+              success: true,
+              data: {
+                default: { desc: 'Default', ratio: 1 },
+                DSS: { desc: 'DSS', ratio: 1 },
+              },
+            },
+          }
+        }
+        if (url === '/api/user/models') {
+          return {
+            data: { success: true, data: ['test-model', 'other-model'] },
+          }
+        }
+        if (url === '/api/playground/conversations') {
+          const keyword = config?.params.keyword ?? ''
+          const items = [...records.values()]
+            .filter((item) => item.title.includes(keyword))
+            .sort((a, b) => b.update_time - a.update_time)
+          const offset = ((config?.params.p ?? 1) - 1) * 30
+          return {
+            data: {
+              success: true,
+              data: {
+                items: structuredClone(items.slice(offset, offset + 30)),
+                total: items.length,
+              },
+            },
+          }
+        }
+        const item = records.get(Number(url?.split('/').at(-1)))
+        if (!item) throw notFound()
+        return { data: { success: true, data: structuredClone(item) } }
       }
-      const item = records.get(Number(url?.split('/').at(-1)))
-      if (!item) throw notFound()
-      return { data: { success: true, data: structuredClone(item) } }
-    })
+    )
     vi.spyOn(api, 'put').mockImplementation(async (url, body) => {
       if (failSave) throw new Error('Save unavailable')
       if (url === '/api/playground/settings') {

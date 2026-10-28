@@ -22,7 +22,7 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { api } from '@/lib/api'
+import { api, type ApiRequestConfig } from '@/lib/api'
 import { Route } from '@/routes/_authenticated/referrals'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -116,29 +116,31 @@ beforeEach(() => {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
-    requests.push({ url, params: config?.params ?? {} })
-    const page = <T,>(items: T[]) => ({
-      data: { success: true, data: { items, total: total ?? items.length } },
-    })
-    if (url === '/api/affiliate/summary') {
-      return {
-        data: {
-          success: true,
+  vi.spyOn(api, 'get').mockImplementation(
+    async (url, config?: ApiRequestConfig) => {
+      requests.push({ url, params: config?.params ?? {} })
+      const page = <T,>(items: T[]) => ({
+        data: { success: true, data: { items, total: total ?? items.length } },
+      })
+      if (url === '/api/affiliate/summary') {
+        return {
           data: {
-            active_invites: 12,
-            cancelled_invites: 3,
-            pending_quota: 250_000,
-            review_count: 4,
+            success: true,
+            data: {
+              active_invites: 12,
+              cancelled_invites: 3,
+              pending_quota: 250_000,
+              review_count: 4,
+            },
           },
-        },
+        }
       }
+      if (url === '/api/affiliate/invites') return page([invite])
+      if (url === '/api/affiliate/rebates') return page(rebates)
+      if (url === '/api/affiliate/invite-logs') return page(logs)
+      throw new Error(`Unexpected endpoint: ${url}`)
     }
-    if (url === '/api/affiliate/invites') return page([invite])
-    if (url === '/api/affiliate/rebates') return page(rebates)
-    if (url === '/api/affiliate/invite-logs') return page(logs)
-    throw new Error(`Unexpected endpoint: ${url}`)
-  })
+  )
   vi.spyOn(api, 'post').mockImplementation(async () => {
     if (postError) return { data: { success: false, message: postError } }
     return { data: { success: true } }

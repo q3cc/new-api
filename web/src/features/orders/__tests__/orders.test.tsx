@@ -28,7 +28,7 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { api } from '@/lib/api'
+import { api, type ApiRequestConfig } from '@/lib/api'
 import { Route } from '@/routes/_authenticated/orders'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -74,38 +74,43 @@ beforeEach(() => {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
-    if (url === '/api/user/topup/filters') {
-      if (filtersError) throw new Error('Payment methods unavailable')
-      return {
-        data: { success: true, data: { payment_methods: ['retired-custom'] } },
-      }
-    }
-    if (url === '/api/user/topup/detail') {
-      if (detailError) throw new Error('Detail temporarily unavailable')
-      const order = records.find(
-        (record) => record.trade_no === config?.params.trade_no
-      )
-      return {
-        data: {
-          success: true,
+  vi.spyOn(api, 'get').mockImplementation(
+    async (url, config?: ApiRequestConfig) => {
+      if (url === '/api/user/topup/filters') {
+        if (filtersError) throw new Error('Payment methods unavailable')
+        return {
           data: {
-            ...order,
-            display_name: 'Owner nickname',
-            email: 'owner@example.com',
-            payment_service_name: 'Historical service',
-            payment_service_id: 'old-service',
+            success: true,
+            data: { payment_methods: ['retired-custom'] },
           },
-        },
+        }
       }
+      if (url === '/api/user/topup/detail') {
+        if (detailError) throw new Error('Detail temporarily unavailable')
+        const order = records.find(
+          (record) => record.trade_no === config?.params.trade_no
+        )
+        return {
+          data: {
+            success: true,
+            data: {
+              ...order,
+              display_name: 'Owner nickname',
+              email: 'owner@example.com',
+              payment_service_name: 'Historical service',
+              payment_service_id: 'old-service',
+            },
+          },
+        }
+      }
+      if (url === '/api/user/topup') {
+        requests.push(config?.params)
+        if (listError) throw new Error('Orders temporarily unavailable')
+        return { data: { success: true, data: { items: records, total } } }
+      }
+      throw new Error(`Unexpected endpoint: ${url}`)
     }
-    if (url === '/api/user/topup') {
-      requests.push(config?.params)
-      if (listError) throw new Error('Orders temporarily unavailable')
-      return { data: { success: true, data: { items: records, total } } }
-    }
-    throw new Error(`Unexpected endpoint: ${url}`)
-  })
+  )
   vi.spyOn(api, 'post').mockImplementation(async (url, body) => {
     expect(url).toBe('/api/user/topup/complete')
     if (completeError) {
