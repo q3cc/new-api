@@ -537,8 +537,13 @@ func testPlaygroundUpload(t *testing.T) {
 	assert.Empty(t, other.Chunks)
 	_, err = CompletePlaygroundUpload(602, fingerprint, size)
 	require.ErrorIs(t, err, ErrPlaygroundInvalid)
+	// Every chunk arrived under the wrong fingerprint, so the whole upload is
+	// unusable and is dropped rather than left for the next attempt to hit again.
 	_, err = CompletePlaygroundUpload(601, strings.Repeat("0", 64), size)
 	require.ErrorIs(t, err, ErrPlaygroundInvalid)
+	mismatched, err := GetPlaygroundUpload(601, strings.Repeat("0", 64), size)
+	require.NoError(t, err)
+	assert.Empty(t, mismatched.Chunks)
 	_, err = GetPlaygroundUpload(601, fingerprint, size+1)
 	require.ErrorIs(t, err, ErrPlaygroundInvalid)
 	result, err := CompletePlaygroundUpload(601, fingerprint, size)
@@ -557,12 +562,29 @@ func testPlaygroundUpload(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, again.Deleted)
 
+	// A completed upload whose content the server rejects is discarded so the
+	// next attempt starts clean instead of replaying the same failure forever.
+	broken := "{not json"
+	brokenRaw, err := common.Marshal(PlaygroundLegacySource{Messages: &broken})
+	require.NoError(t, err)
+	brokenDigest := sha256.Sum256(brokenRaw)
+	brokenFingerprint := hex.EncodeToString(brokenDigest[:])
+	brokenChunk := sha256.Sum256(brokenRaw)
+	require.NoError(t, SavePlaygroundUploadChunk(601, brokenFingerprint, len(brokenRaw), 0, hex.EncodeToString(brokenChunk[:]), base64.StdEncoding.EncodeToString(brokenRaw)))
+	_, err = CompletePlaygroundUpload(601, brokenFingerprint, len(brokenRaw))
+	require.ErrorIs(t, err, ErrPlaygroundInvalid)
+	status, err = GetPlaygroundUpload(601, brokenFingerprint, len(brokenRaw))
+	require.NoError(t, err)
+	assert.Empty(t, status.Chunks, "rejected chunks must not survive completion")
+
 	// Chunks and receipts older than the retention period are purged for every
 	// user, whether or not that user ever asks about the upload again.
 	stale := strings.Repeat("c", 64)
+	fresh := strings.Repeat("d", 64)
 	data := []byte(`{"messages":"[]"}`)
 	chunkDigest := sha256.Sum256(data)
 	require.NoError(t, SavePlaygroundUploadChunk(603, stale, len(data), 0, hex.EncodeToString(chunkDigest[:]), base64.StdEncoding.EncodeToString(data)))
+	require.NoError(t, SavePlaygroundUploadChunk(603, fresh, len(data), 0, hex.EncodeToString(chunkDigest[:]), base64.StdEncoding.EncodeToString(data)))
 	require.NoError(t, DB.Model(&PlaygroundUploadChunk{}).Where("user_id = ? AND fingerprint = ?", 603, stale).Update("create_time", time.Now().Add(-8*24*time.Hour).Unix()).Error)
 	require.NoError(t, DB.Model(&PlaygroundUploadChunk{}).Where("user_id = ? AND fingerprint = ? AND chunk_index = -1", 601, fingerprint).Update("create_time", time.Now().Add(-8*24*time.Hour).Unix()).Error)
 	purged, err := PurgeExpiredPlaygroundUploads(time.Now().Add(-7 * 24 * time.Hour).Unix())
@@ -571,6 +593,6 @@ func testPlaygroundUpload(t *testing.T) {
 	var remaining int64
 	require.NoError(t, DB.Model(&PlaygroundUploadChunk{}).Where("fingerprint IN ?", []string{stale, fingerprint}).Count(&remaining).Error)
 	assert.Zero(t, remaining)
-	require.NoError(t, DB.Model(&PlaygroundUploadChunk{}).Where("user_id = ? AND fingerprint = ?", 601, strings.Repeat("0", 64)).Count(&remaining).Error)
+	require.NoError(t, DB.Model(&PlaygroundUploadChunk{}).Where("user_id = ? AND fingerprint = ?", 603, fresh).Count(&remaining).Error)
 	assert.NotZero(t, remaining, "an upload still within the retention period stays resumable")
 }

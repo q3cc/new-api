@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { AxiosError, AxiosHeaders } from 'axios'
 import { expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -191,4 +192,52 @@ it('aborts the previous account request and ignores its delayed reply after logo
   expect(
     server.records.get(1)?.document.messages.at(-1)?.versions[0].content
   ).not.toContain('Reply to')
+})
+
+function rejectedImport(status: number, message: string) {
+  return new AxiosError(message, 'ERR_BAD_REQUEST', undefined, undefined, {
+    data: { success: false, message },
+    status,
+    statusText: message,
+    headers: {},
+    config: { headers: new AxiosHeaders() },
+  })
+}
+
+it('offers to discard local conversations the server rejected as invalid and clears them after confirmation', async () => {
+  localStorage.setItem('playground_messages', '{bad json')
+  vi.spyOn(conversationsApi, 'importConversation').mockRejectedValue(
+    rejectedImport(400, 'Invalid conversation data')
+  )
+  renderPlayground()
+  const alert = await screen.findByRole('alert')
+  expect(
+    within(alert).getByText('Failed to import local conversations')
+  ).toBeVisible()
+  expect(within(alert).getByText('Invalid conversation data')).toBeVisible()
+  fireEvent.click(
+    within(alert).getByRole('button', { name: 'Discard local data' })
+  )
+  const dialog = await screen.findByRole('alertdialog', {
+    name: 'Discard local conversations?',
+  })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Discard' }))
+  await waitFor(() =>
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  )
+  expect(localStorage.getItem('playground_messages')).toBeNull()
+})
+
+it('keeps local conversations and only offers a retry when the import fails for a reason that may pass later', async () => {
+  localStorage.setItem('playground_messages', '[]')
+  vi.spyOn(conversationsApi, 'importConversation').mockRejectedValue(
+    rejectedImport(504, 'Request failed with status code 504')
+  )
+  renderPlayground()
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByRole('button', { name: 'Retry' })).toBeVisible()
+  expect(
+    within(alert).queryByRole('button', { name: 'Discard local data' })
+  ).not.toBeInTheDocument()
+  expect(localStorage.getItem('playground_messages')).toBe('[]')
 })

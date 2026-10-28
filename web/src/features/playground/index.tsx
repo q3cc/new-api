@@ -25,6 +25,7 @@ import { MessageSquareOffIcon, PanelLeftIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
@@ -54,6 +55,7 @@ import {
 import { ConversationList } from './components/conversation-list'
 import { ConversationSession } from './components/conversation-session'
 import {
+  isUnrecoverableImportError,
   listConversations,
   type ConversationSummary,
   type SavedConversation,
@@ -129,6 +131,7 @@ function PlaygroundWorkspace(props: { owner: number }) {
     () => (entryKeyList ? entryKeyList.split('\n') : []),
     [entryKeyList]
   )
+  const [discardingLegacy, setDiscardingLegacy] = useState(false)
   const [keywordInput, setKeywordInput] = useState('')
   const keyword = useDebounce(keywordInput, 300)
   // A new search starts on its first page.
@@ -299,6 +302,29 @@ function PlaygroundWorkspace(props: { owner: number }) {
             >
               {t('Retry')}
             </Button>
+            {isUnrecoverableImportError(migrationError) && (
+              <Button
+                variant='ghost'
+                size='sm'
+                onClick={() => setDiscardingLegacy(true)}
+              >
+                {t('Discard local data')}
+              </Button>
+            )}
+            <ConfirmDialog
+              open={discardingLegacy}
+              onOpenChange={setDiscardingLegacy}
+              title={t('Discard local conversations?')}
+              desc={t(
+                'The conversation saved on this device was rejected by the server and cannot be imported. Deleting it cannot be undone.'
+              )}
+              destructive
+              confirmText={t('Discard')}
+              handleConfirm={() => {
+                workspace.discardLegacy()
+                setDiscardingLegacy(false)
+              }}
+            />
           </div>
         )}
         {!!cacheError && (

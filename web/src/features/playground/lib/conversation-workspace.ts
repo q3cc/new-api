@@ -249,6 +249,13 @@ export class ConversationWorkspace {
       if (this.isActive()) this.publish({ migrationError: error })
     }
   }
+  // Drops the legacy conversation this device still holds after the server
+  // rejected it, so the page stops asking to import it on every visit.
+  discardLegacy() {
+    const source = readLegacySource(this.owner)
+    if (source) clearImportedSource(this.owner, source)
+    this.publish({ migrationError: undefined, migrationProgress: undefined })
+  }
   open(id: number, reload = false): Promise<string | undefined> {
     const opening = this.opening.get(id)
     if (opening) return opening

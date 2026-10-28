@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -143,6 +144,37 @@ func CompletePlaygroundUpload(userId int, fingerprint string, size int) (*Playgr
 		}
 		return nil, ErrPlaygroundInvalid
 	}
+	result, err := importPlaygroundUpload(userId, rows, size, fingerprint)
+	if errors.Is(err, ErrPlaygroundInvalid) || errors.Is(err, ErrPlaygroundTooLarge) {
+		// The bytes arrived whole yet are unusable; keeping them would replay the
+		// same rejection on every retry and hold one of the user's upload slots.
+		if discard := playgroundDB().Where("user_id = ? AND fingerprint = ? AND chunk_index >= 0", userId, fingerprint).Delete(&PlaygroundUploadChunk{}).Error; discard != nil {
+			return nil, discard
+		}
+		return nil, err
+	}
+	if err != nil {
+		return nil, err
+	}
+	receipt, err := common.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	row := PlaygroundUploadChunk{UserId: userId, Fingerprint: fingerprint, ChunkIndex: -1, TotalSize: size, Hash: fingerprint, Content: LongText(receipt), CreateTime: time.Now().Unix()}
+	if err := playgroundDB().Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+		return nil, err
+	}
+	// A concurrent completer may still be reading. It either succeeds idempotently
+	// or retries against the receipt; it can never create another conversation.
+	if err := playgroundDB().Where("user_id = ? AND fingerprint = ? AND chunk_index >= 0", userId, fingerprint).Delete(&PlaygroundUploadChunk{}).Error; err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// importPlaygroundUpload reassembles the verified chunks of a finished upload
+// and imports the legacy conversation they carry.
+func importPlaygroundUpload(userId int, rows []PlaygroundUploadChunk, size int, fingerprint string) (*PlaygroundImportResult, error) {
 	data := make([]byte, 0, size)
 	for index, row := range rows {
 		if row.ChunkIndex != index || row.TotalSize != size {
@@ -163,22 +195,5 @@ func CompletePlaygroundUpload(userId int, fingerprint string, size int) (*Playgr
 	if common.Unmarshal(data, &source) != nil {
 		return nil, ErrPlaygroundInvalid
 	}
-	result, err := ImportPlaygroundConversation(userId, source)
-	if err != nil {
-		return nil, err
-	}
-	receipt, err := common.Marshal(result)
-	if err != nil {
-		return nil, err
-	}
-	row := PlaygroundUploadChunk{UserId: userId, Fingerprint: fingerprint, ChunkIndex: -1, TotalSize: size, Hash: fingerprint, Content: LongText(receipt), CreateTime: time.Now().Unix()}
-	if err := playgroundDB().Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
-		return nil, err
-	}
-	// A concurrent completer may still be reading. It either succeeds idempotently
-	// or retries against the receipt; it can never create another conversation.
-	if err := playgroundDB().Where("user_id = ? AND fingerprint = ? AND chunk_index >= 0", userId, fingerprint).Delete(&PlaygroundUploadChunk{}).Error; err != nil {
-		return nil, err
-	}
-	return result, nil
+	return ImportPlaygroundConversation(userId, source)
 }

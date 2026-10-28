@@ -288,6 +288,18 @@ export async function deleteConversation(id: number, signal?: AbortSignal) {
   const res = await api.delete<Envelope<null>>(`${path}/${id}`, { signal })
   requireServerSuccess(res.data)
 }
+// Whether an import failure is final for the bytes on this device: the server
+// read them in full and rejected them, so retrying can only fail the same way.
+export function isUnrecoverableImportError(error: unknown): boolean {
+  if (
+    error instanceof Error &&
+    error.message === CONVERSATION_SIZE_LIMIT_MESSAGE
+  ) {
+    return true
+  }
+  const status = isAxiosError(error) ? error.response?.status : undefined
+  return status === 400 || status === 413
+}
 export async function importConversation(
   source: LegacySource,
   signal?: AbortSignal,
