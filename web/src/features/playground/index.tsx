@@ -54,6 +54,7 @@ import {
 } from './components/conversation-header'
 import { ConversationList } from './components/conversation-list'
 import { ConversationSession } from './components/conversation-session'
+import { DELETE_CONFIRM_DELAY_SECONDS } from './constants'
 import {
   isUnrecoverableImportError,
   listConversations,
@@ -319,6 +320,7 @@ function PlaygroundWorkspace(props: { owner: number }) {
                 'The conversation saved on this device was rejected by the server and cannot be imported. Deleting it cannot be undone.'
               )}
               destructive
+              confirmDelay={DELETE_CONFIRM_DELAY_SECONDS}
               confirmText={t('Discard')}
               handleConfirm={() => {
                 workspace.discardLegacy()

@@ -29,6 +29,7 @@ import {
   renderPlayground,
   server,
   setupPlaygroundServer,
+  skipDeleteDelay,
 } from './helpers/fake-playground-server'
 
 setupPlaygroundServer()
@@ -215,12 +216,14 @@ it('offers to discard local conversations the server rejected as invalid and cle
     within(alert).getByText('Failed to import local conversations')
   ).toBeVisible()
   expect(within(alert).getByText('Invalid conversation data')).toBeVisible()
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   fireEvent.click(
     within(alert).getByRole('button', { name: 'Discard local data' })
   )
   const dialog = await screen.findByRole('alertdialog', {
     name: 'Discard local conversations?',
   })
+  await skipDeleteDelay()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Discard' }))
   await waitFor(() =>
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

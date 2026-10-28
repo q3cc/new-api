@@ -29,7 +29,7 @@ import { Message } from '@/components/ai-elements/message'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 
-import { MESSAGE_STATUS } from '../../constants'
+import { DELETE_CONFIRM_DELAY_SECONDS, MESSAGE_STATUS } from '../../constants'
 import {
   getChatMessageRenderState,
   getEditingMessageContent,
@@ -259,6 +259,7 @@ export function PlaygroundChat({
             'This message and all of its versions, including the replies that followed them, will be removed. This cannot be undone.'
           )}
           destructive
+          confirmDelay={DELETE_CONFIRM_DELAY_SECONDS}
           confirmText={t('Delete')}
           handleConfirm={() => {
             onDeleteMessage?.(deleting)

@@ -25,7 +25,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
-import { cleanup, render } from '@testing-library/react'
+import { act, cleanup, render } from '@testing-library/react'
 import { AxiosError, AxiosHeaders } from 'axios'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, vi } from 'vitest'
@@ -38,6 +38,7 @@ import {
   type ModelCapability,
   type PlaygroundPreference,
 } from '../../compression-api'
+import { DELETE_CONFIRM_DELAY_SECONDS } from '../../constants'
 import {
   applyConversationPatch,
   conversationSearchSchema,
@@ -343,8 +344,17 @@ export function setupPlaygroundServer() {
     cleanup()
     useAuthStore.getState().auth.reset()
     client.clear()
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
+}
+
+// Delete confirmations lock their button for DELETE_CONFIRM_DELAY_SECONDS. A
+// test installs fake timers before opening the dialog and skips the wait here.
+export async function skipDeleteDelay() {
+  await act(async () =>
+    vi.advanceTimersByTime(DELETE_CONFIRM_DELAY_SECONDS * 1000)
+  )
 }
 
 export function renderPlayground(search = '?conversation=1') {

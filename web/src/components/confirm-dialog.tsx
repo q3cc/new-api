@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -28,6 +29,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { useCountdown } from '@/hooks/use-countdown'
 import { cn } from '@/lib/utils'
 
 type ConfirmDialogProps = {
@@ -41,6 +43,9 @@ type ConfirmDialogProps = {
   destructive?: boolean
   handleConfirm: () => void
   isLoading?: boolean
+  // Seconds the confirm button stays locked after the dialog opens, so an
+  // irreversible action cannot be triggered by a reflex click.
+  confirmDelay?: number
   className?: string
   children?: React.ReactNode
 }
@@ -57,12 +62,23 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     destructive,
     isLoading,
     disabled = false,
+    confirmDelay = 0,
     handleConfirm,
     ...actions
   } = props
+  const countdown = useCountdown({ initialSeconds: confirmDelay })
+  const startCountdown = countdown.start
+  const resetCountdown = countdown.reset
+  useEffect(() => {
+    if (!actions.open || confirmDelay <= 0) return
+    startCountdown(confirmDelay)
+    return () => resetCountdown()
+  }, [actions.open, confirmDelay, startCountdown, resetCountdown])
+  const locked = confirmDelay > 0 && countdown.isActive
+  const label = confirmText ?? t('Continue')
   return (
     <AlertDialog {...actions}>
-      <AlertDialogContent className={cn(className && className)}>
+      <AlertDialogContent className={cn(className)}>
         <AlertDialogHeader className='text-start'>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription render={<div />}>
@@ -77,9 +93,15 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           <Button
             variant={destructive ? 'destructive' : 'default'}
             onClick={handleConfirm}
-            disabled={disabled || isLoading}
+            disabled={disabled || isLoading || locked}
           >
-            {confirmText ?? t('Continue')}
+            {locked ? (
+              <>
+                {label} ({countdown.secondsLeft})
+              </>
+            ) : (
+              label
+            )}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

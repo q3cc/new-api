@@ -17,13 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { assert, expect, it } from 'vitest'
+import { assert, expect, it, vi } from 'vitest'
 
 import {
   renderPlayground,
   row,
   server,
   setupPlaygroundServer,
+  skipDeleteDelay,
 } from './helpers/fake-playground-server'
 
 setupPlaygroundServer()
@@ -48,8 +49,10 @@ it('asks before deleting a message', async () => {
   expect(await screen.findByText('Reply to keep')).toBeVisible()
   const answer = screen.getByText('Reply to keep').closest('.group')
   assert(answer instanceof HTMLElement)
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   fireEvent.click(within(answer).getByRole('button', { name: 'Delete' }))
   const dialog = await screen.findByRole('alertdialog')
+  await skipDeleteDelay()
   expect(screen.getByText('Reply to keep')).toBeVisible()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
   await waitFor(() =>
@@ -151,8 +154,10 @@ it('shows older messages and clears only the current conversation after confirma
   ).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages' }))
   await screen.findByText('History 0', { exact: true })
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   fireEvent.click(screen.getByRole('button', { name: 'Clear chat history' }))
   const dialog = await screen.findByRole('alertdialog')
+  await skipDeleteDelay()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Clear' }))
   await waitFor(() =>
     expect(server.records.get(1)?.document.messages).toEqual([])
@@ -166,8 +171,10 @@ it('keeps a failed deletion confirmation open and supports retry', async () => {
   renderPlayground()
   await screen.findByDisplayValue('draft Alpha')
   server.failDelete = true
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   fireEvent.click(screen.getByRole('button', { name: 'Delete conversation' }))
   const dialog = await screen.findByRole('alertdialog')
+  await skipDeleteDelay()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
   await within(dialog).findByText('Delete unavailable')
   expect(server.records.has(1)).toBe(true)

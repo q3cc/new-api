@@ -38,6 +38,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
+import { DELETE_CONFIRM_DELAY_SECONDS } from '../../constants'
 import {
   ATTACHMENT_ACTIONS,
   getAttachmentActionNotice,
@@ -182,6 +183,7 @@ export function PlaygroundInputTools({
 
       <ConfirmDialog
         destructive
+        confirmDelay={DELETE_CONFIRM_DELAY_SECONDS}
         desc={t(
           'All messages in this conversation will be removed. This cannot be undone.'
         )}

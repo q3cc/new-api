@@ -25,6 +25,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 
+import { DELETE_CONFIRM_DELAY_SECONDS } from '../constants'
+
 type Props = {
   action: 'rename' | 'delete'
   title: string
@@ -58,6 +60,7 @@ export function ConversationDialogs(props: Props) {
       <ConfirmDialog
         open
         destructive
+        confirmDelay={DELETE_CONFIRM_DELAY_SECONDS}
         title={t('Delete conversation?')}
         desc={t(
           'This conversation and all its messages will be removed. This cannot be undone.'

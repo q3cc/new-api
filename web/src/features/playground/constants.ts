@@ -73,6 +73,10 @@ export const CONVERSATION_SIZE_LIMIT_BYTES = 8 * 1024 * 1024
 /** The largest context window a user may enter by hand. */
 export const MAX_CUSTOM_CONTEXT_LIMIT = 10_000_000
 
+// Seconds a delete confirmation keeps its button locked so a stray click
+// cannot remove anything.
+export const DELETE_CONFIRM_DELAY_SECONDS = 5
+
 // Error messages
 export const ERROR_MESSAGES = {
   API_REQUEST_ERROR: 'Request error occurred',
