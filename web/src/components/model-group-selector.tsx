@@ -35,7 +35,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -624,8 +631,10 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
   const [open, setOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const isMobile = useIsMobile()
+  const groupHeadingId = useId()
   const groupScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const selectedGroupOptionRef = useRef<HTMLButtonElement | null>(null)
+  const modelListRef = useRef<HTMLDivElement | null>(null)
   const selectedModelOptionRef = useRef<HTMLDivElement | null>(null)
 
   const currentModel = useMemo(
@@ -677,6 +686,8 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
       return
     }
 
+    // Each list scrolls itself: scrollIntoView would also scroll the drawer,
+    // which clips its overflow, hiding its header with no way to scroll back.
     let secondFrameId = 0
     const firstFrameId = window.requestAnimationFrame(() => {
       secondFrameId = window.requestAnimationFrame(() => {
@@ -684,7 +695,10 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
           selectedGroupOptionRef.current,
           groupScrollContainerRef.current
         )
-        scrollSelectedOptionIntoView(selectedModelOptionRef.current)
+        scrollSelectedOptionIntoView(
+          selectedModelOptionRef.current,
+          modelListRef.current
+        )
       })
     })
 
@@ -726,15 +740,21 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
         !isMobile && modelGroupSelectorLayoutClasses.groupColumn
       )}
     >
-      <div className='text-muted-foreground px-1 text-[11px] leading-4 font-medium'>
+      <div
+        className='text-muted-foreground px-1 text-[11px] leading-4 font-medium'
+        id={groupHeadingId}
+      >
         {t('Model Group')}
       </div>
       <div
-        className={cn(
-          'grid gap-1',
-          !isMobile && modelGroupSelectorLayoutClasses.groupScroll
-        )}
+        aria-labelledby={groupHeadingId}
+        className={
+          isMobile
+            ? modelGroupSelectorLayoutClasses.mobileGroupScroll
+            : modelGroupSelectorLayoutClasses.groupScroll
+        }
         ref={groupScrollContainerRef}
+        role='group'
       >
         {groups.map((group) => {
           const isSelected = selectedGroup === group.value
@@ -786,8 +806,11 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
       />
       <CommandList
         className={
-          isMobile ? 'max-h-[45vh]' : modelGroupSelectorLayoutClasses.modelList
+          isMobile
+            ? modelGroupSelectorLayoutClasses.mobileModelList
+            : modelGroupSelectorLayoutClasses.modelList
         }
+        ref={modelListRef}
       >
         {filteredModels.length === 0 ? (
           <div className='text-muted-foreground px-3 py-8 text-center text-[12px] leading-5'>
@@ -859,11 +882,11 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
   return isMobile ? (
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>{renderTrigger()}</DrawerTrigger>
-      <DrawerContent className='flex max-h-[80vh] min-h-[60vh] flex-col'>
+      <DrawerContent className='flex max-h-[85dvh] min-h-[60dvh] flex-col pb-[env(safe-area-inset-bottom)]'>
         <DrawerHeader className='pb-3 text-left'>
           <DrawerTitle>{t('Select Model')}</DrawerTitle>
         </DrawerHeader>
-        <div className='min-h-0 flex-1 overflow-y-auto px-4 pb-5'>
+        <div className='min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5'>
           {renderContent()}
         </div>
       </DrawerContent>
