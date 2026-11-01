@@ -2,6 +2,8 @@ package controller
 
 import (
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -32,6 +34,7 @@ func affiliateNote(c *gin.Context) (string, bool) {
 type affiliateSelfRebate struct {
 	Id          int    `json:"id"`
 	InviteeId   int    `json:"invitee_id"`
+	InviteeName string `json:"invitee_name"`
 	Source      string `json:"source"`
 	BaseQuota   int    `json:"base_quota"`
 	RateBps     int    `json:"rate_bps"`
@@ -56,11 +59,21 @@ func GetSelfAffiliateRebates(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	inviteeIds := make([]int, len(rebates))
+	for i, rebate := range rebates {
+		inviteeIds[i] = rebate.InviteeId
+	}
+	names, err := model.GetUsernamesByIds(inviteeIds)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	items := make([]affiliateSelfRebate, len(rebates))
 	for i, rebate := range rebates {
 		items[i] = affiliateSelfRebate{
 			Id:          rebate.Id,
 			InviteeId:   rebate.InviteeId,
+			InviteeName: common.MaskUsername(names[rebate.InviteeId]),
 			Source:      rebate.Source,
 			BaseQuota:   rebate.BaseQuota,
 			RateBps:     rebate.RateBps,
@@ -82,6 +95,117 @@ func GetSelfAffiliateRebates(c *gin.Context) {
 		"pending_quota": pending,
 		"page":          pageInfo,
 	})
+}
+
+const (
+	affiliateLeaderboardSize         = 50
+	affiliateLeaderboardCacheSeconds = 60
+)
+
+// affiliateLeaderboardRow is a ranked inviter as every user sees it: only the
+// masked username identifies them.
+type affiliateLeaderboardRow struct {
+	Rank int    `json:"rank"`
+	Name string `json:"name"`
+	IsMe bool   `json:"is_me"`
+	model.AffiliateEarnings
+}
+
+// affiliateLeaderboardCache holds the ranking every user sees, so viewing the
+// promotion center does not add up all rebates each time.
+var affiliateLeaderboardCache struct {
+	sync.Mutex
+	computedAt int64
+	monthStart int64
+	rows       []model.AffiliateEarnings
+	names      map[int]string
+}
+
+// cachedAffiliateLeaderboard returns the ranking and the masked names of the
+// ranked inviters, recomputed at most once a minute and when a month starts.
+func cachedAffiliateLeaderboard(now int64, monthStart int64, quarterStart int64) ([]model.AffiliateEarnings, map[int]string, error) {
+	cache := &affiliateLeaderboardCache
+	cache.Lock()
+	defer cache.Unlock()
+	if cache.rows != nil && cache.monthStart == monthStart && now-cache.computedAt < affiliateLeaderboardCacheSeconds {
+		return cache.rows, cache.names, nil
+	}
+	rows, err := model.ListAffiliateLeaderboard(monthStart, quarterStart, affiliateLeaderboardSize)
+	if err != nil {
+		return nil, nil, err
+	}
+	ids := make([]int, len(rows))
+	for i, row := range rows {
+		ids[i] = row.InviterId
+	}
+	names, err := model.GetUsernamesByIds(ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	for id, name := range names {
+		names[id] = common.MaskUsername(name)
+	}
+	cache.computedAt, cache.monthStart, cache.rows, cache.names = now, monthStart, rows, names
+	return rows, names, nil
+}
+
+// GetAffiliateLeaderboard ranks inviters by the rebates credited to them this
+// quarter, and gives the caller's own figures.
+func GetAffiliateLeaderboard(c *gin.Context) {
+	userId := c.GetInt("id")
+	now := time.Now()
+	year, month, _ := now.Date()
+	monthStart := time.Date(year, month, 1, 0, 0, 0, 0, now.Location()).Unix()
+	quarterStart := time.Date(year, month-(month-1)%3, 1, 0, 0, 0, 0, now.Location()).Unix()
+	rows, names, err := cachedAffiliateLeaderboard(now.Unix(), monthStart, quarterStart)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	me, err := model.GetAffiliateEarnings(userId, monthStart, quarterStart)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	myRank := 0
+	board := make([]affiliateLeaderboardRow, len(rows))
+	for i, row := range rows {
+		board[i] = affiliateLeaderboardRow{Rank: i + 1, Name: names[row.InviterId], IsMe: row.InviterId == userId, AffiliateEarnings: row}
+		if board[i].IsMe {
+			myRank = i + 1
+		}
+	}
+	common.ApiSuccess(c, gin.H{
+		"rows": board,
+		"me": struct {
+			Rank int `json:"rank"`
+			model.AffiliateEarnings
+		}{Rank: myRank, AffiliateEarnings: me},
+	})
+}
+
+// affiliateInviteeView is a user the caller invited, shown by masked username.
+type affiliateInviteeView struct {
+	Name string `json:"name"`
+	model.AffiliateInvitee
+}
+
+// GetSelfAffiliateInvitees pages through the users the caller invited,
+// cancelled invitations included.
+func GetSelfAffiliateInvitees(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	invitees, total, err := model.ListUserAffiliateInvitees(c.GetInt("id"), pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	views := make([]affiliateInviteeView, len(invitees))
+	for i, invitee := range invitees {
+		views[i] = affiliateInviteeView{Name: common.MaskUsername(invitee.Username), AffiliateInvitee: invitee}
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(views)
+	common.ApiSuccess(c, pageInfo)
 }
 
 // ---- Admin APIs ----

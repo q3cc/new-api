@@ -174,6 +174,8 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/lottery/admin/entries/:id/deliver":                    accessTokenScopeRule("billing:write"),
 	"POST /api/lottery/admin/entries/:id/disqualify":                 accessTokenScopeRule("billing:write"),
 	"GET /api/user/aff/rebates":                                      accessTokenScopeRule("wallet:read"),
+	"GET /api/user/aff/invitees":                                     accessTokenScopeRule("wallet:read"),
+	"GET /api/user/aff/leaderboard":                                  accessTokenScopeRule("wallet:read"),
 	"GET /api/affiliate/summary":                                     accessTokenScopeRule("billing:read"),
 	"GET /api/affiliate/invites":                                     accessTokenScopeRule("billing:read"),
 	"POST /api/affiliate/invites/:id/cancel":                         accessTokenScopeRule("billing:write"),

@@ -662,3 +662,123 @@ func GetAffiliateSummary() (*AffiliateSummary, error) {
 	}
 	return summary, nil
 }
+
+// AffiliateEarnings is an inviter's credited rebates: in all, since the start
+// of the month and since the start of the quarter, with how many invitees
+// they came from.
+type AffiliateEarnings struct {
+	InviterId     int   `json:"-"`
+	TotalQuota    int64 `json:"total_quota"`
+	MonthQuota    int64 `json:"month_quota"`
+	QuarterQuota  int64 `json:"quarter_quota"`
+	PayingInvites int64 `json:"paying_invites"`
+}
+
+func affiliateEarningsQuery(monthStart int64, quarterStart int64) *gorm.DB {
+	return DB.Model(&AffiliateRebate{}).
+		Select("inviter_id, COALESCE(SUM(quota), 0) AS total_quota, "+
+			"COALESCE(SUM(CASE WHEN confirmed_at >= ? THEN quota ELSE 0 END), 0) AS month_quota, "+
+			"COALESCE(SUM(CASE WHEN confirmed_at >= ? THEN quota ELSE 0 END), 0) AS quarter_quota, "+
+			"COUNT(DISTINCT invitee_id) AS paying_invites", monthStart, quarterStart).
+		Where("status = ?", AffiliateRebateConfirmed).
+		Group("inviter_id")
+}
+
+// ListAffiliateLeaderboard ranks inviters by credited rebates this quarter,
+// then in all. Like the activity leaderboards it leaves out administrators
+// and disabled or deleted accounts.
+func ListAffiliateLeaderboard(monthStart int64, quarterStart int64, limit int) ([]AffiliateEarnings, error) {
+	ranked := DB.Model(&User{}).Select("id").
+		Where("status = ? AND role < ?", common.UserStatusEnabled, common.RoleAdminUser)
+	rows := []AffiliateEarnings{}
+	err := affiliateEarningsQuery(monthStart, quarterStart).
+		Where("inviter_id IN (?)", ranked).
+		Order("quarter_quota DESC, total_quota DESC, inviter_id ASC").
+		Limit(limit).Scan(&rows).Error
+	return rows, err
+}
+
+// GetAffiliateEarnings is one inviter's credited rebates.
+func GetAffiliateEarnings(inviterId int, monthStart int64, quarterStart int64) (AffiliateEarnings, error) {
+	earnings := AffiliateEarnings{InviterId: inviterId}
+	err := affiliateEarningsQuery(monthStart, quarterStart).
+		Where("inviter_id = ?", inviterId).Scan(&earnings).Error
+	return earnings, err
+}
+
+// AffiliateInvitee is a user an inviter invited, as the inviter sees it. A
+// cancelled invitation is listed too, with when and why it was cancelled.
+type AffiliateInvitee struct {
+	InviteeId      int    `json:"invitee_id"`
+	Username       string `json:"-"`
+	CreatedAt      int64  `json:"created_at"`
+	Cancelled      bool   `json:"cancelled" gorm:"-"`
+	CancelledAt    int64  `json:"cancelled_at" gorm:"-"`
+	CancelReason   string `json:"cancel_reason" gorm:"-"`
+	ConfirmedQuota int64  `json:"confirmed_quota" gorm:"-"`
+	PendingQuota   int64  `json:"pending_quota" gorm:"-"`
+	InviterId      int    `json:"-"`
+}
+
+// ListUserAffiliateInvitees pages through the users inviterId invited, newest
+// first: current invitations and cancelled ones not restored since.
+func ListUserAffiliateInvitees(inviterId int, pageInfo *common.PageInfo) ([]AffiliateInvitee, int64, error) {
+	cancelled := DB.Model(&AffiliateInviteLog{}).Select("invitee_id").
+		Where("inviter_id = ? AND action = ?", inviterId, AffiliateInviteActionCancel)
+	query := DB.Model(&User{}).Where("inviter_id = ? OR (inviter_id = 0 AND id IN (?))", inviterId, cancelled)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	invitees := []AffiliateInvitee{}
+	err := query.Select("id AS invitee_id", "username", "created_at", "inviter_id").
+		Order("id desc").Offset(pageInfo.GetStartIdx()).Limit(pageInfo.GetPageSize()).
+		Scan(&invitees).Error
+	if err != nil || len(invitees) == 0 {
+		return invitees, total, err
+	}
+	ids := make([]int, len(invitees))
+	for i, invitee := range invitees {
+		ids[i] = invitee.InviteeId
+	}
+	var cancels []AffiliateInviteLog
+	if err := DB.Where("inviter_id = ? AND action = ? AND invitee_id IN ?", inviterId, AffiliateInviteActionCancel, ids).
+		Order("id desc").Find(&cancels).Error; err != nil {
+		return nil, 0, err
+	}
+	var sums []struct {
+		InviteeId int
+		Status    string
+		Total     int64
+	}
+	if err := DB.Model(&AffiliateRebate{}).
+		Select("invitee_id, status, COALESCE(SUM(quota), 0) AS total").
+		Where("inviter_id = ? AND invitee_id IN ? AND status IN ?", inviterId, ids, []string{AffiliateRebatePending, AffiliateRebateReview, AffiliateRebateConfirmed}).
+		Group("invitee_id, status").Scan(&sums).Error; err != nil {
+		return nil, 0, err
+	}
+	for i := range invitees {
+		invitee := &invitees[i]
+		if invitee.InviterId != inviterId {
+			invitee.Cancelled = true
+			// Newest first, so the first match is the cancellation in effect.
+			for _, entry := range cancels {
+				if entry.InviteeId == invitee.InviteeId {
+					invitee.CancelledAt, invitee.CancelReason = entry.CreatedAt, entry.Reason
+					break
+				}
+			}
+		}
+		for _, sum := range sums {
+			if sum.InviteeId != invitee.InviteeId {
+				continue
+			}
+			if sum.Status == AffiliateRebateConfirmed {
+				invitee.ConfirmedQuota += sum.Total
+			} else {
+				invitee.PendingQuota += sum.Total
+			}
+		}
+	}
+	return invitees, total, nil
+}

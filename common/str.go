@@ -138,3 +138,18 @@ func MaskEmail(email string) string {
 func MaskSensitiveInfo(str string, upstreamURLs ...string) string {
 	return kitutil.MaskSensitiveInfo(str, upstreamURLs...)
 }
+
+// MaskUsername keeps only the first and last character of a username, so
+// other users' accounts can be listed without revealing them.
+func MaskUsername(name string) string {
+	runes := []rune(name)
+	switch len(runes) {
+	case 0:
+		return ""
+	case 1:
+		return "*"
+	case 2:
+		return string(runes[0]) + "*"
+	}
+	return string(runes[0]) + strings.Repeat("*", len(runes)-2) + string(runes[len(runes)-1])
+}

@@ -59,6 +59,7 @@ const enabledRebates: AffiliateRebatesData = {
       {
         id: 2,
         invitee_id: 12,
+        invitee_name: 'b***y',
         source: 'subscription',
         base_quota: 500_000,
         rate_bps: 1250,
@@ -72,6 +73,8 @@ const enabledRebates: AffiliateRebatesData = {
       {
         id: 1,
         invitee_id: 11,
+        // The invitee's account no longer exists.
+        invitee_name: '',
         source: 'topup',
         base_quota: 500_000,
         rate_bps: 1250,
@@ -138,7 +141,7 @@ test('with rebates enabled the card shows the amount still confirming and the ra
   })
 })
 
-test('opening rebate details lists each rebate with its invitee id, status and reason', async () => {
+test('opening rebate details lists each rebate with its masked invitee, status and reason', async () => {
   mockRebates(enabledRebates)
   renderCard()
 
@@ -147,7 +150,8 @@ test('opening rebate details lists each rebate with its invitee id, status and r
   const dialog = await screen.findByRole('dialog')
   const rows = within(dialog).getAllByRole('row').slice(1)
   expect(rows).toHaveLength(2)
-  expect(rows[0]).toHaveTextContent('#12')
+  expect(rows[0]).toHaveTextContent('b***y')
+  expect(rows[0]).not.toHaveTextContent('#12')
   expect(within(rows[0]).getByText('Under review')).toBeVisible()
   expect(
     within(rows[0]).getByText('Invitee risk score is too high')

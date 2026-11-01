@@ -29,6 +29,7 @@ import {
   Key,
   LayoutDashboard,
   ListTodo,
+  Megaphone,
   MessageSquare,
   PlugZap,
   Radio,
@@ -123,6 +124,11 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+          },
+          {
+            title: t('Promotion Center'),
+            url: '/promotion',
+            icon: Megaphone,
           },
           {
             title: t('Profile'),

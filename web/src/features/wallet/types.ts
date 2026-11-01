@@ -76,6 +76,8 @@ export type AffiliateRebateStatus =
 export interface AffiliateRebate {
   id: number
   invitee_id: number
+  /** The invitee's username with all but its first and last character hidden. */
+  invitee_name: string
   source: 'topup' | 'subscription'
   base_quota: number
   rate_bps: number

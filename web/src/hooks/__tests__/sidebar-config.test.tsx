@@ -83,7 +83,13 @@ describe('security sidebar visibility', () => {
       result.current
         .find((group) => group.id === 'personal')
         ?.items.map((item) => item.title)
-    ).toEqual(['Activities', 'Wallet', 'Profile', 'Security & Access'])
+    ).toEqual([
+      'Activities',
+      'Wallet',
+      'Promotion Center',
+      'Profile',
+      'Security & Access',
+    ])
     expect(
       result.current
         .flatMap((group) => group.items)
@@ -106,6 +112,17 @@ describe('security sidebar visibility', () => {
       ).toBe(false)
     }
   )
+  it('an admin configuration that turns the promotion module off hides Promotion Center', () => {
+    const { result } = sidebarFor(
+      { personal: { enabled: true, promotion: false } },
+      undefined
+    )
+    const titles = result.current.flatMap((group) =>
+      group.items.map((item) => item.title)
+    )
+    expect(titles).toContain('Wallet')
+    expect(titles).not.toContain('Promotion Center')
+  })
   it('users without sidebar configuration permission retain the admin view', () => {
     const { result } = sidebarFor(
       undefined,
