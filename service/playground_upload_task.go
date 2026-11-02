@@ -33,13 +33,18 @@ func StartPlaygroundUploadCleanupTask() {
 		gopool.Go(func() {
 			ticker := time.NewTicker(playgroundUploadTickInterval)
 			defer ticker.Stop()
-			purgeExpiredPlaygroundUploads()
+			if !runBackgroundRound(purgeExpiredPlaygroundUploads) {
+				return
+			}
 			for range ticker.C {
 				if !playgroundUploadTaskRunning.CompareAndSwap(false, true) {
 					continue
 				}
-				purgeExpiredPlaygroundUploads()
+				running := runBackgroundRound(purgeExpiredPlaygroundUploads)
 				playgroundUploadTaskRunning.Store(false)
+				if !running {
+					return
+				}
 			}
 		})
 	})

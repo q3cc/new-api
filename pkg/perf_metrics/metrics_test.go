@@ -266,12 +266,22 @@ func TestPerformanceAggregationAndFlush(t *testing.T) {
 			assert.NotContains(t, string(encoded), "request_count")
 			assert.NotContains(t, string(encoded), "success_count")
 
-			flushCompletedBuckets()
-			flushCompletedBuckets()
+			flushBucketsBefore(bucketStart(now.Unix()))
+			flushBucketsBefore(bucketStart(now.Unix()))
 			after, err := Query(QueryParams{Model: "test-model", Hours: 24, AllowedGroups: groups})
 			require.NoError(t, err)
 			assert.Equal(t, before.Summary, after.Summary)
 			assert.Equal(t, before.Series, after.Series)
+
+			// A stopping process writes the current hour too, without changing
+			// what readers see.
+			FlushAll()
+			stored, err := model.GetPerfMetrics("test-model", "", hour, hour)
+			require.NoError(t, err)
+			assert.NotEmpty(t, stored, "the current hour is in the database after FlushAll")
+			after, err = Query(QueryParams{Model: "test-model", Hours: 24, AllowedGroups: groups})
+			require.NoError(t, err)
+			assert.Equal(t, before.Summary, after.Summary)
 
 			RecordRelayResult(context.Background(), &relaycommon.RelayInfo{OriginModelName: "test-model", UsingGroup: "a", StartTime: now}, types.InitOpenAIError("context_length_exceeded", 400))
 			after, err = Query(QueryParams{Model: "test-model", Hours: 24, AllowedGroups: groups})
@@ -345,7 +355,7 @@ func TestPerformanceAggregationAndFlush(t *testing.T) {
 				denied, err := QuerySummaryAll(24, []string{}, "history-model", "history-hidden")
 				require.NoError(t, err)
 				assert.Empty(t, denied.RecentSuccessSeries)
-				flushCompletedBuckets()
+				flushBucketsBefore(bucketStart(now.Unix()))
 				persisted, err := QuerySummaryAll(24, groups, "history-model", "history-hot")
 				require.NoError(t, err)
 				assert.Equal(t, points, persisted.RecentSuccessSeries["history-model"])

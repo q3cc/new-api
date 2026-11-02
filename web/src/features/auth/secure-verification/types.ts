@@ -46,6 +46,7 @@ export type SecurityProofScope =
   | 'admin.user.passkey.reset'
   | 'admin.user.2fa.disable'
   | 'admin.user.binding.clear'
+  | 'system.upgrade'
 
 /** ManageUser actions that change a user's status or role and need step-up. */
 export type AdminUserManageAction = 'disable' | 'enable' | 'promote' | 'demote'
@@ -77,6 +78,10 @@ export type VerificationOperation =
         | { user_id: number; provider_id: number }
     }
   | {
+      scope: 'system.upgrade'
+      context: { action: 'apply'; version: string } | { action: 'rollback' }
+    }
+  | {
       scope: 'access_token.generate'
       context: { scopes: string[]; expires_at: number }
     }
@@ -97,6 +102,7 @@ export type VerificationOperation =
         | 'access_token.generate'
         | 'access_token.update'
         | 'access_token.revoke'
+        | 'system.upgrade'
         | `admin.user.${string}`
       >
       context?: Record<string, never>

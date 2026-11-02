@@ -118,6 +118,7 @@ func ResponsesWebSocket(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	defer common.TrackConnection()()
 	defer ws.Close()
 
 	if apiError := relay.ResponsesWebSocketHelper(c, ws, runner); apiError != nil {

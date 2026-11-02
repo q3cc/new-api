@@ -795,6 +795,11 @@ func TestSecurityEnrollmentOperationContext(t *testing.T) {
 		{"admin create administrator", "admin.user.create", `{"role":10}`, nil},
 		{"admin create common user", "admin.user.create", `{"role":1}`, service.ErrVerificationContextInvalid},
 		{"admin create unknown role", "admin.user.create", `{"role":50}`, service.ErrVerificationContextInvalid},
+		{"system upgrade", "system.upgrade", `{"action":"apply","version":"main-20261102-abcdef0"}`, nil},
+		{"system upgrade without version", "system.upgrade", `{"action":"apply"}`, service.ErrVerificationContextInvalid},
+		{"system rollback", "system.upgrade", `{"action":"rollback"}`, nil},
+		{"system rollback with version", "system.upgrade", `{"action":"rollback","version":"main-1"}`, service.ErrVerificationContextInvalid},
+		{"system upgrade unknown action", "system.upgrade", `{"action":"restart"}`, service.ErrVerificationContextInvalid},
 		{"unknown scope", "user.email.change", `{}`, service.ErrProofScope},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -45,7 +45,9 @@ const (
 	VerificationScopeAdminUserPasskeyReset = "admin.user.passkey.reset"
 	VerificationScopeAdminUserTwoFADisable = "admin.user.2fa.disable"
 	VerificationScopeAdminUserBindingClear = "admin.user.binding.clear"
-	verificationScopeAdminUserPrefix       = "admin.user."
+	// VerificationScopeSystemUpgrade replaces the running server binary.
+	VerificationScopeSystemUpgrade   = "system.upgrade"
+	verificationScopeAdminUserPrefix = "admin.user."
 )
 
 // adminUserManageActions are the ManageUser actions that change a user's
@@ -71,6 +73,18 @@ type VerificationOperation struct {
 type ChannelKeyReadContext struct {
 	ChannelID int `json:"channel_id"`
 }
+
+// SystemUpgradeContext binds a proof to installing one version, or to a
+// rollback to the previous one.
+type SystemUpgradeContext struct {
+	Action  string `json:"action"`
+	Version string `json:"version,omitempty"`
+}
+
+const (
+	SystemUpgradeActionApply    = "apply"
+	SystemUpgradeActionRollback = "rollback"
+)
 
 type AccountBindingContext struct {
 	Provider string `json:"provider"`
@@ -190,6 +204,18 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 			if len(fields) != 1 || context.Provider == "" || len(context.Provider) > 64 || oauth.GetProvider(context.Provider) == nil {
 				return VerificationBinding{}, ErrVerificationContextInvalid
 			}
+		}
+		normalized = context
+	case VerificationScopeSystemUpgrade:
+		var context SystemUpgradeContext
+		if common.Unmarshal(operation.Context, &context) != nil {
+			return VerificationBinding{}, ErrVerificationContextInvalid
+		}
+		switch {
+		case context.Action == SystemUpgradeActionApply && len(fields) == 2 && context.Version != "" && len(context.Version) <= 128:
+		case context.Action == SystemUpgradeActionRollback && len(fields) == 1:
+		default:
+			return VerificationBinding{}, ErrVerificationContextInvalid
 		}
 		normalized = context
 	case VerificationScopeAccountUnbind:
@@ -330,7 +356,8 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 		VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 		VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
-		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear:
+		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
+		VerificationScopeSystemUpgrade:
 		if scope == VerificationScopeAccountDelete && state.Role == common.RoleRootUser {
 			return nil, ErrVerificationForbidden
 		}
@@ -375,7 +402,7 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	if state.Status != common.UserStatusEnabled || state.AuthVersion != identity.UserAuthVersion {
 		return nil, ErrAuthTokenInvalid
 	}
-	if scope == VerificationScopeChannelKeyRead && state.Role != common.RoleRootUser {
+	if (scope == VerificationScopeChannelKeyRead || scope == VerificationScopeSystemUpgrade) && state.Role != common.RoleRootUser {
 		return nil, ErrVerificationForbidden
 	}
 	if strings.HasPrefix(scope, verificationScopeAdminUserPrefix) && state.Role < common.RoleAdminUser {
@@ -395,7 +422,8 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 			case VerificationScopeAccountBind, VerificationScopeAccountUnbind, VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 				VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 				VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
-				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear:
+				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
+				VerificationScopeSystemUpgrade:
 				methods[i].Available, methods[i].Reason = false, "Password authentication is disabled."
 			}
 		}

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { lazy, Suspense, type ReactElement } from 'react'
+import { lazy, Suspense, type ReactElement, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
@@ -43,6 +43,8 @@ type SystemUpdateDialogProps = {
   onOpenChange: (open: boolean) => void
   trigger: ReactElement
   update: ReturnType<typeof useSystemUpdate>
+  /** This server's own releases, installable online by super administrators. */
+  onlineUpgrade?: ReactNode
 }
 
 export function SystemUpdateDialog(props: SystemUpdateDialogProps) {
@@ -123,6 +125,7 @@ export function SystemUpdateDialog(props: SystemUpdateDialogProps) {
         </>
       }
     >
+      {props.open && props.onlineUpgrade}
       <dl className='grid min-w-0 gap-3 text-sm sm:grid-cols-2'>
         <div className='min-w-0'>
           <dt className='text-muted-foreground'>{t('Current version')}</dt>

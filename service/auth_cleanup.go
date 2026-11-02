@@ -17,11 +17,15 @@ func StartAuthArtifactCleanup() {
 		return
 	}
 	go func() {
-		cleanupAuthArtifacts()
+		if !runBackgroundRound(cleanupAuthArtifacts) {
+			return
+		}
 		ticker := time.NewTicker(authArtifactCleanupInterval)
 		defer ticker.Stop()
 		for range ticker.C {
-			cleanupAuthArtifacts()
+			if !runBackgroundRound(cleanupAuthArtifacts) {
+				return
+			}
 		}
 	}()
 }

@@ -19,6 +19,7 @@ services:
     image: calciumion/new-api:latest
     container_name: new-api
     restart: always
+#    stop_grace_period: 2m  # 与 HOT_UPGRADE_ENABLED 一起使用，让 docker stop 时进行中的请求有时间完成 (Use with HOT_UPGRADE_ENABLED so docker stop lets running requests finish)
     command: --log-dir /app/logs
     ports:
       - "3000:3000"
@@ -52,6 +53,9 @@ services:
 #      - GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX  # Google Analytics 的测量 ID (Google Analytics Measurement ID)
 #      - UMAMI_WEBSITE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  # Umami 网站 ID (Umami Website ID)
 #      - UMAMI_SCRIPT_URL=https://analytics.umami.is/script.js  # Umami 脚本 URL，默认为官方地址 (Umami Script URL, defaults to official URL)
+#      - HOT_UPGRADE_ENABLED=true  # 开启后台在线更新：更新时旧连接继续由旧版本处理，新连接进入新版本，无需重建容器；需同时设置 SESSION_SECRET，并加上 stop_grace_period (Online upgrade from the admin console without recreating the container; also set SESSION_SECRET and stop_grace_period)
+#      - HOT_UPGRADE_DRAIN_TIMEOUT=7200  # 更新后旧版本最多等待旧连接多少秒，默认 7200 (Seconds the previous version may keep serving open connections after an upgrade, default 7200)
+#      - UPDATE_CHECK_INTERVAL_MINUTES=60  # 自动检查新版本的间隔（分钟），0 关闭 (Minutes between automatic release checks; 0 turns it off)
 
     depends_on:
       - redis

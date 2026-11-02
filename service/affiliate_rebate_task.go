@@ -38,8 +38,11 @@ func StartAffiliateRebateTask() {
 				if !affiliateRebateTaskRunning.CompareAndSwap(false, true) {
 					continue
 				}
-				SettleDueAffiliateRebates(common.GetTimestamp())
+				running := runBackgroundRound(func() { SettleDueAffiliateRebates(common.GetTimestamp()) })
 				affiliateRebateTaskRunning.Store(false)
+				if !running {
+					return
+				}
 			}
 		})
 	})

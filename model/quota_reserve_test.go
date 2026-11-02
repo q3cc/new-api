@@ -151,6 +151,22 @@ func TestBatchUpdateAccumulatesTwoMaximumRequestCharges(t *testing.T) {
 	assert.Equal(t, 100, getUserQuotaFromDB(t, user.Id))
 }
 
+func TestFlushBatchUpdatesWritesChangesWaitingInMemory(t *testing.T) {
+	truncateTables(t)
+	resetBatchUpdateTestState(t)
+	common.BatchUpdateEnabled = true
+	user := createReserveTestUser(t, 100)
+	token := createReserveTestToken(t, 50)
+	require.NoError(t, DecreaseUserQuota(user.Id, 30, false))
+	require.NoError(t, DecreaseTokenQuota(token.Id, token.Key, 20))
+	require.Equal(t, 100, getUserQuotaFromDB(t, user.Id), "the change is still waiting in memory")
+
+	FlushBatchUpdates()
+
+	assert.Equal(t, 70, getUserQuotaFromDB(t, user.Id))
+	assert.Equal(t, 30, getTokenFromDB(t, token.Id).RemainQuota)
+}
+
 func TestBatchUpdateAccumulatorSaturatesOverflow(t *testing.T) {
 	resetBatchUpdateTestState(t)
 

@@ -1,6 +1,7 @@
 package perfmetrics
 
 import (
+	"math"
 	"strconv"
 	"time"
 
@@ -17,16 +18,26 @@ func flushLoop() {
 		if !setting.Enabled {
 			continue
 		}
-		flushCompletedBuckets()
+		flushBucketsBefore(bucketStart(time.Now().Unix()))
 		cleanupExpiredMetrics(setting.RetentionDays)
 	}
 }
 
-func flushCompletedBuckets() {
-	currentBucket := bucketStart(time.Now().Unix())
+// FlushAll writes every bucket, the current hour included, so a stopping
+// process loses no samples. The database adds to what is already stored, so
+// the next process flushing the same hour is fine.
+func FlushAll() {
+	if !perf_metrics_setting.GetSetting().Enabled {
+		return
+	}
+	flushBucketsBefore(math.MaxInt64)
+}
+
+// flushBucketsBefore writes the buckets that start before cutoff.
+func flushBucketsBefore(cutoff int64) {
 	hotBuckets.Range(func(key, value any) bool {
 		k := key.(bucketKey)
-		if k.bucketTs >= currentBucket {
+		if k.bucketTs >= cutoff {
 			return true
 		}
 

@@ -87,6 +87,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			helper.WssError(c, ws, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry()).ToOpenAIError())
 			return
 		}
+		// Registered first so it runs last: shutdown waits until billing in
+		// the deferred calls below has finished too.
+		defer common.TrackConnection()()
 		defer ws.Close()
 	}
 

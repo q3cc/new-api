@@ -4,15 +4,13 @@ import (
 	"bytes"
 	"context"
 	"embed"
-	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -23,6 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/pkg/hotupgrade"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/pkg/wsmanager"
@@ -31,6 +30,7 @@ import (
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/service/systemupgrade"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
@@ -50,6 +50,12 @@ var indexPage []byte
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		os.Exit(jsplugin.RunCLI(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	if hotupgrade.SupervisorRequested() {
+		flag.Parse()
+		if !*common.PrintVersion && !*common.PrintHelp {
+			os.Exit(runUpgradeSupervisor())
+		}
 	}
 	startTime := time.Now()
 	kitutil.SetLogging(common.SysLog, func(message string) {
@@ -147,6 +153,9 @@ func main() {
 	// Playground upload cleanup (hourly, removes chunks nobody resumed in 7 days)
 	service.StartPlaygroundUploadCleanupTask()
 
+	// Look for new releases on GitHub so administrators can upgrade online.
+	systemupgrade.StartCheckTask()
+
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()
@@ -228,34 +237,63 @@ func main() {
 		Addr:    ":" + port,
 		Handler: server,
 	}
-
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			common.FatalLog(common.LogText("failed to start HTTP server: %s", err.Error()))
-		}
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-
-	common.LogStartupSuccess(startTime, port)
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	sig := <-quit
-	common.SysLog(common.LogText("received signal: %v, shutting down...", sig))
-
-	// SSE streams may run for minutes; give them time to finish before forced exit
-	shutdownTimeout := time.Duration(common.GetEnvOrDefault("SHUTDOWN_TIMEOUT_SECONDS", 120)) * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		common.SysError(common.LogText("server forced to shutdown: %v", err))
-	}
-	// 内存中的看板数据保存入库，避免重启丢失未落库数据 (issue #5679)
-	if common.DataExportEnabled {
-		model.SaveQuotaDataCache()
+	err = hotupgrade.Serve(hotupgrade.ServeOptions{
+		Server: srv,
+		// SSE streams may run for minutes; give them time to finish before forced exit
+		ShutdownTimeout: time.Duration(common.GetEnvOrDefault("SHUTDOWN_TIMEOUT_SECONDS", 120)) * time.Second,
+		DrainTimeout:    hotupgrade.DrainTimeout(),
+		Started: func() {
+			common.LogStartupSuccess(startTime, port)
+		},
+		Finish: func() {
+			// Quota changes and statistics still in memory are written before
+			// exit, so a restart or an upgrade loses none of them (issue #5679).
+			model.FlushBatchUpdates()
+			if common.DataExportEnabled {
+				model.SaveQuotaDataCache()
+			}
+			perfmetrics.FlushAll()
+		},
+		Logf: func(format string, args ...any) {
+			common.SysLog(common.LogText(format, args...))
+		},
+	})
+	if err != nil {
+		common.FatalLog(common.LogText("failed to start HTTP server: %s", err.Error()))
 	}
 	common.SysLog(common.LogText("server exited"))
+}
+
+// runUpgradeSupervisor keeps the listening socket and runs the server in
+// worker processes that an upgrade replaces without dropping connections.
+func runUpgradeSupervisor() int {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = strconv.Itoa(*common.Port)
+	}
+	logf := func(format string, args ...any) {
+		log.Printf("[hot-upgrade] "+format, args...)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		logf("cannot find this program's path: %v", err)
+		return 1
+	}
+	err = hotupgrade.RunSupervisor(hotupgrade.SupervisorConfig{
+		Addr:         ":" + port,
+		ImageBinary:  executable,
+		ImageVersion: common.Version,
+		Args:         os.Args[1:],
+		Env:          os.Environ(),
+		ReadyTimeout: hotupgrade.ReadyTimeout(),
+		DrainTimeout: hotupgrade.DrainTimeout(),
+		Logf:         logf,
+	})
+	if err != nil {
+		logf("%v", err)
+		return 1
+	}
+	return 0
 }
 
 func InjectUmamiAnalytics() {
@@ -373,7 +411,11 @@ func InitResources() error {
 	controller.StartHomeWallpaperPrefetch()
 
 	// 清理旧的磁盘缓存文件
-	common.CleanupOldCacheFiles()
+	// A worker that replaced an older one leaves the cache alone: the older
+	// worker may still be using its files.
+	if !common.StartedByUpgrade() {
+		common.CleanupOldCacheFiles()
+	}
 
 	// Initialize SQL Database
 	err = model.InitLogDB()

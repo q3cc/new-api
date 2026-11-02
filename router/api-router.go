@@ -415,6 +415,14 @@ func SetApiRouter(router *gin.Engine) {
 			systemTaskRoute.GET("/current", controller.GetCurrentSystemTask)
 			systemTaskRoute.GET("/:task_id", controller.GetSystemTask)
 		}
+		systemUpgradeRoute := apiRouter.Group("/system-upgrade")
+		systemUpgradeRoute.Use(middleware.RootAuth(), middleware.DisableCache())
+		{
+			systemUpgradeRoute.GET("/status", controller.GetSystemUpgradeStatus)
+			systemUpgradeRoute.POST("/check", middleware.CriticalRateLimit(), controller.CheckSystemUpgrade)
+			systemUpgradeRoute.POST("/apply", middleware.CriticalRateLimit(), controller.ApplySystemUpgrade)
+			systemUpgradeRoute.POST("/rollback", middleware.CriticalRateLimit(), controller.RollbackSystemUpgrade)
+		}
 		systemInfoRoute := apiRouter.Group("/system-info")
 		systemInfoRoute.Use(middleware.RootAuth())
 		{

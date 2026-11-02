@@ -34,10 +34,15 @@ func StartLotteryDrawTask() {
 				if !lotteryTaskRunning.CompareAndSwap(false, true) {
 					continue
 				}
-				if err := model.RunDueLotteryDraws(); err != nil {
-					logger.LogWarn(context.Background(), common.LogText("lottery draw task failed: %v", err))
-				}
+				running := runBackgroundRound(func() {
+					if err := model.RunDueLotteryDraws(); err != nil {
+						logger.LogWarn(context.Background(), common.LogText("lottery draw task failed: %v", err))
+					}
+				})
 				lotteryTaskRunning.Store(false)
+				if !running {
+					return
+				}
 			}
 		})
 	})

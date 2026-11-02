@@ -634,6 +634,10 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   // Logs
   'log.clear': 'Cleared historical logs',
   'log.cleanup_start': 'Log cleanup task started.',
+  // Online upgrade
+  'system.upgrade_check': 'Checked for a new version',
+  'system.upgrade_apply': 'Started an online upgrade from {{from}} to {{to}}',
+  'system.upgrade_rollback': 'Rolled back from {{from}} to {{to}}',
   // Generic middleware fallback
   generic: '{{method}} {{route}}',
 }

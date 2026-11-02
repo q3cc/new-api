@@ -158,6 +158,11 @@ var auditRouteActions = map[string]string{
 
 	// 日志
 	"POST /api/system-task/log-cleanup": "log.cleanup_start",
+
+	// 在线更新
+	"POST /api/system-upgrade/check":    "system.upgrade_check",
+	"POST /api/system-upgrade/apply":    "system.upgrade_apply",
+	"POST /api/system-upgrade/rollback": "system.upgrade_rollback",
 }
 
 // AuditRouteAction returns the action a fallback audit log records for an

@@ -18,9 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { OnlineUpgradeCard } from '@/features/system-update/components/online-upgrade-card'
 import { SystemUpdateAction } from '@/features/system-update/system-update-action'
 import { useStatus } from '@/hooks/use-status'
 import { formatTimestamp } from '@/lib/format'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { SettingsSection } from '../components/settings-section'
 
@@ -32,6 +35,9 @@ type UpdateCheckerSectionProps = {
 export function UpdateCheckerSection(props: UpdateCheckerSectionProps) {
   const { t } = useTranslation()
   const { status } = useStatus()
+  const isRoot = useAuthStore(
+    (state) => (state.auth.user?.role ?? 0) >= ROLE.SUPER_ADMIN
+  )
   const uptime = props.startTime
     ? formatTimestamp(props.startTime)
     : t('Unknown')
@@ -55,6 +61,7 @@ export function UpdateCheckerSection(props: UpdateCheckerSectionProps) {
           </div>
         </div>
         <SystemUpdateAction compact={false} />
+        {isRoot && <OnlineUpgradeCard />}
       </div>
     </SettingsSection>
   )

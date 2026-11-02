@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -660,6 +661,39 @@ func TestResponsesWSShutdownInterruptsBusyWriter(t *testing.T) {
 	require.NoError(t, latePeer.SetReadDeadline(time.Now().Add(time.Second)))
 	_, _, err := latePeer.ReadMessage()
 	assert.True(t, websocket.IsCloseError(err, websocket.CloseNormalClosure), "want a 1000 close frame, got %v", err)
+}
+
+func TestResponsesWSDrainClosesOnlyIdleSessions(t *testing.T) {
+	newSession := func(t *testing.T) (*responsesWSSession, *websocket.Conn) {
+		client, server, cleanup := newTestWebSocketPair(t)
+		t.Cleanup(cleanup)
+		ctx, cancel := context.WithCancel(context.Background())
+		return &responsesWSSession{ctx: ctx, cancel: cancel, client: server}, client
+	}
+
+	t.Run("an idle session is told to reconnect", func(t *testing.T) {
+		s, client := newSession(t)
+
+		s.closeIfIdleForDrain()
+
+		require.NoError(t, client.SetReadDeadline(time.Now().Add(time.Second)))
+		_, _, err := client.ReadMessage()
+		assert.True(t, websocket.IsCloseError(err, websocket.CloseGoingAway), "want a 1001 close frame, got %v", err)
+		assert.False(t, s.tryReserveCurrent(&responsesWSCallState{}), "a closed session admits no new response")
+	})
+
+	t.Run("a session with a response in progress stays open", func(t *testing.T) {
+		s, client := newSession(t)
+		require.True(t, s.tryReserveCurrent(&responsesWSCallState{}))
+
+		s.closeIfIdleForDrain()
+
+		require.NoError(t, client.SetReadDeadline(time.Now().Add(200*time.Millisecond)))
+		_, _, err := client.ReadMessage()
+		var netErr net.Error
+		assert.True(t, errors.As(err, &netErr) && netErr.Timeout(), "the session must stay open, got %v", err)
+		assert.NoError(t, s.ctx.Err())
+	})
 }
 
 func TestResponsesWSPassthroughPreservesRawPricingParameters(t *testing.T) {

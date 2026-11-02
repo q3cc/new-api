@@ -32,6 +32,8 @@ import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { OnlineUpgradeCard } from './components/online-upgrade-card'
+import { useOnlineUpgradeStatus } from './online-upgrade'
 import { SystemUpdateDialog } from './system-update-dialog'
 import { useSystemUpdate } from './use-system-update'
 
@@ -52,29 +54,37 @@ export function SystemUpdateAction(props: SystemUpdateActionProps) {
 function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
   const { t } = useTranslation()
   const update = useSystemUpdate()
+  const isRoot = useAuthStore(
+    (state) => (state.auth.user?.role ?? 0) >= ROLE.SUPER_ADMIN
+  )
+  // Super administrators also see this server's own releases, which they
+  // can install online.
+  const online = useOnlineUpgradeStatus()
+  const onlineVersion = online.data?.check?.has_update
+    ? online.data.check.latest?.version
+    : undefined
+  const notify = update.shouldNotify || Boolean(onlineVersion)
   const [open, setOpen] = useState(false)
   const compact = props.compact ?? true
   const versionPresentation = props.presentation === 'version'
   const version = update.currentVersion?.trim() || t('Unknown version')
-  const label = update.shouldNotify
-    ? t('Update available')
-    : t('Check for updates')
+  const label = notify ? t('Update available') : t('Check for updates')
   let description = label
-  if (update.shouldNotify) {
+  if (notify) {
     description = t('New version available: {{version}}', {
-      version: update.release?.tag_name,
+      version: onlineVersion ?? update.release?.tag_name,
     })
   } else if (update.snapshot?.error) {
     description = t('Failed to check for updates')
   }
-  const updateAnnouncement = update.shouldNotify ? description : ''
+  const updateAnnouncement = notify ? description : ''
   if (versionPresentation) {
     const versionDescription = t(
       'System updates, current version: {{version}}',
       { version }
     )
     description =
-      update.shouldNotify || update.snapshot?.error
+      notify || update.snapshot?.error
         ? `${versionDescription}\n${description}`
         : versionDescription
   }
@@ -85,7 +95,7 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
         <Spinner data-icon='inline-start' aria-hidden='true' />
       ) : (
         <HugeiconsIcon
-          icon={update.shouldNotify ? ArrowUp01Icon : RefreshIcon}
+          icon={notify ? ArrowUp01Icon : RefreshIcon}
           data-icon='inline-start'
           aria-hidden='true'
         />
@@ -97,17 +107,17 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
     triggerContent = (
       <>
         <HugeiconsIcon
-          icon={update.shouldNotify ? ArrowUp01Icon : InformationCircleIcon}
+          icon={notify ? ArrowUp01Icon : InformationCircleIcon}
           className={cn(
             '@min-[22rem]/system-brand:hidden',
-            update.shouldNotify && 'text-primary'
+            notify && 'text-primary'
           )}
           aria-hidden='true'
         />
         <span className='hidden max-w-32 truncate font-mono text-xs @min-[22rem]/system-brand:inline'>
           {version}
         </span>
-        {update.shouldNotify && (
+        {notify && (
           <Badge
             variant='secondary'
             className='bg-primary/10 text-primary hidden h-5 px-1.5 text-[10px] @min-[22rem]/system-brand:inline-flex'
@@ -124,12 +134,11 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
       open={open}
       onOpenChange={setOpen}
       update={update}
+      onlineUpgrade={isRoot ? <OnlineUpgradeCard /> : null}
       trigger={
         <Button
           type='button'
-          variant={
-            !versionPresentation && update.shouldNotify ? 'outline' : 'ghost'
-          }
+          variant={!versionPresentation && notify ? 'outline' : 'ghost'}
           aria-label={description}
           title={description}
           aria-busy={update.checking}
@@ -141,12 +150,12 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
               compact &&
               'size-8 px-0 lg:w-auto lg:gap-1.5 lg:px-2.5',
             !versionPresentation &&
-              update.shouldNotify &&
+              notify &&
               'border-primary/40 bg-primary/10 text-primary'
           )}
         >
           {triggerContent}
-          {update.shouldNotify && (versionPresentation || compact) && (
+          {notify && (versionPresentation || compact) && (
             <Badge
               aria-hidden='true'
               className={cn(

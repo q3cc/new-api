@@ -134,6 +134,7 @@ func ResponsesWebSocketHelper(c *gin.Context, client *websocket.Conn, runner Res
 		maxMB = 128
 	}
 	client.SetReadLimit(int64(maxMB) << 20)
+	defer common.OnDrain(s.closeIfIdleForDrain)()
 	defer func() {
 		// Unless an earlier shutdown ended the read, the client closed or left.
 		// Gorilla already answered a client close frame, so this tells the upstream.
@@ -214,6 +215,9 @@ func (s *responsesWSSession) runRequest(state *responsesWSCallState, message []b
 			s.shutdown(state.closeCode, state.closeReason)
 		}
 		s.current = nil
+		if common.IsDraining() {
+			s.shutdown(websocket.CloseGoingAway, responsesWSDrainReason)
+		}
 		close(state.done)
 		s.stateMu.Unlock()
 		s.clientWriteMu.Unlock()
@@ -679,11 +683,26 @@ func (s *responsesWSSession) getCurrent() *responsesWSCallState {
 func (s *responsesWSSession) tryReserveCurrent(state *responsesWSCallState) bool {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	if s.current != nil {
+	if s.current != nil || s.ctx.Err() != nil {
 		return false
 	}
 	s.current = state
 	return true
+}
+
+// responsesWSDrainReason tells a client why its idle session ended while this
+// server hands over to a new version.
+const responsesWSDrainReason = "server is restarting, please reconnect"
+
+// closeIfIdleForDrain ends the session with "going away" once the server is
+// draining and no response is in progress, so the client reconnects to the
+// new version. A response in progress closes the session when it finishes.
+func (s *responsesWSSession) closeIfIdleForDrain() {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.current == nil {
+		s.shutdown(websocket.CloseGoingAway, responsesWSDrainReason)
+	}
 }
 
 func (s *responsesWSSession) getTarget() *websocket.Conn {

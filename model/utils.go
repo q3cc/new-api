@@ -40,6 +40,13 @@ func InitBatchUpdater() {
 	})
 }
 
+// FlushBatchUpdates writes every quota change still waiting in memory. A
+// stopping process calls it last so the changes since the previous batch are
+// not lost.
+func FlushBatchUpdates() {
+	batchUpdate()
+}
+
 func addNewRecord(type_ int, id int, value int) {
 	batchUpdateLocks[type_].Lock()
 	defer batchUpdateLocks[type_].Unlock()

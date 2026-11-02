@@ -113,7 +113,9 @@ func (s *BillingSession) Refund(c *gin.Context) {
 	subscriptionId := s.relayInfo.SubscriptionId
 	funding := s.funding
 
+	done := common.BeginBackgroundWork()
 	gopool.Go(func() {
+		defer done()
 		// 1) 退还资金来源
 		if err := funding.Refund(); err != nil {
 			common.SysLog(common.LogText("error refunding billing source: %s", err.Error()))

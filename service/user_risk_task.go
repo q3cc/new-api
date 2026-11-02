@@ -40,9 +40,13 @@ func StartUserRiskScoreTask() {
 			ticker := time.NewTicker(userRiskTickInterval)
 			defer ticker.Stop()
 
-			runUserRiskScoreOnce()
+			if !runBackgroundRound(runUserRiskScoreOnce) {
+				return
+			}
 			for range ticker.C {
-				runUserRiskScoreOnce()
+				if !runBackgroundRound(runUserRiskScoreOnce) {
+					return
+				}
 			}
 		})
 	})

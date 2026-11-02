@@ -153,13 +153,17 @@ func StartSystemTaskRunner() {
 				runSystemTaskClaimPass(runnerID)
 			}
 
-			runPass()
+			if !runBackgroundRound(runPass) {
+				return
+			}
 			for {
 				select {
 				case <-ticker.C:
 				case <-systemTaskWakeup:
 				}
-				runPass()
+				if !runBackgroundRound(runPass) {
+					return
+				}
 			}
 		})
 	})
@@ -248,7 +252,11 @@ func runSystemTaskClaimPass(runnerID string) {
 		}
 		dispatchHandler := handler
 		dispatchTask := claimedTask
+		// Shutdown waits for a claimed task, so it is finished rather than left
+		// to expire its lease and be marked failed.
+		done := common.BeginBackgroundWork()
 		gopool.Go(func() {
+			defer done()
 			runWithLeaseHeartbeat(dispatchTask, runnerID, func(ctx context.Context) {
 				dispatchHandler.Run(ctx, dispatchTask, runnerID)
 			})

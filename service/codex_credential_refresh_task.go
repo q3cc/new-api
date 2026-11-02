@@ -43,9 +43,15 @@ func StartCodexCredentialAutoRefreshTask() {
 			ticker := time.NewTicker(codexCredentialRefreshTickInterval)
 			defer ticker.Stop()
 
-			runCodexCredentialAutoRefreshOnce()
+			// A worker that replaced an older one waits a full tick, so it never
+			// spends a refresh token the old worker may be using right now.
+			if !common.StartedByUpgrade() && !runBackgroundRound(runCodexCredentialAutoRefreshOnce) {
+				return
+			}
 			for range ticker.C {
-				runCodexCredentialAutoRefreshOnce()
+				if !runBackgroundRound(runCodexCredentialAutoRefreshOnce) {
+					return
+				}
 			}
 		})
 	})

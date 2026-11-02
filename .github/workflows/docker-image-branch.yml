@@ -184,3 +184,93 @@ jobs:
           echo "---" >> $GITHUB_STEP_SUMMARY
           docker buildx imagetools inspect ${REGISTRY_IMAGE}:${{ needs.prepare.outputs.version }} >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+
+  publish_release:
+    # The online upgrade in the admin console installs these binaries: they
+    # are taken from the images just pushed, so both run the same file.
+    name: Publish signed binaries (GitHub Release)
+    needs: [prepare, create_manifests]
+    if: needs.prepare.outputs.branch == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SHA: ${{ needs.prepare.outputs.sha }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Take the binaries out of the images
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            image="${REGISTRY_IMAGE}:${VERSION}-${arch}"
+            docker pull --quiet --platform "linux/${arch}" "$image"
+            container=$(docker create --platform "linux/${arch}" "$image")
+            docker cp "${container}:/new-api" "dist/new-api-linux-${arch}"
+            docker rm "$container" > /dev/null
+          done
+          cd dist
+          sha256sum new-api-linux-amd64 new-api-linux-arm64 > checksums.txt
+          cat checksums.txt
+
+      - name: Sign the checksums
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            echo "::error::The UPDATE_SIGNING_KEY secret is not set"
+            exit 1
+          fi
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key"
+          # The key must match the public key the server checks against.
+          signing_public=$(openssl pkey -in "$key" -pubout -outform DER | tail -c 32 | base64)
+          expected_public=$(sed -n 's/^\s*releasePublicKey = "\(.*\)"$/\1/p' service/systemupgrade/release.go)
+          if [ "$signing_public" != "$expected_public" ]; then
+            echo "::error::UPDATE_SIGNING_KEY does not match releasePublicKey in service/systemupgrade/release.go"
+            exit 1
+          fi
+          openssl pkeyutl -sign -rawin -inkey "$key" -in dist/checksums.txt -out dist/checksums.txt.sig
+
+      - name: Write release notes
+        run: |
+          set -euo pipefail
+          previous=$(gh release list --exclude-drafts --limit 30 --json tagName --jq '[.[] | select(.tagName | startswith("main-"))][0].tagName // ""')
+          if [ -n "$previous" ] && git rev-parse -q --verify "refs/tags/${previous}" > /dev/null; then
+            git log --no-merges --format='- %s (%h)' "${previous}..${SHA}" | head -n 50 > notes.md
+          else
+            git log --no-merges --format='- %s (%h)' -n 20 "$SHA" > notes.md
+          fi
+          [ -s notes.md ] || echo "- No changes since ${previous}" > notes.md
+          cat notes.md
+
+      - name: Create the release
+        run: |
+          gh release create "$VERSION" \
+            dist/new-api-linux-amd64 dist/new-api-linux-arm64 dist/checksums.txt dist/checksums.txt.sig \
+            --target "$SHA" --title "$VERSION" --notes-file notes.md
+
+      - name: Keep the newest 20 builds
+        run: |
+          gh release list --exclude-drafts --limit 100 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("main-"))] | sort_by(.createdAt) | reverse | .[20:] | .[].tagName' |
+            while read -r tag; do
+              gh release delete "$tag" --yes --cleanup-tag
+            done

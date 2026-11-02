@@ -238,6 +238,7 @@ var accessTokenVerificationScopes = map[string]string{
 	VerificationScopeAccessTokenGenerate:   "",
 	VerificationScopeAccessTokenUpdate:     "",
 	VerificationScopeAccessTokenRevoke:     "",
+	VerificationScopeSystemUpgrade:         "",
 	VerificationScopeLogin:                 "",
 }
 
