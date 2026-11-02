@@ -65,7 +65,10 @@ export function PromotionLeaderboard() {
       value: me && me.rank > 0 ? String(me.rank) : t('Not ranked'),
     },
     { label: t('This quarter'), value: formatQuota(me?.quarter_quota ?? 0) },
-    { label: t('This month'), value: formatQuota(me?.month_quota ?? 0) },
+    {
+      label: t("This month's earnings"),
+      value: formatQuota(me?.month_quota ?? 0),
+    },
     { label: t('Total earnings'), value: formatQuota(me?.total_quota ?? 0) },
   ]
 
@@ -104,7 +107,7 @@ export function PromotionLeaderboard() {
     },
     {
       id: 'month',
-      header: t('This month'),
+      header: t("This month's earnings"),
       cell: (row) => (
         <span className='tabular-nums'>{formatQuota(row.month_quota)}</span>
       ),

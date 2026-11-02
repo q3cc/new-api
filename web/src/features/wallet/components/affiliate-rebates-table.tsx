@@ -107,17 +107,19 @@ export function AffiliateRebatesTable() {
     {
       id: 'confirm',
       header: t('Confirmation time'),
-      cell: (rebate) => (
-        <TimestampCell
-          timestamp={
-            rebate.status === 'confirmed'
-              ? rebate.confirmed_at
-              : rebate.confirm_at
-          }
-          format='absolute'
-          justNowLabel={t('Just now')}
-        />
-      ),
+      cell: (rebate) => {
+        // A rebate under review or rejected has no date it will credit on.
+        let timestamp = 0
+        if (rebate.status === 'confirmed') timestamp = rebate.confirmed_at
+        if (rebate.status === 'pending') timestamp = rebate.confirm_at
+        return (
+          <TimestampCell
+            timestamp={timestamp}
+            format='absolute'
+            justNowLabel={t('Just now')}
+          />
+        )
+      },
     },
   ]
 

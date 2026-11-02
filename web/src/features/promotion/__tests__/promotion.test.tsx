@@ -275,6 +275,20 @@ describe('promotion center', () => {
     )
   })
 
+  it('a rejected rebate shows no confirmation time while a confirming one shows when it will credit', async () => {
+    mockApi({})
+    renderPage('rebates')
+
+    const rejected = await findRowWithText('Rejected')
+    const pending = await findRowWithText('Confirming')
+
+    expect(rejected.querySelector('time')).toBeNull()
+    expect(pending.querySelector('time')).toHaveAttribute(
+      'datetime',
+      new Date(1_700_000_000_000).toISOString()
+    )
+  })
+
   it('with rebates disabled the page says so instead of the rebate rule', async () => {
     mockApi({ rebates: { ...rebates, enabled: false } })
     renderPage('invitees')
