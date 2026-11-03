@@ -33,6 +33,7 @@ const activity = {
   status: 'ranked',
   rank_metric: 'recharge',
   rank_min_value: 0,
+  leaderboard_style: 'horse',
   prizes: [],
 } as unknown as LotteryActivity
 

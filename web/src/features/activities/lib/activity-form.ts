@@ -69,6 +69,7 @@ export function getActivityFormSchema(t: TFunction) {
       rank_metric: z.enum(['invites', 'consumption', 'recharge']),
       /** Threshold as entered: accounts, dollars of consumption, or money. */
       rank_min_value: z.number().min(0),
+      leaderboard_style: z.enum(['horse', 'car', 'podium', 'plain']),
       wheel_total_limit: z.number().int().min(0),
       wheel_daily_limit: z.number().int().min(0),
       prizes: z.array(prizeSchema),
@@ -217,6 +218,7 @@ export const ACTIVITY_FORM_DEFAULT_VALUES: ActivityFormValues = {
   invite_end_time: undefined,
   rank_metric: 'recharge',
   rank_min_value: 0,
+  leaderboard_style: 'horse',
   wheel_total_limit: 1,
   wheel_daily_limit: 0,
   prizes: [{ ...EMPTY_PRIZE }],
@@ -266,6 +268,7 @@ export function activityFormToPayload(
     rank_min_value: leaderboard
       ? rankMinValueToPayload(values.rank_metric, values.rank_min_value)
       : 0,
+    leaderboard_style: leaderboard ? values.leaderboard_style : '',
     wheel_total_limit: values.mode === 'wheel' ? values.wheel_total_limit : 0,
     wheel_daily_limit: values.mode === 'wheel' ? values.wheel_daily_limit : 0,
     prizes: values.prizes.map((prize) => ({
@@ -309,6 +312,7 @@ export function activityToFormValues(
       activity.rank_metric === 'consumption'
         ? quotaUnitsToEditableAmount(activity.rank_min_value)
         : activity.rank_min_value,
+    leaderboard_style: activity.leaderboard_style || 'horse',
     wheel_total_limit: activity.wheel_total_limit,
     wheel_daily_limit: activity.wheel_daily_limit,
     prizes: activity.prizes.map((prize) => ({

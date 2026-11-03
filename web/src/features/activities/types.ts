@@ -27,6 +27,9 @@ export type LotteryMode = 'wheel' | 'scheduled' | 'participants' | 'leaderboard'
 /** What a leaderboard ranks users by. */
 export type LotteryRankMetric = 'invites' | 'consumption' | 'recharge'
 
+/** How a leaderboard shows its top three ranks. */
+export type LotteryLeaderboardStyle = 'horse' | 'car' | 'podium' | 'plain'
+
 /** `ranked` is a leaderboard whose ranks are locked, waiting for the awards. */
 export type LotteryStatus =
   | 'draft'
@@ -77,6 +80,8 @@ export type LotteryActivity = {
   rank_metric: LotteryRankMetric | ''
   /** Score needed to be ranked: accounts, quota or paid money by metric. */
   rank_min_value: number
+  /** Leaderboards only; empty for other modes. */
+  leaderboard_style: LotteryLeaderboardStyle | ''
   wheel_total_limit: number
   wheel_daily_limit: number
   entry_count: number
@@ -192,6 +197,7 @@ export type LotteryActivityPayload = Pick<
   | 'invite_end_time'
   | 'rank_metric'
   | 'rank_min_value'
+  | 'leaderboard_style'
   | 'wheel_total_limit'
   | 'wheel_daily_limit'
 > & {

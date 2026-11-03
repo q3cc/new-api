@@ -30,6 +30,8 @@ import type { LeaderboardRow, LotteryActivityView } from '../types'
 
 type ActivityLeaderboardProps = {
   activity: LotteryActivityView
+  /** The first three ranks are already shown in the scene above. */
+  topThreeShownAbove?: boolean
 }
 
 /** The viewer's standing and the public ranks of a leaderboard activity. */
@@ -41,6 +43,9 @@ export function ActivityLeaderboard(props: ActivityLeaderboardProps) {
   const metric = props.activity.rank_metric
   const score = (value: number) => formatLeaderboardScore(metric, value, locale)
   const me = board.me
+  const rows = props.topThreeShownAbove
+    ? board.rows.filter((row) => row.rank > 3)
+    : board.rows
 
   let standing: string
   if (me.rank > 0) {
@@ -108,18 +113,20 @@ export function ActivityLeaderboard(props: ActivityLeaderboardProps) {
         ) : null}
         {hint ? <div className='text-warning text-xs'>{hint}</div> : null}
       </div>
-      <StaticDataTable
-        columns={columns}
-        data={board.rows}
-        getRowKey={(row) => row.rank}
-        getRowClassName={(row) =>
-          row.rank === me.rank ? 'bg-primary/5' : undefined
-        }
-        getRowProps={(row) =>
-          row.rank === me.rank ? { 'aria-current': true } : {}
-        }
-        emptyContent={t('No one is ranked yet')}
-      />
+      {rows.length > 0 || !props.topThreeShownAbove ? (
+        <StaticDataTable
+          columns={columns}
+          data={rows}
+          getRowKey={(row) => row.rank}
+          getRowClassName={(row) =>
+            row.rank === me.rank ? 'bg-primary/5' : undefined
+          }
+          getRowProps={(row) =>
+            row.rank === me.rank ? { 'aria-current': true } : {}
+          }
+          emptyContent={t('No one is ranked yet')}
+        />
+      ) : null}
       <p className='text-muted-foreground text-center text-xs'>
         {board.final
           ? t('Final ranks of {{count}} users', { count: board.ranked })

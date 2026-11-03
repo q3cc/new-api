@@ -29,6 +29,16 @@ const (
 
 var lotteryRankMetrics = []string{LotteryRankInvites, LotteryRankConsumption, LotteryRankRecharge}
 
+// Ways a leaderboard shows its top three ranks on the activity page.
+const (
+	LeaderboardStyleHorse  = "horse"
+	LeaderboardStyleCar    = "car"
+	LeaderboardStylePodium = "podium"
+	LeaderboardStylePlain  = "plain"
+)
+
+var leaderboardStyles = []string{LeaderboardStyleHorse, LeaderboardStyleCar, LeaderboardStylePodium, LeaderboardStylePlain}
+
 // LeaderboardRow is one ranked user. ReachedAt is when the user last added to
 // their score; equal scores rank whoever reached them first higher.
 type LeaderboardRow struct {

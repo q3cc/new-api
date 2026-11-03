@@ -89,6 +89,8 @@ type LotteryActivity struct {
 	// accounts, consumed quota, or paid money.
 	RankMetric   string  `json:"rank_metric" gorm:"type:varchar(16);default:''"`
 	RankMinValue float64 `json:"rank_min_value" gorm:"type:decimal(20,4);not null;default:0"`
+	// LeaderboardStyle is how a leaderboard shows its top three ranks.
+	LeaderboardStyle string `json:"leaderboard_style" gorm:"type:varchar(16);default:''"`
 
 	// Spins allowed per user for wheel activities; 0 means unlimited.
 	WheelTotalLimit int `json:"wheel_total_limit" gorm:"type:int;default:0"`
@@ -212,7 +214,7 @@ func (a *LotteryActivity) Validate() error {
 		return common.NewMessage("Invalid minimum invitations")
 	}
 	if a.Mode != LotteryModeLeaderboard {
-		a.RankMetric, a.RankMinValue = "", 0
+		a.RankMetric, a.RankMinValue, a.LeaderboardStyle = "", 0, ""
 	}
 	a.TargetParticipants = max(a.TargetParticipants, 0)
 	a.WheelTotalLimit = max(a.WheelTotalLimit, 0)
@@ -242,6 +244,12 @@ func (a *LotteryActivity) Validate() error {
 		}
 		if !slices.Contains(lotteryRankMetrics, a.RankMetric) {
 			return common.NewMessage("Invalid ranking metric")
+		}
+		if a.LeaderboardStyle == "" {
+			a.LeaderboardStyle = LeaderboardStyleHorse
+		}
+		if !slices.Contains(leaderboardStyles, a.LeaderboardStyle) {
+			return common.NewMessage("Invalid leaderboard style")
 		}
 		if math.IsNaN(a.RankMinValue) || a.RankMinValue < 0 || a.RankMinValue > maxLeaderboardMinValue {
 			return common.NewMessage("Invalid leaderboard threshold")
@@ -440,7 +448,7 @@ func UpdateLotteryActivity(update *LotteryActivity) error {
 			"title", "description", "rules", "mode", "status", "start_time", "end_time", "draw_time",
 			"target_participants", "min_spend", "spend_start_time", "spend_end_time",
 			"min_invites", "invite_start_time", "invite_end_time",
-			"rank_metric", "rank_min_value",
+			"rank_metric", "rank_min_value", "leaderboard_style",
 			"wheel_total_limit", "wheel_daily_limit",
 		).Updates(update).Error; err != nil {
 			return err

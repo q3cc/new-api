@@ -32,15 +32,18 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { getCurrencyLabel } from '@/lib/currency'
 import { getEditableQuotaStep } from '@/lib/format'
 
-import { LOTTERY_RANK_METRICS } from '../../constants'
+import {
+  LOTTERY_LEADERBOARD_STYLES,
+  LOTTERY_RANK_METRICS,
+} from '../../constants'
 import type { ActivityFormValues } from '../../lib/activity-form'
-import type { LotteryRankMetric } from '../../types'
+import type { LotteryLeaderboardStyle, LotteryRankMetric } from '../../types'
 
 type LeaderboardRulesFieldProps = {
   form: UseFormReturn<ActivityFormValues>
 }
 
-/** The ranking metric and the score needed to be ranked. */
+/** The ranking metric, the score needed to be ranked and how the top ranks show. */
 export function LeaderboardRulesField(props: LeaderboardRulesFieldProps) {
   const { t } = useTranslation()
   const metric = useWatch({ control: props.form.control, name: 'rank_metric' })
@@ -122,6 +125,39 @@ export function LeaderboardRulesField(props: LeaderboardRulesFieldProps) {
               />
             </FormControl>
             <FormDescription>{thresholdHelp}</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={props.form.control}
+        name='leaderboard_style'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Top 3 display')}</FormLabel>
+            <FormControl>
+              <NativeSelect
+                value={field.value}
+                name={field.name}
+                ref={field.ref}
+                onBlur={field.onBlur}
+                onChange={(event) =>
+                  field.onChange(event.target.value as LotteryLeaderboardStyle)
+                }
+                className='w-full'
+              >
+                {Object.entries(LOTTERY_LEADERBOARD_STYLES).map(
+                  ([value, meta]) => (
+                    <NativeSelectOption key={value} value={value}>
+                      {t(meta.labelKey)}
+                    </NativeSelectOption>
+                  )
+                )}
+              </NativeSelect>
+            </FormControl>
+            <FormDescription>
+              {t('How the first three ranks are shown on the activity page.')}
+            </FormDescription>
             <FormMessage />
           </FormItem>
         )}

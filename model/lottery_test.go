@@ -103,6 +103,7 @@ func TestLotteryActivityValidateRejectsInvalidRules(t *testing.T) {
 		{name: "leaderboard with an unknown metric", activity: LotteryActivity{Title: "L", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, EndTime: 4102444800, RankMetric: "logins", Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
 		{name: "leaderboard prizes beyond 500 ranks", activity: LotteryActivity{Title: "L", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, EndTime: 4102444800, RankMetric: LotteryRankRecharge, Prizes: []LotteryPrize{quotaPrize(0, 300), quotaPrize(0, 201)}}},
 		{name: "leaderboard with a negative threshold", activity: LotteryActivity{Title: "L", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, EndTime: 4102444800, RankMetric: LotteryRankRecharge, RankMinValue: -1, Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
+		{name: "leaderboard with an unknown style", activity: LotteryActivity{Title: "L", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, EndTime: 4102444800, RankMetric: LotteryRankRecharge, LeaderboardStyle: "rocket", Prizes: []LotteryPrize{quotaPrize(0, 1)}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -435,6 +436,30 @@ func TestLotteryActivityRulesLockAfterFirstEntry(t *testing.T) {
 	require.NoError(t, CancelLotteryActivity(activity.Id))
 	_, err = SpinLotteryWheel(activity.Id, createLotteryUser(t, "late_spinner"))
 	assert.ErrorContains(t, err, "not open")
+}
+
+func TestLeaderboardStyleDefaultsToHorseRace(t *testing.T) {
+	setupLotteryFixture(t)
+	board := &LotteryActivity{Title: "Board", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, EndTime: 4102444800, RankMetric: LotteryRankRecharge,
+		Prizes: []LotteryPrize{{Name: "Credit", Type: LotteryPrizeQuota, Quota: 100, Quantity: 1}}}
+	require.NoError(t, CreateLotteryActivity(board))
+	wheel := &LotteryActivity{Title: "Wheel", Mode: LotteryModeWheel, Status: LotteryStatusActive, LeaderboardStyle: LeaderboardStyleCar,
+		Prizes: []LotteryPrize{{Name: "Credit", Type: LotteryPrizeQuota, Quota: 100, Probability: 100}}}
+	require.NoError(t, CreateLotteryActivity(wheel))
+
+	stored, err := GetLotteryActivity(board.Id)
+	require.NoError(t, err)
+	assert.Equal(t, LeaderboardStyleHorse, stored.LeaderboardStyle, "a leaderboard without a style is a horse race")
+	stored, err = GetLotteryActivity(wheel.Id)
+	require.NoError(t, err)
+	assert.Empty(t, stored.LeaderboardStyle, "only leaderboards have a style")
+
+	update := &LotteryActivity{Id: board.Id, Title: "Board", Mode: LotteryModeLeaderboard, Status: LotteryStatusActive, EndTime: 4102444800, RankMetric: LotteryRankRecharge,
+		LeaderboardStyle: LeaderboardStylePodium, Prizes: []LotteryPrize{{Name: "Credit", Type: LotteryPrizeQuota, Quota: 100, Quantity: 1}}}
+	require.NoError(t, UpdateLotteryActivity(update))
+	stored, err = GetLotteryActivity(board.Id)
+	require.NoError(t, err)
+	assert.Equal(t, LeaderboardStylePodium, stored.LeaderboardStyle)
 }
 
 func TestLeaderboardRankingByMetric(t *testing.T) {

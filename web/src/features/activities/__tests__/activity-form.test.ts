@@ -284,10 +284,23 @@ describe('leaderboard form', () => {
 
   it('clears leaderboard rules for other modes', () => {
     const payload = activityFormToPayload(
-      values({ mode: 'wheel', rank_metric: 'invites', rank_min_value: 5 })
+      values({
+        mode: 'wheel',
+        rank_metric: 'invites',
+        rank_min_value: 5,
+        leaderboard_style: 'car',
+      })
     )
     expect(payload.rank_metric).toBe('')
     expect(payload.rank_min_value).toBe(0)
+    expect(payload.leaderboard_style).toBe('')
+  })
+
+  it('sends the chosen top 3 display of a leaderboard', () => {
+    const payload = activityFormToPayload(
+      leaderboard({ leaderboard_style: 'podium' })
+    )
+    expect(payload.leaderboard_style).toBe('podium')
   })
 })
 

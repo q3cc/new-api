@@ -20,6 +20,7 @@ import type { StatusVariant } from '@/components/status-badge'
 
 import type {
   LotteryDeliveryStatus,
+  LotteryLeaderboardStyle,
   LotteryMode,
   LotteryPrizeType,
   LotteryRankMetric,
@@ -40,6 +41,16 @@ export const LOTTERY_RANK_METRICS: Record<
   invites: { labelKey: 'Invites' },
   consumption: { labelKey: 'Consumption' },
   recharge: { labelKey: 'Recharge' },
+}
+
+export const LOTTERY_LEADERBOARD_STYLES: Record<
+  LotteryLeaderboardStyle,
+  { labelKey: string }
+> = {
+  horse: { labelKey: 'Horse race' },
+  car: { labelKey: 'Car race' },
+  podium: { labelKey: 'Podium' },
+  plain: { labelKey: 'Table only' },
 }
 
 /** Longest activity rules the server accepts. */

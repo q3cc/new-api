@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { CalendarClock, Coins, Gift, Users } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { StatusBadge } from '@/components/status-badge'
@@ -29,6 +30,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import { formatNumber, formatTimestamp } from '@/lib/format'
@@ -51,6 +53,9 @@ import type { LotteryActivityView, LotteryEntry, LotteryPrize } from '../types'
 import { ActivityLeaderboard } from './activity-leaderboard'
 import { ActivityRules } from './activity-rules'
 import { ActivityWinners } from './activity-winners'
+import { FlipCountdown } from './flip-countdown'
+import { LeaderboardScene } from './leaderboard-scene'
+import { ConfettiBurst } from './leaderboard-scene/scene-effects'
 import { LuckyWheel } from './lucky-wheel'
 
 type ActivityCardProps = {
@@ -100,6 +105,38 @@ export function ActivityCard(props: ActivityCardProps) {
   const isWheel = activity.mode === 'wheel'
   const isLeaderboard = activity.mode === 'leaderboard'
   const rankRanges = isLeaderboard ? leaderboardRankRanges(activity.prizes) : []
+  const wide = useMediaQuery('(min-width: 640px)')
+  // Bumped on every winning spin to throw confetti over the card.
+  const [celebration, setCelebration] = useState(0)
+
+  let countdown: { target: number; label: string } | null = null
+  if (availability.phase === 'upcoming' && activity.start_time > 0) {
+    countdown = { target: activity.start_time, label: t('Starts in') }
+  } else if (
+    availability.phase === 'open' &&
+    activity.end_time > props.nowSeconds
+  ) {
+    countdown = { target: activity.end_time, label: t('Ends in') }
+  }
+
+  const board = activity.leaderboard
+  const sceneStyle = activity.leaderboard_style || 'horse'
+  const scene =
+    isLeaderboard &&
+    board &&
+    board.rows.length > 0 &&
+    sceneStyle !== 'plain' ? (
+      <LeaderboardScene
+        style={sceneStyle}
+        rows={board.rows}
+        meRank={board.me.rank}
+        final={board.final}
+        running={availability.phase === 'open' && !board.final}
+        formatScore={(score) =>
+          formatLeaderboardScore(activity.rank_metric, score, locale)
+        }
+      />
+    ) : null
 
   let spinsText: string | null = null
   if (isWheel) {
@@ -127,7 +164,8 @@ export function ActivityCard(props: ActivityCardProps) {
     availability.action === 'spin' && availability.phase !== 'closed'
 
   return (
-    <Card>
+    <Card className='relative'>
+      <ConfettiBurst burst={celebration} />
       <CardHeader>
         <CardTitle className='flex min-w-0 items-center gap-2'>
           <Gift className='text-primary size-4 shrink-0' aria-hidden='true' />
@@ -136,16 +174,36 @@ export function ActivityCard(props: ActivityCardProps) {
         <CardDescription>
           {t(LOTTERY_MODES[activity.mode].labelKey)}
         </CardDescription>
-        <CardAction className='flex items-center gap-2'>
-          <ActivityRules title={activity.title} rules={activity.rules ?? ''} />
-          <StatusBadge
-            label={t(status.labelKey)}
-            variant={status.variant}
-            copyable={false}
-          />
+        <CardAction className='flex flex-col items-end gap-2'>
+          <div className='flex items-center gap-2'>
+            <ActivityRules
+              title={activity.title}
+              rules={activity.rules ?? ''}
+            />
+            <StatusBadge
+              label={t(status.labelKey)}
+              variant={status.variant}
+              copyable={false}
+            />
+          </div>
+          {countdown && wide ? (
+            <FlipCountdown
+              target={countdown.target}
+              label={countdown.label}
+              className='items-end'
+            />
+          ) : null}
         </CardAction>
+        {countdown && !wide ? (
+          <FlipCountdown
+            target={countdown.target}
+            label={countdown.label}
+            className='col-span-full mt-2'
+          />
+        ) : null}
       </CardHeader>
       <CardContent className='grid gap-6 text-sm lg:grid-cols-[minmax(0,1fr)_20rem]'>
+        {scene ? <div className='min-w-0 lg:col-span-2'>{scene}</div> : null}
         <div className='flex min-w-0 flex-col gap-4'>
           {activity.description ? (
             <p className='text-muted-foreground whitespace-pre-wrap'>
@@ -371,13 +429,21 @@ export function ActivityCard(props: ActivityCardProps) {
           ) : null}
         </div>
         <div className='bg-muted/30 flex flex-col items-stretch justify-center gap-2 rounded-lg border p-4'>
-          {isLeaderboard ? <ActivityLeaderboard activity={activity} /> : null}
+          {isLeaderboard ? (
+            <ActivityLeaderboard
+              activity={activity}
+              topThreeShownAbove={scene !== null}
+            />
+          ) : null}
           {showWheel ? (
             <LuckyWheel
               prizes={activity.prizes}
               disabled={availability.blockedReason !== null}
               onSpin={() => props.onSpin(activity)}
-              onSettled={(entry) => props.onSpinSettled(activity, entry)}
+              onSettled={(entry) => {
+                if (entry.prize_id > 0) setCelebration((count) => count + 1)
+                props.onSpinSettled(activity, entry)
+              }}
             />
           ) : null}
           {availability.action === 'join' ? (

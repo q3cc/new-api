@@ -63,6 +63,7 @@ function activity(
     invite_end_time: 0,
     rank_metric: '',
     rank_min_value: 0,
+    leaderboard_style: '',
     wheel_total_limit: 0,
     wheel_daily_limit: 0,
     entry_count: 0,

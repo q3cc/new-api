@@ -16,9 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -49,6 +49,7 @@ function participantDraw(
     invite_end_time: 0,
     rank_metric: '',
     rank_min_value: 0,
+    leaderboard_style: '',
     wheel_total_limit: 0,
     wheel_daily_limit: 0,
     entry_count: 3,
@@ -236,6 +237,7 @@ function leaderboard(
     min_spend: 0,
     rank_metric: 'recharge',
     rank_min_value: 10,
+    leaderboard_style: 'plain',
     prizes: [
       { ...prize, id: 11, name: 'Gold', quantity: 1 },
       { ...prize, id: 12, name: 'Silver', quantity: 2 },
@@ -323,5 +325,110 @@ describe('ActivityCard leaderboard', () => {
       screen.getByText('Administrators and disabled accounts are not ranked')
     ).toBeInTheDocument()
     expect(screen.queryByText(/more to be ranked/)).toBeNull()
+  })
+})
+
+describe('ActivityCard leaderboard scene', () => {
+  const rows = [
+    { user_id: 7, display_name: 'Alice', rank: 1, score: 50 },
+    { user_id: 9, display_name: '', rank: 2, score: 30 },
+    { user_id: 3, display_name: 'Carol', rank: 3, score: 20 },
+    { user_id: 4, display_name: 'Dan', rank: 4, score: 12 },
+  ]
+
+  it.each([
+    ['horse', 'Top 3 horse race'],
+    ['car', 'Top 3 car race'],
+    ['podium', 'Top 3 podium'],
+  ] as const)(
+    'a %s leaderboard shows the top three in its scene and later ranks in the table',
+    (style, sceneName) => {
+      renderCard(
+        leaderboard(
+          { leaderboard_style: style },
+          { rows, ranked: 4, me: { rank: 2, score: 30, excluded: false } }
+        )
+      )
+
+      const scene = screen.getByRole('figure', { name: sceneName })
+      expect(within(scene).getByText('Alice')).toBeInTheDocument()
+      expect(within(scene).getByText('#9')).toBeInTheDocument()
+      expect(within(scene).getByText('Carol')).toBeInTheDocument()
+      expect(within(scene).getByText('You')).toBeInTheDocument()
+      const table = screen.getByRole('table')
+      expect(within(table).getByText('Dan')).toBeInTheDocument()
+      expect(within(table).queryByText('Alice')).toBeNull()
+    }
+  )
+
+  it('a leaderboard saved before styles existed is a horse race', () => {
+    renderCard(leaderboard({ leaderboard_style: '' }, { rows }))
+
+    expect(
+      screen.getByRole('figure', { name: 'Top 3 horse race' })
+    ).toBeInTheDocument()
+  })
+
+  it('the table-only style lists every rank without a scene', () => {
+    renderCard(leaderboard({ leaderboard_style: 'plain' }, { rows }))
+
+    expect(screen.queryByRole('figure')).toBeNull()
+    expect(
+      within(screen.getByRole('table')).getByText('Alice')
+    ).toBeInTheDocument()
+  })
+
+  it('shows no table when the scene already holds every rank', () => {
+    renderCard(leaderboard({ leaderboard_style: 'horse' }))
+
+    expect(screen.getByRole('figure')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('an empty leaderboard shows the table empty state instead of a scene', () => {
+    renderCard(
+      leaderboard({ leaderboard_style: 'horse' }, { rows: [], ranked: 0 })
+    )
+
+    expect(screen.queryByRole('figure')).toBeNull()
+    expect(screen.getByText('No one is ranked yet')).toBeInTheDocument()
+  })
+})
+
+describe('ActivityCard countdown', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('an open activity counts down to its end every second', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW * 1000)
+    renderCard({ ...participantDraw(), end_time: NOW + 90_061 })
+
+    expect(
+      screen.getByRole('timer', { name: 'Ends in 01 days 01:01:01' })
+    ).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(
+      screen.getByRole('timer', { name: 'Ends in 01 days 01:01:00' })
+    ).toBeInTheDocument()
+  })
+
+  it('an upcoming activity counts down to its start', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW * 1000)
+    renderCard({ ...participantDraw(), start_time: NOW + 60 })
+
+    expect(
+      screen.getByRole('timer', { name: 'Starts in 00 days 00:01:00' })
+    ).toBeInTheDocument()
+  })
+
+  it('an activity without an end time shows no countdown', () => {
+    renderCard(participantDraw())
+
+    expect(screen.queryByRole('timer')).toBeNull()
   })
 })
