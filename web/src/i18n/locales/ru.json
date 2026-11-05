@@ -3376,6 +3376,7 @@
     "Human-readable name shown to users during Passkey prompts.": "Понятное для человека имя, отображаемое пользователям во время запросов Passkey.",
     "I confirm enabling high-risk retry": "Я подтверждаю включение высокорискового повтора",
     "I have paid": "Я оплатил",
+    "The payment window for this order has closed. If you have already paid, check again in a moment; otherwise place a new order.": "Срок оплаты этого заказа истёк. Если вы уже оплатили, проверьте снова через некоторое время; иначе оформите новый заказ.",
     "Upstream errors": "Ошибки вышестоящих сервисов",
     "Replaces an upstream error message that contains a keyword, ignoring case, with your own message. The status code and retries are unchanged, and administrators still see the original message in the log details.": "Заменяет сообщение об ошибке вышестоящего сервиса, содержащее ключевое слово (без учёта регистра), на ваше сообщение. Код состояния и повторные попытки не меняются, а администраторы по-прежнему видят исходное сообщение в деталях журнала.",
     "Error message rewrite rules": "Правила замены сообщений об ошибках",

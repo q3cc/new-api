@@ -47,7 +47,15 @@ export function usePaymentCheck() {
           throw createServerError(response, checkFailed)
         }
         const status = response.data.status
-        if (status === 'expired') {
+        if (status === 'expired' && response.data.awaiting_payment) {
+          // A late payment still settles the order, so a second order could
+          // charge the payer twice.
+          toast.info(
+            t(
+              'The payment window for this order has closed. If you have already paid, check again in a moment; otherwise place a new order.'
+            )
+          )
+        } else if (status === 'expired') {
           toast.error(t('This order has expired. Please place a new order.'))
         } else if (status === 'failed') {
           toast.error(t('This payment failed. Please place a new order.'))

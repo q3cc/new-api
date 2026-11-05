@@ -512,7 +512,12 @@ func GetTopUpStatus(c *gin.Context) {
 			common.ApiErrorT(c, "Order not found")
 			return
 		}
-		common.ApiSuccess(c, gin.H{"trade_no": order.TradeNo, "status": order.Status, "money": order.Money})
+		common.ApiSuccess(c, gin.H{
+			"trade_no":         order.TradeNo,
+			"status":           model.EpayOrderDisplayStatus(order.Status, order.PaymentProvider, order.CreateTime),
+			"awaiting_payment": order.Status == common.TopUpStatusPending,
+			"money":            order.Money,
+		})
 		return
 	}
 	topUp := model.GetTopUpByTradeNo(tradeNo)
@@ -521,10 +526,11 @@ func GetTopUpStatus(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"trade_no": topUp.TradeNo,
-		"status":   topUp.Status,
-		"amount":   topUp.Amount,
-		"money":    topUp.Money,
+		"trade_no":         topUp.TradeNo,
+		"status":           model.EpayOrderDisplayStatus(topUp.Status, topUp.PaymentProvider, topUp.CreateTime),
+		"awaiting_payment": topUp.Status == common.TopUpStatusPending,
+		"amount":           topUp.Amount,
+		"money":            topUp.Money,
 	})
 }
 

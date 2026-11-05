@@ -3376,6 +3376,7 @@
     "Human-readable name shown to users during Passkey prompts.": "Nom lisible par l'homme affiché aux utilisateurs lors des invites de clé d'accès (Passkey).",
     "I confirm enabling high-risk retry": "Je confirme l'activation de la relance à haut risque",
     "I have paid": "J'ai payé",
+    "The payment window for this order has closed. If you have already paid, check again in a moment; otherwise place a new order.": "Le délai de paiement de cette commande est écoulé. Si vous avez déjà payé, vérifiez à nouveau dans un instant ; sinon, passez une nouvelle commande.",
     "Upstream errors": "Erreurs en amont",
     "Replaces an upstream error message that contains a keyword, ignoring case, with your own message. The status code and retries are unchanged, and administrators still see the original message in the log details.": "Remplace un message d'erreur en amont contenant un mot-clé (sans tenir compte de la casse) par votre propre message. Le code d'état et les nouvelles tentatives restent inchangés, et les administrateurs voient toujours le message d'origine dans les détails du journal.",
     "Error message rewrite rules": "Règles de réécriture des messages d'erreur",

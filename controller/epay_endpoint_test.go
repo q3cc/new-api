@@ -458,18 +458,21 @@ func TestEpayActiveQuerySettlesOwnedOrders(t *testing.T) {
 			router := gin.New()
 			router.Use(func(c *gin.Context) { c.Set("id", userID); c.Next() })
 			router.POST("/query", QueryEpayOrder)
+			var awaiting any
 			ask := func(tradeNo string) (bool, string, string) {
 				recorder := httptest.NewRecorder()
 				req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(`{"trade_no":"`+tradeNo+`"}`))
 				req.Header.Set("Content-Type", "application/json")
 				router.ServeHTTP(recorder, req)
 				var response struct {
-					Success bool              `json:"success"`
-					Message string            `json:"message"`
-					Data    map[string]string `json:"data"`
+					Success bool           `json:"success"`
+					Message string         `json:"message"`
+					Data    map[string]any `json:"data"`
 				}
 				require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response), recorder.Body.String())
-				return response.Success, response.Data["status"], response.Message
+				awaiting = response.Data["awaiting_payment"]
+				status, _ := response.Data["status"].(string)
+				return response.Success, status, response.Message
 			}
 			quota := func() int {
 				var user model.User
@@ -483,6 +486,7 @@ func TestEpayActiveQuerySettlesOwnedOrders(t *testing.T) {
 			ok, status, _ = ask("USR900NOlate")
 			require.True(t, ok)
 			assert.Equal(t, common.TopUpStatusExpired, status)
+			assert.Equal(t, true, awaiting, "an unpaid order past its window still settles on a late payment")
 
 			records, total, err := model.GetUserTopUps(900, &common.PageInfo{Page: 1, PageSize: 10})
 			require.NoError(t, err)
@@ -504,6 +508,7 @@ func TestEpayActiveQuerySettlesOwnedOrders(t *testing.T) {
 			ok, status, _ = ask("USR900NOlate")
 			require.True(t, ok)
 			assert.Equal(t, common.TopUpStatusSuccess, status)
+			assert.Equal(t, false, awaiting)
 			credited := quota()
 			assert.Greater(t, credited, before)
 			queriesBefore := queries

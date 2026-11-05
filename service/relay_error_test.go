@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
@@ -106,8 +107,17 @@ func TestProcessChannelErrorMasksDisableReasonAndNotification(t *testing.T) {
 	t.Cleanup(func() { notifyLimitStore.Delete(notifyKey) })
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, "https://private.example.com")
-	apiErr := types.NewErrorWithStatusCode(errors.New("upstream https://private.example.com/path?token=review-token api_key:review-secret"), types.ErrorCodeChannelNoAvailableKey, http.StatusUnauthorized)
+	// The channel is disabled by the "Permission denied" keyword, which a
+	// rewrite rule replaces for the reader: the decision reads the provider's
+	// text, and the recorded reason keeps it.
+	t.Cleanup(func() {
+		require.NoError(t, operation_setting.UpstreamErrorRewriteRulesFromString(operation_setting.DefaultUpstreamErrorRewriteRules))
+	})
+	require.NoError(t, operation_setting.UpstreamErrorRewriteRulesFromString("permission denied => 渠道暂时不可用"))
+	apiErr := types.NewErrorWithStatusCode(errors.New("Permission denied: upstream https://private.example.com/path?token=review-token api_key:review-secret"), types.ErrorCodeChannelNoAvailableKey, http.StatusForbidden)
 	ProcessChannelError(c, types.ChannelError{ChannelId: channel.Id, ChannelName: channel.Name, AutoBan: true}, apiErr, nil)
+	assert.Equal(t, "渠道暂时不可用", apiErr.Error())
+	assert.Equal(t, "Permission denied: upstream https://private.example.com/path?token=review-token api_key:review-secret", common.GetContextKeyString(c, constant.ContextKeyUpstreamErrorOriginal))
 	var notification WebhookPayload
 	select {
 	case payload := <-notifications:
@@ -118,12 +128,12 @@ func TestProcessChannelErrorMasksDisableReasonAndNotification(t *testing.T) {
 	loaded, err := model.GetChannelById(channel.Id, true)
 	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusAutoDisabled, loaded.Status)
-	wantReason := "status_code=401, upstream https://***.com/***?token=*** api_key:***"
+	wantReason := "status_code=403, Permission denied: upstream https://***.com/***?token=*** api_key:***"
 	assert.Equal(t, wantReason, loaded.GetOtherInfo()["status_reason"])
 	assert.Contains(t, notification.Content, wantReason)
 	assert.NotContains(t, notification.Content, "review-token")
 	assert.NotContains(t, notification.Content, "review-secret")
-	assert.Equal(t, http.StatusUnauthorized, apiErr.StatusCode)
+	assert.Equal(t, http.StatusForbidden, apiErr.StatusCode)
 }
 
 // Only addresses the admin configured are masked: a channel on the base URL

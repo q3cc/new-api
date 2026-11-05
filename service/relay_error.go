@@ -84,6 +84,10 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		DisableChannel(channelError, reason)
 	}
 
+	// The disable decision above reads the provider's text; readers and the
+	// error log get the administrator's message.
+	RewriteUpstreamError(c, err)
+
 	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
 		userId := c.GetInt("id")
 		tokenName := c.GetString("token_name")

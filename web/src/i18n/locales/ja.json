@@ -3376,6 +3376,7 @@
     "Human-readable name shown to users during Passkey prompts.": "パスキーのプロンプト中にユーザーに表示される、人間が読める名前。",
     "I confirm enabling high-risk retry": "高リスクリトライの有効化を確認します",
     "I have paid": "支払い済み",
+    "The payment window for this order has closed. If you have already paid, check again in a moment; otherwise place a new order.": "この注文の支払い期限が過ぎました。支払い済みの場合は、少し待ってから再度確認してください。未払いの場合は新しく注文してください。",
     "Upstream errors": "上流エラー",
     "Replaces an upstream error message that contains a keyword, ignoring case, with your own message. The status code and retries are unchanged, and administrators still see the original message in the log details.": "キーワード（大文字小文字を区別しない）を含む上流のエラーメッセージを、設定したメッセージに置き換えます。ステータスコードと再試行は変わらず、管理者はログ詳細で元のメッセージを確認できます。",
     "Error message rewrite rules": "エラーメッセージの置換ルール",

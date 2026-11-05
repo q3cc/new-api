@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -74,19 +73,8 @@ func queryEpayOrder(ctx context.Context, version *model.EpayEndpointVersion, tra
 		}
 		return answer, false, fmt.Errorf("gateway request failed: %w", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return answer, false, fmt.Errorf("gateway status %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxEpayMapiBytes+1))
-	if err != nil {
+	if err := decodeEpayAnswer(resp, &answer); err != nil {
 		return answer, false, err
-	}
-	if len(body) > maxEpayMapiBytes {
-		return answer, false, errors.New("gateway answer is too large")
-	}
-	if err := common.Unmarshal(body, &answer); err != nil {
-		return answer, false, errors.New("gateway answer is not JSON")
 	}
 	if answer.Code != "1" {
 		// Gateways answer an order they have not recorded yet as an error.
@@ -134,7 +122,7 @@ func QueryEpayOrder(c *gin.Context) {
 		return
 	}
 	if status != common.TopUpStatusPending {
-		common.ApiSuccess(c, gin.H{"trade_no": tradeNo, "status": status})
+		common.ApiSuccess(c, gin.H{"trade_no": tradeNo, "status": status, "awaiting_payment": false})
 		return
 	}
 	var version model.EpayEndpointVersion
@@ -149,7 +137,9 @@ func QueryEpayOrder(c *gin.Context) {
 		return
 	}
 	if !paid {
-		common.ApiSuccess(c, gin.H{"trade_no": tradeNo, "status": model.EpayOrderDisplayStatus(status, provider, createTime)})
+		// A late payment still settles the stored order, so the client can
+		// tell the payer to check again rather than to pay a second time.
+		common.ApiSuccess(c, gin.H{"trade_no": tradeNo, "status": model.EpayOrderDisplayStatus(status, provider, createTime), "awaiting_payment": true})
 		return
 	}
 	paidMethod := answer.Type
@@ -170,5 +160,5 @@ func QueryEpayOrder(c *gin.Context) {
 		return
 	}
 	logger.LogInfo(c.Request.Context(), common.LogText("Epay order settled by active query trade_no=%s", tradeNo))
-	common.ApiSuccess(c, gin.H{"trade_no": tradeNo, "status": common.TopUpStatusSuccess})
+	common.ApiSuccess(c, gin.H{"trade_no": tradeNo, "status": common.TopUpStatusSuccess, "awaiting_payment": false})
 }

@@ -3376,6 +3376,7 @@
     "Human-readable name shown to users during Passkey prompts.": "在 Passkey 提示期间向用户显示的人类可读名称。",
     "I confirm enabling high-risk retry": "我确认开启高危重试",
     "I have paid": "我已完成支付",
+    "The payment window for this order has closed. If you have already paid, check again in a moment; otherwise place a new order.": "该订单的支付时限已过。如已支付，请稍后再查询；否则请重新下单。",
     "Upstream errors": "上游错误",
     "Replaces an upstream error message that contains a keyword, ignoring case, with your own message. The status code and retries are unchanged, and administrators still see the original message in the log details.": "上游错误信息包含关键词（不区分大小写）时，改为显示你设置的提示。状态码和重试行为不变，管理员仍可在日志详情中看到原始信息。",
     "Error message rewrite rules": "错误信息改写规则",

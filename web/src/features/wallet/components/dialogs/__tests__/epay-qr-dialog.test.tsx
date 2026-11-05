@@ -355,6 +355,25 @@ describe('checking an order with the I have paid button', () => {
     await waitFor(() => expect(error).toHaveBeenCalledWith(message))
   })
 
+  it('tells the reader to check again when the window closed but a late payment still settles', async () => {
+    answerQuery({
+      success: true,
+      data: { status: 'expired', awaiting_payment: true },
+    })
+    const info = vi.spyOn(toast, 'info')
+    const error = vi.spyOn(toast, 'error')
+    renderUnpaidDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: 'I have paid' }))
+
+    await waitFor(() =>
+      expect(info).toHaveBeenCalledWith(
+        'The payment window for this order has closed. If you have already paid, check again in a moment; otherwise place a new order.'
+      )
+    )
+    expect(error).not.toHaveBeenCalled()
+  })
+
   it('shows the server reason when the check is rejected', async () => {
     answerQuery({
       success: false,

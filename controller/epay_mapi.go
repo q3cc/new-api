@@ -36,6 +36,26 @@ type epayMapiCode struct {
 	Scheme  string `json:"urlscheme"`
 }
 
+// decodeEpayAnswer reads a gateway's JSON answer into answer. The gateway is
+// not ours, so the body is bounded and must be JSON.
+func decodeEpayAnswer(resp *http.Response, answer any) error {
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("gateway status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxEpayMapiBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(body) > maxEpayMapiBytes {
+		return errors.New("gateway answer is too large")
+	}
+	if err := common.Unmarshal(body, answer); err != nil {
+		return fmt.Errorf("gateway answer is not JSON: %w", err)
+	}
+	return nil
+}
+
 // requestEpayMapi asks the gateway for a payment code and returns it in the
 // shape the console renders. The money value stays a string: the gateway
 // compares the signed amount, and a float round trip can change it.
@@ -85,20 +105,9 @@ func requestEpayMapi(
 	if err != nil {
 		return epayMapiCode{}, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return epayMapiCode{}, fmt.Errorf("gateway status %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxEpayMapiBytes+1))
-	if err != nil {
-		return epayMapiCode{}, err
-	}
-	if len(body) > maxEpayMapiBytes {
-		return epayMapiCode{}, errors.New("gateway answer is too large")
-	}
 	var code epayMapiCode
-	if err := common.Unmarshal(body, &code); err != nil {
-		return epayMapiCode{}, fmt.Errorf("gateway answer is not JSON: %w", err)
+	if err := decodeEpayAnswer(resp, &code); err != nil {
+		return epayMapiCode{}, err
 	}
 	if code.Code != 1 {
 		if code.Msg != "" {

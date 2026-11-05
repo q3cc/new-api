@@ -65,6 +65,8 @@ export type TopUpStatusResponse = ApiResponse<{
 export type PaymentQueryResponse = ApiResponse<{
   trade_no: string
   status: TopupStatus
+  /** The stored order still waits for payment, even when shown as expired */
+  awaiting_payment?: boolean
 }>
 export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
 export type AffiliateCodeResponse = ApiResponse<string>

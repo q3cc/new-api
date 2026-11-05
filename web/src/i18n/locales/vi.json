@@ -3376,6 +3376,7 @@
     "Human-readable name shown to users during Passkey prompts.": "Tên dễ đọc hiển thị cho người dùng trong quá trình nhắc nhở Passkey.",
     "I confirm enabling high-risk retry": "Tôi xác nhận bật thử lại rủi ro cao",
     "I have paid": "Tôi đã thanh toán",
+    "The payment window for this order has closed. If you have already paid, check again in a moment; otherwise place a new order.": "Thời hạn thanh toán của đơn hàng này đã hết. Nếu bạn đã thanh toán, vui lòng kiểm tra lại sau; nếu chưa, hãy đặt đơn mới.",
     "Upstream errors": "Lỗi thượng nguồn",
     "Replaces an upstream error message that contains a keyword, ignoring case, with your own message. The status code and retries are unchanged, and administrators still see the original message in the log details.": "Thay thông báo lỗi thượng nguồn chứa từ khóa (không phân biệt hoa thường) bằng thông báo của bạn. Mã trạng thái và việc thử lại không thay đổi, quản trị viên vẫn thấy thông báo gốc trong chi tiết nhật ký.",
     "Error message rewrite rules": "Quy tắc thay thế thông báo lỗi",
