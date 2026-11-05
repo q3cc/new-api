@@ -433,7 +433,9 @@ func assertAdminOrderContracts(t *testing.T, db *gorm.DB) {
 	}
 
 	t.Run("combined filters apply before exact-first pagination with inclusive dates", func(t *testing.T) {
-		filter := BillingHistoryFilter{Status: common.TopUpStatusPending, PaymentMethod: "retired-custom", StartTimestamp: &start, EndTimestamp: &end}
+		// Both epay orders are long past their payment window, so they list
+		// and filter as expired.
+		filter := BillingHistoryFilter{Status: common.TopUpStatusExpired, PaymentMethod: "retired-custom", StartTimestamp: &start, EndTimestamp: &end}
 		for index, trade := range []string{"orders%_!\\", "prefix-orders%_!\\-suffix"} {
 			rows, total, err := GetAdminBillingHistory(" orders%_!\\ ", filter, &common.PageInfo{Page: index + 1, PageSize: 1})
 			require.NoError(t, err)
@@ -479,7 +481,7 @@ func assertAdminOrderContracts(t *testing.T, db *gorm.DB) {
 			var fields map[string]any
 			require.NoError(t, common.Unmarshal(encoded, &fields))
 			for key := range fields {
-				assert.Contains(t, []string{"id", "user_id", "username", "amount", "money", "trade_no", "payment_method", "payment_provider", "create_time", "complete_time", "status", "order_type", "plan_id", "plan_title", "display_name", "email", "payment_service_id", "payment_service_name"}, key)
+				assert.Contains(t, []string{"id", "user_id", "username", "amount", "money", "trade_no", "payment_method", "payment_provider", "create_time", "complete_time", "status", "order_type", "plan_id", "plan_title", "awaiting_payment", "display_name", "email", "payment_service_id", "payment_service_name"}, key)
 			}
 			assert.NotContains(t, string(encoded), "private-")
 		}

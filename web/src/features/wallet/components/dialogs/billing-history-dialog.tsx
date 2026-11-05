@@ -16,9 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { CopyButton } from '@/components/copy-button'
@@ -38,8 +39,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCurrencyFromUSD } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { useBillingHistory } from '../../hooks/use-billing-history'
+import { usePaymentCheck } from '../../hooks/use-payment-check'
 import {
   getStatusConfig,
   getPaymentMethodName,
@@ -50,13 +53,23 @@ import type { TopupRecord } from '../../types'
 interface BillingHistoryDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Called after a payment check settles one of the reader's orders. */
+  onPaid?: () => void
+}
+
+/** Admins complete an order the gateway never confirmed, expired or not. */
+function canCompleteOrder(record: TopupRecord): boolean {
+  return record.status === 'pending' || record.status === 'expired'
 }
 
 export function BillingHistoryDialog({
   open,
   onOpenChange,
+  onPaid,
 }: BillingHistoryDialogProps) {
   const { t } = useTranslation()
+  const currentUserId = useAuthStore((state) => state.auth.user?.id)
+  const paymentCheck = usePaymentCheck()
   const {
     records,
     total,
@@ -70,11 +83,26 @@ export function BillingHistoryDialog({
     handlePageSizeChange,
     handleSearch,
     handleCompleteOrder,
+    refresh,
   } = useBillingHistory()
 
   const [confirmOrder, setConfirmOrder] = useState<TopupRecord | null>(null)
 
   const totalPages = Math.ceil(total / pageSize)
+
+  const handlePaymentCheck = async (record: TopupRecord) => {
+    const status = await paymentCheck.check(record.trade_no)
+    if (status === undefined) return
+    if (status === 'success') {
+      toast.success(
+        record.order_type === 'subscription'
+          ? t('Subscription purchased successfully')
+          : t('Payment received. Your balance has been updated.')
+      )
+      onPaid?.()
+    }
+    await refresh()
+  }
 
   const handleConfirmComplete = async () => {
     if (confirmOrder) {
@@ -183,6 +211,11 @@ export function BillingHistoryDialog({
               <div className='space-y-3'>
                 {records.map((record) => {
                   const statusConfig = getStatusConfig(record.status)
+                  const canCheckPayment =
+                    record.awaiting_payment === true &&
+                    record.payment_provider === 'epay' &&
+                    record.user_id === currentUserId
+                  const canComplete = isAdmin && canCompleteOrder(record)
                   return (
                     <div
                       key={`${record.order_type ?? 'topup'}:${record.trade_no}`}
@@ -258,17 +291,33 @@ export function BillingHistoryDialog({
                         </div>
                       </div>
 
-                      {/* Admin Actions */}
-                      {isAdmin && record.status === 'pending' && (
-                        <div className='mt-4 flex justify-end'>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setConfirmOrder(record)}
-                            disabled={completing}
-                          >
-                            {t('Complete Order')}
-                          </Button>
+                      {/* Actions */}
+                      {(canCheckPayment || canComplete) && (
+                        <div className='mt-4 flex justify-end gap-2'>
+                          {canCheckPayment && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => void handlePaymentCheck(record)}
+                              disabled={paymentCheck.checkingTradeNo !== ''}
+                            >
+                              {paymentCheck.checkingTradeNo ===
+                                record.trade_no && (
+                                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                              )}
+                              {t('I have paid')}
+                            </Button>
+                          )}
+                          {canComplete && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setConfirmOrder(record)}
+                              disabled={completing}
+                            >
+                              {t('Complete Order')}
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>

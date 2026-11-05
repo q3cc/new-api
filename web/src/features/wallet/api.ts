@@ -41,6 +41,7 @@ import type {
   WaffoPancakePaymentRequest,
   WaffoPancakePaymentResponse,
   TopUpStatusResponse,
+  PaymentQueryResponse,
 } from './types'
 
 // ============================================================================
@@ -121,6 +122,21 @@ export async function requestPayment(
     ...res.data,
     url: res.data.url || (res as unknown as { url?: string }).url,
   }
+}
+
+/**
+ * Ask the payment gateway about one of the caller's own orders. The server
+ * settles the order when the gateway reports it paid.
+ */
+export async function queryPaymentOrder(
+  tradeNo: string
+): Promise<PaymentQueryResponse> {
+  const res = await api.post(
+    '/api/user/topup/query',
+    { trade_no: tradeNo },
+    { skipBusinessError: true }
+  )
+  return res.data
 }
 
 /**

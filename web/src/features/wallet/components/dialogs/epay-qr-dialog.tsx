@@ -20,14 +20,12 @@ import { Loader2 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
-import { handleServerError } from '@/lib/handle-server-error'
-import { createServerError } from '@/lib/server-error-message'
 
 import { getTopUpStatus } from '../../api'
+import { usePaymentCheck } from '../../hooks/use-payment-check'
 import { getInAppPaymentLink } from '../../lib/payment'
 import type { EpayMapiPayment } from '../../types'
 
@@ -52,7 +50,7 @@ type Props = {
 export function EpayQrDialog(props: Props) {
   const { t } = useTranslation()
   const [remaining, setRemaining] = useState(PAYMENT_WINDOW_SECONDS)
-  const [checking, setChecking] = useState(false)
+  const paymentCheck = usePaymentCheck()
   const paidRef = useRef(false)
   // The parent re-renders while the dialog is open, so the poll reads the
   // latest callbacks from a ref instead of restarting on every render.
@@ -136,37 +134,11 @@ export function EpayQrDialog(props: Props) {
 
   const checkNow = async () => {
     if (!tradeNo) return
-    const checkFailed = t(
-      'Could not check the payment status. Please try again.'
-    )
-    setChecking(true)
-    try {
-      const response = await getTopUpStatus(tradeNo)
-      if (paidRef.current) return
-      if (!response.success) {
-        throw createServerError(response, checkFailed)
-      }
-      const status = response.data?.status
-      if (status === 'success') {
-        paidRef.current = true
-        callbacksRef.current.onPaid()
-        callbacksRef.current.onOpenChange(false)
-      } else if (status === 'expired') {
-        toast.error(t('This order has expired. Please place a new order.'))
-      } else if (status === 'failed') {
-        toast.error(t('This payment failed. Please place a new order.'))
-      } else {
-        toast.info(
-          t(
-            'Payment not received yet. If you have paid, wait a moment and check again.'
-          )
-        )
-      }
-    } catch (error) {
-      handleServerError(error, checkFailed)
-    } finally {
-      setChecking(false)
-    }
+    const status = await paymentCheck.check(tradeNo)
+    if (status !== 'success' || paidRef.current) return
+    paidRef.current = true
+    callbacksRef.current.onPaid()
+    callbacksRef.current.onOpenChange(false)
   }
 
   const minutes = Math.floor(remaining / 60)
@@ -189,10 +161,12 @@ export function EpayQrDialog(props: Props) {
           <Button
             type='button'
             variant='outline'
-            disabled={checking}
+            disabled={paymentCheck.checkingTradeNo !== ''}
             onClick={() => void checkNow()}
           >
-            {checking && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {paymentCheck.checkingTradeNo !== '' && (
+              <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+            )}
             {t('I have paid')}
           </Button>
           <Button type='button' onClick={() => props.onOpenChange(false)}>

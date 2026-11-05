@@ -289,19 +289,45 @@ describe('checking an order with the I have paid button', () => {
     vi.restoreAllMocks()
   })
 
-  const renderUnpaidDialog = (onPaid = vi.fn()) =>
+  // The background poll keeps reading the stored order as pending.
+  const answerQuery = (answer: unknown) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: { status: 'pending' } },
+    })
+    return vi.spyOn(api, 'post').mockImplementation(async () => {
+      if (answer instanceof Error) throw answer
+      return { data: answer }
+    })
+  }
+
+  const renderUnpaidDialog = (onPaid = vi.fn(), onOpenChange = vi.fn()) =>
     render(
       <EpayQrDialog
         payment={{ trade_no: 'USR1NOcheck', qrcode: 'https://pay.example.com' }}
-        onOpenChange={() => {}}
+        onOpenChange={onOpenChange}
         onPaid={onPaid}
       />
     )
 
-  it('tells the reader the payment has not arrived when the order is still pending', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({
-      data: { success: true, data: { status: 'pending' } },
-    })
+  it('asks the gateway about the order and closes once it reports the order paid', async () => {
+    const post = answerQuery({ success: true, data: { status: 'success' } })
+    const onPaid = vi.fn()
+    const onOpenChange = vi.fn()
+    renderUnpaidDialog(onPaid, onOpenChange)
+
+    fireEvent.click(screen.getByRole('button', { name: 'I have paid' }))
+
+    await waitFor(() => expect(onPaid).toHaveBeenCalledOnce())
+    expect(post).toHaveBeenCalledWith(
+      '/api/user/topup/query',
+      { trade_no: 'USR1NOcheck' },
+      { skipBusinessError: true }
+    )
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('tells the reader the payment has not arrived when the gateway has no payment', async () => {
+    answerQuery({ success: true, data: { status: 'pending' } })
     const info = vi.spyOn(toast, 'info')
     const onPaid = vi.fn()
     renderUnpaidDialog(onPaid)
@@ -320,9 +346,7 @@ describe('checking an order with the I have paid button', () => {
     ['expired', 'This order has expired. Please place a new order.'],
     ['failed', 'This payment failed. Please place a new order.'],
   ])('reports a %s order as an error', async (status, message) => {
-    vi.spyOn(api, 'get').mockResolvedValue({
-      data: { success: true, data: { status } },
-    })
+    answerQuery({ success: true, data: { status } })
     const error = vi.spyOn(toast, 'error')
     renderUnpaidDialog()
 
@@ -331,20 +355,25 @@ describe('checking an order with the I have paid button', () => {
     await waitFor(() => expect(error).toHaveBeenCalledWith(message))
   })
 
-  it('shows the server reason when the status check is rejected', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({
-      data: { success: false, message: 'Order not found' },
+  it('shows the server reason when the check is rejected', async () => {
+    answerQuery({
+      success: false,
+      message: 'Could not reach the payment gateway. Please try again later.',
     })
     const error = vi.spyOn(toast, 'error')
     renderUnpaidDialog()
 
     fireEvent.click(screen.getByRole('button', { name: 'I have paid' }))
 
-    await waitFor(() => expect(error).toHaveBeenCalledWith('Order not found'))
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith(
+        'Could not reach the payment gateway. Please try again later.'
+      )
+    )
   })
 
-  it('shows an error when the status request fails', async () => {
-    vi.spyOn(api, 'get').mockRejectedValue(new Error('Network Error'))
+  it('shows an error and re-enables the button when the request fails', async () => {
+    answerQuery(new Error('Network Error'))
     const error = vi.spyOn(toast, 'error')
     renderUnpaidDialog()
 

@@ -674,7 +674,8 @@ func completeSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if order.Status == common.TopUpStatusSuccess {
 			return nil
 		}
-		if order.Status != common.TopUpStatusPending {
+		// An administrator may complete an expired order, as for top-ups.
+		if order.Status != common.TopUpStatusPending && (!manual || order.Status != common.TopUpStatusExpired) {
 			return ErrSubscriptionOrderStatusInvalid
 		}
 		plan, err := getSubscriptionPlanByIdTx(tx, order.PlanId)

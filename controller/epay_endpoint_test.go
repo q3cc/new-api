@@ -408,3 +408,162 @@ func TestSubscriptionMapiReturnsCodeAndPollsOwnedOrder(t *testing.T) {
 		})
 	}
 }
+
+// An order whose gateway notification never arrived is settled when the owner
+// asks the gateway about it. The billing history shows an unpaid epay order
+// past its payment window as expired while a late payment still settles it.
+func TestEpayActiveQuerySettlesOwnedOrders(t *testing.T) {
+	service.InitHttpClient()
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			dsn := os.Getenv(dialect.env)
+			if dialect.env != "" && dsn == "" {
+				t.Skip("database DSN not configured")
+			}
+			db, _ := newAuditTestDatabase(t, dialect.kind, dsn)
+			a, _ := setupEpayCallbackDatabase(t, db, common.DatabaseType(dialect.kind))
+			paid := map[string]string{}
+			queries := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				queries++
+				require.Equal(t, "/api.php", r.URL.Path)
+				query := r.URL.Query()
+				require.Equal(t, "order", query.Get("act"))
+				require.Equal(t, "101", query.Get("pid"))
+				require.Equal(t, a.SecretKey, query.Get("key"))
+				tradeNo := query.Get("out_trade_no")
+				money, ok := paid[tradeNo]
+				status := 0
+				if ok {
+					status = 1
+				}
+				_, _ = fmt.Fprintf(w, `{"code":1,"pid":101,"out_trade_no":%q,"type":"alipay","money":%q,"status":%d}`, tradeNo, money, status)
+			}))
+			defer upstream.Close()
+			require.NoError(t, model.DB.Model(a).Update("address", upstream.URL).Error)
+
+			now := common.GetTimestamp()
+			stale := now - model.EpayPaymentWindowSeconds - 60
+			orders := []*model.TopUp{
+				{UserId: 900, Amount: 10, Money: 7, TradeNo: "USR900NOfresh", PaymentMethod: "alipay", PaymentProvider: model.PaymentProviderEpay, EpayVersionId: a.Id, EpayMoney: "7.00", CreateTime: now, Status: common.TopUpStatusPending},
+				{UserId: 900, Amount: 10, Money: 7, TradeNo: "USR900NOlate", PaymentMethod: "alipay", PaymentProvider: model.PaymentProviderEpay, EpayVersionId: a.Id, EpayMoney: "7.00", CreateTime: stale, Status: common.TopUpStatusPending},
+				{UserId: 900, Amount: 10, Money: 7, TradeNo: "USR900NOshort", PaymentMethod: "alipay", PaymentProvider: model.PaymentProviderEpay, EpayVersionId: a.Id, EpayMoney: "7.00", CreateTime: now, Status: common.TopUpStatusPending},
+			}
+			for _, order := range orders {
+				require.NoError(t, model.DB.Create(order).Error)
+			}
+			require.NoError(t, model.DB.Create(&model.SubscriptionOrder{UserId: 900, PlanId: 900, Money: 9.99, TradeNo: "SUBUSR900NOplan", PaymentMethod: "alipay", PaymentProvider: model.PaymentProviderEpay, EpayVersionId: a.Id, EpayMoney: "9.99", CreateTime: now, Status: common.TopUpStatusPending}).Error)
+
+			userID := 900
+			router := gin.New()
+			router.Use(func(c *gin.Context) { c.Set("id", userID); c.Next() })
+			router.POST("/query", QueryEpayOrder)
+			ask := func(tradeNo string) (bool, string, string) {
+				recorder := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(`{"trade_no":"`+tradeNo+`"}`))
+				req.Header.Set("Content-Type", "application/json")
+				router.ServeHTTP(recorder, req)
+				var response struct {
+					Success bool              `json:"success"`
+					Message string            `json:"message"`
+					Data    map[string]string `json:"data"`
+				}
+				require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response), recorder.Body.String())
+				return response.Success, response.Data["status"], response.Message
+			}
+			quota := func() int {
+				var user model.User
+				require.NoError(t, model.DB.First(&user, 900).Error)
+				return user.Quota
+			}
+
+			ok, status, _ := ask("USR900NOfresh")
+			require.True(t, ok)
+			assert.Equal(t, common.TopUpStatusPending, status)
+			ok, status, _ = ask("USR900NOlate")
+			require.True(t, ok)
+			assert.Equal(t, common.TopUpStatusExpired, status)
+
+			records, total, err := model.GetUserTopUps(900, &common.PageInfo{Page: 1, PageSize: 10})
+			require.NoError(t, err)
+			require.EqualValues(t, 4, total)
+			shown := map[string]*model.BillingRecord{}
+			for _, record := range records {
+				shown[record.TradeNo] = record
+			}
+			assert.Equal(t, common.TopUpStatusExpired, shown["USR900NOlate"].Status)
+			assert.True(t, shown["USR900NOlate"].AwaitingPayment)
+			assert.Equal(t, common.TopUpStatusPending, shown["USR900NOfresh"].Status)
+			admin, _, err := model.GetAdminBillingHistory("", model.BillingHistoryFilter{Status: common.TopUpStatusExpired}, &common.PageInfo{Page: 1, PageSize: 10})
+			require.NoError(t, err)
+			require.Len(t, admin, 1)
+			assert.Equal(t, "USR900NOlate", admin[0].TradeNo)
+
+			before := quota()
+			paid["USR900NOlate"] = "7.00"
+			ok, status, _ = ask("USR900NOlate")
+			require.True(t, ok)
+			assert.Equal(t, common.TopUpStatusSuccess, status)
+			credited := quota()
+			assert.Greater(t, credited, before)
+			queriesBefore := queries
+			ok, status, _ = ask("USR900NOlate")
+			require.True(t, ok)
+			assert.Equal(t, common.TopUpStatusSuccess, status)
+			assert.Equal(t, credited, quota(), "a settled order is never credited twice")
+			assert.Equal(t, queriesBefore, queries, "a settled order does not ask the gateway again")
+			records, _, err = model.GetUserTopUps(900, &common.PageInfo{Page: 1, PageSize: 10})
+			require.NoError(t, err)
+			for _, record := range records {
+				if record.TradeNo == "USR900NOlate" {
+					assert.Equal(t, common.TopUpStatusSuccess, record.Status)
+					assert.False(t, record.AwaitingPayment)
+				}
+			}
+
+			paid["USR900NOshort"] = "0.01"
+			ok, _, message := ask("USR900NOshort")
+			assert.False(t, ok)
+			assert.Equal(t, "The payment was found but could not be credited. Please contact support.", message)
+			stored := model.GetTopUpByTradeNo("USR900NOshort")
+			assert.Equal(t, common.TopUpStatusPending, stored.Status)
+			assert.Equal(t, credited, quota())
+
+			paid["SUBUSR900NOplan"] = "9.99"
+			ok, status, _ = ask("SUBUSR900NOplan")
+			require.True(t, ok)
+			assert.Equal(t, common.TopUpStatusSuccess, status)
+			var subscriptions int64
+			require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 900).Count(&subscriptions).Error)
+			assert.EqualValues(t, 1, subscriptions)
+
+			// An administrator completes an order whatever its expiry, but not a
+			// failed one.
+			require.NoError(t, model.DB.Create(&model.TopUp{UserId: 900, Amount: 10, Money: 7, TradeNo: "USR900NOexpired", PaymentMethod: "alipay", PaymentProvider: model.PaymentProviderEpay, EpayVersionId: a.Id, EpayMoney: "7.00", CreateTime: stale, Status: common.TopUpStatusExpired}).Error)
+			require.NoError(t, model.DB.Create(&model.TopUp{UserId: 900, Amount: 10, Money: 7, TradeNo: "USR900NOfailed", PaymentMethod: "alipay", PaymentProvider: model.PaymentProviderEpay, EpayVersionId: a.Id, EpayMoney: "7.00", CreateTime: now, Status: common.TopUpStatusFailed}).Error)
+			require.NoError(t, model.DB.Create(&model.SubscriptionOrder{UserId: 900, PlanId: 900, Money: 9.99, TradeNo: "SUBUSR900NOexpired", PaymentMethod: "alipay", PaymentProvider: model.PaymentProviderEpay, EpayVersionId: a.Id, EpayMoney: "9.99", CreateTime: stale, Status: common.TopUpStatusPending}).Error)
+			require.NoError(t, model.ExpireSubscriptionOrder("SUBUSR900NOexpired", model.PaymentProviderEpay))
+			beforeAdmin := quota()
+			require.NoError(t, model.ManualCompleteTopUp("USR900NOexpired", ""))
+			assert.Greater(t, quota(), beforeAdmin)
+			assert.Equal(t, common.TopUpStatusSuccess, model.GetTopUpByTradeNo("USR900NOexpired").Status)
+			assert.Error(t, model.ManualCompleteTopUp("USR900NOfailed", ""))
+			require.NoError(t, model.ManualCompleteTopUp("SUBUSR900NOexpired", ""))
+			assert.Equal(t, common.TopUpStatusSuccess, model.GetSubscriptionOrderByTradeNo("SUBUSR900NOexpired").Status)
+			require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 900).Count(&subscriptions).Error)
+			assert.EqualValues(t, 2, subscriptions)
+
+			userID = 901
+			ok, _, message = ask("USR900NOfresh")
+			assert.False(t, ok)
+			assert.Equal(t, "Order not found", message)
+
+			// The query URL carries the merchant key; a failed request must not
+			// repeat it in the error that reaches the logs.
+			upstream.Close()
+			_, _, err = queryEpayOrder(t.Context(), &model.EpayEndpointVersion{Address: upstream.URL, MerchantId: "101", SecretKey: a.SecretKey}, "USR900NOfresh")
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), a.SecretKey)
+		})
+	}
+}

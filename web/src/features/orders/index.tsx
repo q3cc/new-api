@@ -216,7 +216,8 @@ export function OrdersPage(props: {
           >
             {t('Details')}
           </Button>
-          {row.original.status === 'pending' && (
+          {(row.original.status === 'pending' ||
+            row.original.status === 'expired') && (
             <Button
               size='sm'
               variant='outline'

@@ -353,7 +353,7 @@ it.each([
   }
 )
 
-it('mobile cards retain both order types and expose pending-only actions', async () => {
+it('mobile cards retain both order types and let admins complete expired orders', async () => {
   const matchMedia = window.matchMedia
   vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
     ...matchMedia(query),
@@ -374,8 +374,20 @@ it('mobile cards retain both order types and expose pending-only actions', async
   ).toBeVisible()
   expect(
     screen.getAllByRole('button', { name: 'Complete Order' })
-  ).toHaveLength(1)
+  ).toHaveLength(2)
   expect(screen.queryByRole('table')).not.toBeInTheDocument()
+})
+
+it('offers no completion for a failed order', async () => {
+  records[0] = { ...records[0], status: 'failed' }
+  records[1] = { ...subscription, status: 'failed' }
+  render(<OrdersHarness />)
+  expect(
+    await screen.findByRole('button', { name: 'order-topup' })
+  ).toBeVisible()
+  expect(
+    screen.queryByRole('button', { name: 'Complete Order' })
+  ).not.toBeInTheDocument()
 })
 
 it.each([1, 10, 100])(

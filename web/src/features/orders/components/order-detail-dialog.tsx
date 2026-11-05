@@ -109,7 +109,7 @@ export function OrderDetailDialog(props: {
       title={t('Order details')}
       contentClassName='sm:max-w-2xl'
       footer={
-        order?.status === 'pending' ? (
+        order?.status === 'pending' || order?.status === 'expired' ? (
           <Button
             disabled={props.completing}
             onClick={() => props.onComplete(order)}

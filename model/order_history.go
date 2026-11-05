@@ -9,6 +9,19 @@ import (
 	"gorm.io/gorm"
 )
 
+// EpayPaymentWindowSeconds is how long an epay order waits for payment before
+// the console shows it as expired. The stored order stays pending, so a late
+// gateway notification or an active query still settles it.
+const EpayPaymentWindowSeconds int64 = 10 * 60
+
+// EpayOrderDisplayStatus is the status the console shows for an order.
+func EpayOrderDisplayStatus(status string, provider string, createTime int64) string {
+	if status == common.TopUpStatusPending && provider == PaymentProviderEpay && createTime < common.GetTimestamp()-EpayPaymentWindowSeconds {
+		return common.TopUpStatusExpired
+	}
+	return status
+}
+
 // BillingRecord is a read-only projection. Subscription orders are authoritative;
 // their legacy top-up mirrors are excluded from both counting and pagination.
 type BillingRecord struct {
@@ -24,9 +37,13 @@ type BillingRecord struct {
 	CreateTime      int64   `json:"create_time"`
 	CompleteTime    int64   `json:"complete_time"`
 	Status          string  `json:"status"`
-	OrderType       string  `json:"order_type"`
-	PlanId          int     `json:"plan_id,omitempty"`
-	PlanTitle       string  `json:"plan_title,omitempty"`
+	// AwaitingPayment is true while the stored order is still pending, even
+	// when Status already shows an epay order past its payment window as
+	// expired: a late payment still settles it.
+	AwaitingPayment bool   `json:"awaiting_payment"`
+	OrderType       string `json:"order_type"`
+	PlanId          int    `json:"plan_id,omitempty"`
+	PlanTitle       string `json:"plan_title,omitempty"`
 }
 
 func containsSearchPattern(keyword string) string {
@@ -124,9 +141,17 @@ func (f BillingHistoryFilter) Validate() error {
 }
 
 func billingOrders(tx *gorm.DB) *gorm.DB {
-	topups := tx.Table("top_ups AS t").Select("t.id, t.user_id, t.amount, t.money, t.trade_no, t.payment_method, t.payment_provider, t.epay_version_id, t.create_time, t.complete_time, t.status, 'topup' AS order_type, 0 AS plan_id, '' AS plan_title").
+	cutoff := common.GetTimestamp() - EpayPaymentWindowSeconds
+	status := func(alias string) (string, []any) {
+		return "CASE WHEN " + alias + ".status = ? AND " + alias + ".payment_provider = ? AND " + alias + ".create_time < ? THEN ? ELSE " + alias + ".status END AS status, " +
+				"CASE WHEN " + alias + ".status = ? THEN 1 ELSE 0 END AS awaiting_payment",
+			[]any{common.TopUpStatusPending, PaymentProviderEpay, cutoff, common.TopUpStatusExpired, common.TopUpStatusPending}
+	}
+	topupStatus, topupArgs := status("t")
+	topups := tx.Table("top_ups AS t").Select("t.id, t.user_id, t.amount, t.money, t.trade_no, t.payment_method, t.payment_provider, t.epay_version_id, t.create_time, t.complete_time, "+topupStatus+", 'topup' AS order_type, 0 AS plan_id, '' AS plan_title", topupArgs...).
 		Where("NOT EXISTS (?)", tx.Table("subscription_orders AS s").Select("1").Where("s.trade_no = t.trade_no"))
-	subscriptions := tx.Table("subscription_orders AS s").Select("s.id, s.user_id, 0 AS amount, s.money, s.trade_no, s.payment_method, s.payment_provider, s.epay_version_id, s.create_time, s.complete_time, s.status, 'subscription' AS order_type, s.plan_id, COALESCE(p.title, '') AS plan_title").
+	subscriptionStatus, subscriptionArgs := status("s")
+	subscriptions := tx.Table("subscription_orders AS s").Select("s.id, s.user_id, 0 AS amount, s.money, s.trade_no, s.payment_method, s.payment_provider, s.epay_version_id, s.create_time, s.complete_time, "+subscriptionStatus+", 'subscription' AS order_type, s.plan_id, COALESCE(p.title, '') AS plan_title", subscriptionArgs...).
 		Joins("LEFT JOIN subscription_plans AS p ON p.id = s.plan_id")
 	// UNION ALL is needed to apply one database ordering and offset to both
 	// sources. Its SQL is dialect-neutral; values stay bound parameters.

@@ -359,7 +359,9 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 			return nil
 		}
 
-		if topUp.Status != common.TopUpStatusPending {
+		// An administrator may complete an expired order: the payment can
+		// arrive after the order stopped waiting for it.
+		if topUp.Status != common.TopUpStatusPending && topUp.Status != common.TopUpStatusExpired {
 			return common.NewMessage("Order is not pending payment and cannot be completed")
 		}
 

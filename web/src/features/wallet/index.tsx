@@ -405,6 +405,7 @@ export function Wallet(props: WalletProps) {
       <BillingHistoryDialog
         open={billingDialogOpen}
         onOpenChange={setBillingDialogOpen}
+        onPaid={() => void fetchUser()}
       />
 
       <CreemConfirmDialog
