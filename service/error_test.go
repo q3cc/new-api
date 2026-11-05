@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -157,4 +160,34 @@ func withDebugEnabled(t *testing.T, enabled bool) {
 	t.Cleanup(func() {
 		common.DebugEnabled = oldDebug
 	})
+}
+
+// A provider moderation rejection reaches the reader as the configured
+// message, with its status and code unchanged; the provider's text is kept
+// for the admin log details.
+func TestRewriteUpstreamErrorReplacesMatchedMessages(t *testing.T) {
+	require.NoError(t, operation_setting.UpstreamErrorRewriteRulesFromString(operation_setting.DefaultUpstreamErrorRewriteRules))
+	original := "The request was rejected by the content policy. Revise the content before retrying."
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"` + original + `","type":"invalid_request_error","code":"content_policy"}}`)),
+	}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+	RewriteUpstreamError(c, newAPIError)
+
+	const want = "会话被模型提供商云端拦截，请修改后重新尝试"
+	require.Equal(t, http.StatusBadRequest, newAPIError.StatusCode)
+	require.Equal(t, types.ErrorCode("content_policy"), newAPIError.GetErrorCode())
+	require.Equal(t, want, newAPIError.Error())
+	require.Equal(t, want, newAPIError.ToOpenAIError().Message)
+	require.Equal(t, want, newAPIError.ToClaudeError().Message)
+	require.Equal(t, want, newAPIError.ToGeminiError().Message)
+	require.Equal(t, original, common.GetContextKeyString(c, constant.ContextKeyUpstreamErrorOriginal))
+
+	other := types.NewOpenAIError(fmt.Errorf("rate limited"), types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests)
+	RewriteUpstreamError(c, other)
+	require.Equal(t, "rate limited", other.Error())
+	require.Empty(t, common.GetContextKeyString(c, constant.ContextKeyUpstreamErrorOriginal), "a later attempt does not inherit the earlier provider text")
 }

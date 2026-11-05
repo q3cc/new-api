@@ -98,6 +98,9 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other.SetPublic("error_code", err.GetErrorCode())
 		other.SetPublic("status_code", err.StatusCode)
 		AppendRelayLogAdminInfo(c, relayInfo, other)
+		if original := common.GetContextKeyString(c, constant.ContextKeyUpstreamErrorOriginal); original != "" {
+			other.SetAdmin("upstream_error", common.MaskSensitiveInfo(original, upstreamURLs...))
+		}
 		AppendResponseModelLogInfo(relayInfo, other)
 		AppendTaskPluginContextAuditInfo(c, other)
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)

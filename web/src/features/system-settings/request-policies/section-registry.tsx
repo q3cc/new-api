@@ -21,6 +21,7 @@ import { ChannelHealthSection } from './channel-health-section'
 import type { RequestPolicySettings } from './defaults'
 import { RequestChecksSection } from './request-checks-section'
 import { RoutingPolicySection } from './routing-section'
+import { UpstreamErrorsSection } from './upstream-errors-section'
 
 const POLICY_SECTIONS = [
   {
@@ -40,6 +41,17 @@ const POLICY_SECTIONS = [
     id: 'routing',
     titleKey: 'Sessions and retries',
     build: () => <RoutingPolicySection />,
+  },
+  {
+    id: 'errors',
+    titleKey: 'Upstream errors',
+    build: (settings: RequestPolicySettings) => (
+      <UpstreamErrorsSection
+        defaultValues={{
+          UpstreamErrorRewriteRules: settings.UpstreamErrorRewriteRules,
+        }}
+      />
+    ),
   },
   {
     id: 'health',

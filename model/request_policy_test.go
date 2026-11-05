@@ -101,6 +101,18 @@ func TestRequestPolicyDatabaseMatrix(t *testing.T) {
 			}
 			assert.Error(t, UpdateRequestPolicyOptions(map[string]string{"channel_affinity_setting.rules": "[", "RetryTimes": "8"}))
 			assert.Same(t, snapshot, CurrentRequestPolicy())
+			t.Cleanup(func() {
+				require.NoError(t, operation_setting.UpstreamErrorRewriteRulesFromString(operation_setting.DefaultUpstreamErrorRewriteRules))
+			})
+			assert.Error(t, UpdateRequestPolicyOptions(map[string]string{"UpstreamErrorRewriteRules": "content policy"}), "a rule needs both a keyword and a message")
+			assert.Same(t, snapshot, CurrentRequestPolicy())
+			require.NoError(t, UpdateRequestPolicyOptions(map[string]string{"UpstreamErrorRewriteRules": "Quota Exceeded => 额度不足"}))
+			message, rewritten := operation_setting.RewriteUpstreamErrorMessage("upstream quota exceeded today")
+			assert.True(t, rewritten)
+			assert.Equal(t, "额度不足", message)
+			_, rewritten = operation_setting.RewriteUpstreamErrorMessage("The request was rejected by the content policy.")
+			assert.False(t, rewritten, "saved rules replace the default ones")
+			snapshot = CurrentRequestPolicy()
 			var option Option
 			require.NoError(t, db.Where(map[string]any{"key": "RetryTimes"}).First(&option).Error)
 			assert.Equal(t, "2", option.Value)

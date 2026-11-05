@@ -12,10 +12,14 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
+
+	"github.com/gin-gonic/gin"
 )
 
 func MidjourneyErrorWrapper(code int, desc string) *taskdto.MidjourneyResponse {
@@ -135,6 +139,32 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
 	}
 	return
+}
+
+// RewriteUpstreamError replaces the message of an upstream error that matches
+// an administrator rewrite rule. The status code, error code and retry
+// handling stay as they were; the provider's own text is kept for the admin
+// details of the error log.
+func RewriteUpstreamError(c *gin.Context, newApiErr *types.NewAPIError) {
+	common.SetContextKey(c, constant.ContextKeyUpstreamErrorOriginal, "")
+	if newApiErr == nil {
+		return
+	}
+	original := newApiErr.Error()
+	message, ok := operation_setting.RewriteUpstreamErrorMessage(original)
+	if !ok {
+		return
+	}
+	common.SetContextKey(c, constant.ContextKeyUpstreamErrorOriginal, original)
+	newApiErr.SetMessage(message)
+	switch relayError := newApiErr.RelayError.(type) {
+	case types.OpenAIError:
+		relayError.Message = message
+		newApiErr.RelayError = relayError
+	case types.ClaudeError:
+		relayError.Message = message
+		newApiErr.RelayError = relayError
+	}
 }
 
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {

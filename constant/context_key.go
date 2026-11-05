@@ -73,6 +73,10 @@ const (
 	// It is not returned to end users, but can be persisted into consume/error logs for debugging.
 	ContextKeyAdminRejectReason ContextKey = "admin_reject_reason"
 
+	// ContextKeyUpstreamErrorOriginal stores the provider's text of an upstream
+	// error that an administrator rule rewrote, for admin-only log details.
+	ContextKeyUpstreamErrorOriginal ContextKey = "upstream_error_original"
+
 	// ContextKeyLanguage stores the user's language preference for i18n
 	ContextKeyLanguage             ContextKey = "language"
 	ContextKeyIsStream             ContextKey = "is_stream"

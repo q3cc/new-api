@@ -192,6 +192,7 @@ describe('request policy settings', () => {
     ['health', 'Save Changes'],
     ['filtering', 'Save sensitive words'],
     ['affinity', 'Save Changes'],
+    ['errors', 'Save Changes'],
   ])(
     'opening %s and saving unchanged values does not write options',
     async (section, saveLabel) => {
@@ -264,6 +265,46 @@ describe('request policy settings', () => {
       await queryClient.invalidateQueries({ queryKey: ['system-options'] })
     })
     expect(keywords).toHaveValue('unsaved')
+  })
+
+  it('saving changed upstream error rules writes only the rule option', async () => {
+    await renderPolicies('/system-settings/request-policies/errors')
+    const rules = await screen.findByRole('textbox', {
+      name: 'Error message rewrite rules',
+    })
+    expect(rules).toHaveValue(
+      defaultRequestPolicySettings.UpstreamErrorRewriteRules
+    )
+    fireEvent.change(rules, {
+      target: { value: 'content policy => blocked\n\nquota => try later' },
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledExactlyOnceWith(
+        '/api/option/request_policy',
+        {
+          options: {
+            UpstreamErrorRewriteRules:
+              'content policy => blocked\n\nquota => try later',
+          },
+        }
+      )
+    )
+  })
+
+  it('an upstream error rule without a message shows validation and does not write options', async () => {
+    await renderPolicies('/system-settings/request-policies/errors')
+    fireEvent.change(
+      await screen.findByRole('textbox', {
+        name: 'Error message rewrite rules',
+      }),
+      { target: { value: 'content policy =>' } }
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(
+      await screen.findByText('Each line must be written as keyword => message')
+    ).toBeVisible()
+    expect(api.patch).not.toHaveBeenCalled()
   })
 
   it('invalid retry status ranges show validation and do not write options', async () => {
