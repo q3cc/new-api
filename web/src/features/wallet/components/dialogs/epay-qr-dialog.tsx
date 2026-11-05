@@ -20,9 +20,12 @@ import { Loader2 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
+import { handleServerError } from '@/lib/handle-server-error'
+import { createServerError } from '@/lib/server-error-message'
 
 import { getTopUpStatus } from '../../api'
 import { getInAppPaymentLink } from '../../lib/payment'
@@ -133,14 +136,34 @@ export function EpayQrDialog(props: Props) {
 
   const checkNow = async () => {
     if (!tradeNo) return
+    const checkFailed = t(
+      'Could not check the payment status. Please try again.'
+    )
     setChecking(true)
     try {
       const response = await getTopUpStatus(tradeNo)
-      if (response.success && response.data?.status === 'success') {
+      if (paidRef.current) return
+      if (!response.success) {
+        throw createServerError(response, checkFailed)
+      }
+      const status = response.data?.status
+      if (status === 'success') {
         paidRef.current = true
         callbacksRef.current.onPaid()
         callbacksRef.current.onOpenChange(false)
+      } else if (status === 'expired') {
+        toast.error(t('This order has expired. Please place a new order.'))
+      } else if (status === 'failed') {
+        toast.error(t('This payment failed. Please place a new order.'))
+      } else {
+        toast.info(
+          t(
+            'Payment not received yet. If you have paid, wait a moment and check again.'
+          )
+        )
       }
+    } catch (error) {
+      handleServerError(error, checkFailed)
     } finally {
       setChecking(false)
     }

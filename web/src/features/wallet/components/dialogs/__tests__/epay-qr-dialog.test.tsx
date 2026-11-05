@@ -1,4 +1,5 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { toast } from 'sonner'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -281,4 +282,75 @@ it.each([
   expect(click).not.toHaveBeenCalled()
   vi.useRealTimers()
   vi.restoreAllMocks()
+})
+
+describe('checking an order with the I have paid button', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const renderUnpaidDialog = (onPaid = vi.fn()) =>
+    render(
+      <EpayQrDialog
+        payment={{ trade_no: 'USR1NOcheck', qrcode: 'https://pay.example.com' }}
+        onOpenChange={() => {}}
+        onPaid={onPaid}
+      />
+    )
+
+  it('tells the reader the payment has not arrived when the order is still pending', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: { status: 'pending' } },
+    })
+    const info = vi.spyOn(toast, 'info')
+    const onPaid = vi.fn()
+    renderUnpaidDialog(onPaid)
+
+    fireEvent.click(screen.getByRole('button', { name: 'I have paid' }))
+
+    await waitFor(() =>
+      expect(info).toHaveBeenCalledWith(
+        'Payment not received yet. If you have paid, wait a moment and check again.'
+      )
+    )
+    expect(onPaid).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['expired', 'This order has expired. Please place a new order.'],
+    ['failed', 'This payment failed. Please place a new order.'],
+  ])('reports a %s order as an error', async (status, message) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: { status } },
+    })
+    const error = vi.spyOn(toast, 'error')
+    renderUnpaidDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: 'I have paid' }))
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith(message))
+  })
+
+  it('shows the server reason when the status check is rejected', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: false, message: 'Order not found' },
+    })
+    const error = vi.spyOn(toast, 'error')
+    renderUnpaidDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: 'I have paid' }))
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith('Order not found'))
+  })
+
+  it('shows an error when the status request fails', async () => {
+    vi.spyOn(api, 'get').mockRejectedValue(new Error('Network Error'))
+    const error = vi.spyOn(toast, 'error')
+    renderUnpaidDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: 'I have paid' }))
+
+    await waitFor(() => expect(error).toHaveBeenCalledOnce())
+    expect(screen.getByRole('button', { name: 'I have paid' })).toBeEnabled()
+  })
 })

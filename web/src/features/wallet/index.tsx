@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { SectionPageLayout } from '@/components/layout'
 import { TrialBalanceCard } from '@/features/trial-credit/balance-card'
@@ -387,6 +388,7 @@ export function Wallet(props: WalletProps) {
           if (!open) setEpayMapiPayment(null)
         }}
         onPaid={() => {
+          toast.success(t('Payment received. Your balance has been updated.'))
           setEpayMapiPayment(null)
           void fetchUser()
         }}
