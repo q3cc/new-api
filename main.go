@@ -6,6 +6,7 @@ import (
 	"embed"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -184,9 +185,10 @@ func main() {
 		model.InitBatchUpdater()
 	}
 
+	host := os.Getenv("HOST")
 	if os.Getenv("ENABLE_PPROF") == "true" {
 		gopool.Go(func() {
-			log.Println(http.ListenAndServe("0.0.0.0:8005", nil))
+			log.Println(http.ListenAndServe(net.JoinHostPort(host, "8005"), nil))
 		})
 		go common.Monitor()
 		common.SysLog(common.LogText("pprof enabled"))
@@ -225,7 +227,7 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:    ":" + port,
+		Addr:    net.JoinHostPort(host, port),
 		Handler: server,
 	}
 	err = hotupgrade.Serve(hotupgrade.ServeOptions{
@@ -234,7 +236,7 @@ func main() {
 		ShutdownTimeout: time.Duration(common.GetEnvOrDefault("SHUTDOWN_TIMEOUT_SECONDS", 120)) * time.Second,
 		DrainTimeout:    hotupgrade.DrainTimeout(),
 		Started: func() {
-			common.LogStartupSuccess(startTime, port)
+			common.LogStartupSuccess(startTime, host, port)
 		},
 		Finish: func() {
 			// Quota changes and statistics still in memory are written before
@@ -258,6 +260,7 @@ func main() {
 // runUpgradeSupervisor keeps the listening socket and runs the server in
 // worker processes that an upgrade replaces without dropping connections.
 func runUpgradeSupervisor() int {
+	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = strconv.Itoa(*common.Port)
@@ -271,7 +274,7 @@ func runUpgradeSupervisor() int {
 		return 1
 	}
 	err = hotupgrade.RunSupervisor(hotupgrade.SupervisorConfig{
-		Addr:         ":" + port,
+		Addr:         net.JoinHostPort(host, port),
 		ImageBinary:  executable,
 		ImageVersion: common.Version,
 		Args:         os.Args[1:],

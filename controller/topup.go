@@ -144,6 +144,28 @@ func validQuotaPerUnit() bool {
 	return common.QuotaPerUnit > 0 && !math.IsNaN(common.QuotaPerUnit) && !math.IsInf(common.QuotaPerUnit, 0)
 }
 
+func GetEpayClient() *epay.Client {
+	if operation_setting.PayAddress == "" || operation_setting.EpayId == "" {
+		return nil
+	}
+	config := &epay.Config{
+		PartnerID: operation_setting.EpayId,
+		Key:       operation_setting.EpayKey,
+	}
+	if paymentSetting := operation_setting.GetPaymentSetting(); paymentSetting.EpaySignType == operation_setting.EpaySignTypeRSA {
+		config.SignType = epay.SignTypeRSA
+		config.MerchantPrivateKey = paymentSetting.EpayMerchantPrivateKey
+		config.PlatformPublicKey = paymentSetting.EpayPlatformPublicKey
+	} else if operation_setting.EpayKey == "" {
+		return nil
+	}
+	withUrl, err := epay.NewClient(config, operation_setting.PayAddress)
+	if err != nil {
+		return nil
+	}
+	return withUrl
+}
+
 func getPayMoney(amount int64, group string) float64 {
 	dAmount := decimal.NewFromInt(amount)
 	// 充值金额以“展示类型”为准：

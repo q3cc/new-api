@@ -1,6 +1,10 @@
 package controller
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -274,4 +278,99 @@ func TestEpayCallbacksVerifyBeforeSettlement(t *testing.T) {
 			}
 		}
 	}
+}
+
+// newEpayRSAKeyPairForTest returns a throwaway key pair as single-line Base64
+// text, the format Epay merchant consoles show.
+func newEpayRSAKeyPairForTest(t *testing.T) (string, string) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	privateDER, err := x509.MarshalPKCS8PrivateKey(key)
+	require.NoError(t, err)
+	publicDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	require.NoError(t, err)
+	return base64.StdEncoding.EncodeToString(privateDER), base64.StdEncoding.EncodeToString(publicDER)
+}
+
+func TestUpdateOptionValidatesEpaySignSettings(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	originalOptionMap := common.OptionMap
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalSignType := paymentSetting.EpaySignType
+	originalMerchantPrivateKey := paymentSetting.EpayMerchantPrivateKey
+	originalPlatformPublicKey := paymentSetting.EpayPlatformPublicKey
+	t.Cleanup(func() {
+		common.OptionMap = originalOptionMap
+		paymentSetting.EpaySignType = originalSignType
+		paymentSetting.EpayMerchantPrivateKey = originalMerchantPrivateKey
+		paymentSetting.EpayPlatformPublicKey = originalPlatformPublicKey
+	})
+	// A site upgraded from an MD5-only release has no saved RSA settings.
+	common.OptionMap = map[string]string{
+		operation_setting.EpaySignTypeOptionKey:           operation_setting.EpaySignTypeMD5,
+		operation_setting.EpayMerchantPrivateKeyOptionKey: "",
+		operation_setting.EpayPlatformPublicKeyOptionKey:  "",
+	}
+	paymentSetting.EpaySignType = operation_setting.EpaySignTypeMD5
+	paymentSetting.EpayMerchantPrivateKey = ""
+	paymentSetting.EpayPlatformPublicKey = ""
+	signTypeKey := operation_setting.EpaySignTypeOptionKey
+	privateKeyKey := operation_setting.EpayMerchantPrivateKeyOptionKey
+	publicKeyKey := operation_setting.EpayPlatformPublicKeyOptionKey
+	merchantPrivateKey, _ := newEpayRSAKeyPairForTest(t)
+	_, platformPublicKey := newEpayRSAKeyPairForTest(t)
+	const privateKeyError = "The Epay merchant private key is missing or invalid"
+	const publicKeyError = "The Epay platform public key is missing or invalid"
+
+	steps := []struct {
+		name      string
+		key       string
+		value     string
+		wantError string
+	}{
+		{"unknown signature type", signTypeKey, "SHA1", "Epay signature type must be MD5 or RSA"},
+		{"RSA before keys are saved", signTypeKey, "RSA", privateKeyError},
+		{"malformed private key", privateKeyKey, "not a key", privateKeyError},
+		{"public key in the private key field", privateKeyKey, platformPublicKey, privateKeyError},
+		{"save private key", privateKeyKey, merchantPrivateKey, ""},
+		{"RSA before the public key is saved", signTypeKey, "RSA", publicKeyError},
+		{"private key in the public key field", publicKeyKey, merchantPrivateKey, publicKeyError},
+		{"save public key", publicKeyKey, platformPublicKey, ""},
+		{"switch to RSA", signTypeKey, "RSA", ""},
+		{"clear private key while RSA is active", privateKeyKey, "", privateKeyError},
+		{"switch back to MD5", signTypeKey, "MD5", ""},
+	}
+	for _, step := range steps {
+		err := model.UpdateOption(step.key, step.value)
+		if step.wantError == "" {
+			require.NoError(t, err, step.name)
+			continue
+		}
+		require.Error(t, err, step.name)
+		assert.Equal(t, step.wantError, err.Error(), step.name)
+	}
+	assert.Equal(t, operation_setting.EpaySignTypeMD5, paymentSetting.EpaySignType)
+	assert.Equal(t, merchantPrivateKey, paymentSetting.EpayMerchantPrivateKey)
+	assert.Equal(t, platformPublicKey, paymentSetting.EpayPlatformPublicKey)
+
+	// The private key is never sent back to the settings page; the public key may be.
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/option/", nil)
+	GetOptions(context)
+	var response struct {
+		Success bool           `json:"success"`
+		Data    []model.Option `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	returned := make(map[string]string, len(response.Data))
+	for _, option := range response.Data {
+		returned[option.Key] = option.Value
+	}
+	assert.Equal(t, operation_setting.EpaySignTypeMD5, returned[signTypeKey])
+	assert.Equal(t, platformPublicKey, returned[publicKeyKey])
+	assert.NotContains(t, returned, privateKeyKey)
 }
