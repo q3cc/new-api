@@ -8103,6 +8103,23 @@
     "Choose a version to install.": "Choisissez une version à installer.",
     "Checked for a new version": "Recherche d'une nouvelle version",
     "Started an online upgrade from {{from}} to {{to}}": "Mise à jour en ligne lancée de {{from}} vers {{to}}",
-    "Rolled back from {{from}} to {{to}}": "Retour de {{from}} à {{to}}"
+    "Rolled back from {{from}} to {{to}}": "Retour de {{from}} à {{to}}",
+    "Please complete the human verification first": "Veuillez d'abord effectuer la vérification humaine",
+    "Human verification failed, please refresh and try again!": "La vérification humaine a échoué, veuillez actualiser et réessayer !",
+    "Human verification is temporarily unavailable. Please try again later.": "La vérification humaine est temporairement indisponible. Veuillez réessayer plus tard.",
+    "Only one human verification provider can be enabled at a time. Turn off the current one first.": "Un seul fournisseur de vérification humaine peut être activé à la fois. Désactivez d'abord celui en cours.",
+    "Cannot enable {{provider}} verification. Enter the {{provider}} settings first.": "Impossible d'activer la vérification {{provider}}. Renseignez d'abord les paramètres {{provider}}.",
+    "Turn off {{provider}} verification before clearing its keys.": "Désactivez la vérification {{provider}} avant d'effacer ses clés.",
+    "Human verification provider": "Fournisseur de vérification humaine",
+    "Protect login, registration, email codes, password reset and check-in with a human check": "Protéger la connexion, l'inscription, les codes e-mail, la réinitialisation du mot de passe et le pointage par une vérification humaine",
+    "Off": "Désactivé",
+    "GeeTest v4": "GeeTest v4",
+    "Google reCAPTCHA v2": "Google reCAPTCHA v2",
+    "GeeTest ID": "ID GeeTest",
+    "GeeTest KEY": "Clé GeeTest",
+    "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "Le captcha_id et le captcha_key d'un scénario GeeTest v4, depuis la console GeeTest",
+    "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "Si GeeTest est injoignable, les requêtes protégées sont refusées au lieu d'ignorer la vérification",
+    "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "Une clé reCAPTCHA v2 de type case à cocher. Le widget et la vérification passent par www.recaptcha.net, accessible depuis la Chine continentale",
+    "Leave empty to keep the saved value": "Laisser vide pour conserver la valeur enregistrée"
   }
 }

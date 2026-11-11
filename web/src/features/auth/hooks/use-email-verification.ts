@@ -29,8 +29,8 @@ import { sendEmailVerification } from '../api'
 import { EMAIL_VERIFICATION_COUNTDOWN } from '../constants'
 
 interface UseEmailVerificationOptions {
-  turnstileToken?: string
-  validateTurnstile?: () => boolean
+  /** Returns the human verification answer, or null to stop (see useTurnstile). */
+  requestTurnstileToken?: () => Promise<string | null>
 }
 
 /**
@@ -53,14 +53,14 @@ export function useEmailVerification(options?: UseEmailVerificationOptions) {
       return false
     }
 
-    // Validate turnstile if validation function is provided
-    if (options?.validateTurnstile && !options.validateTurnstile()) {
-      return false
-    }
+    const turnstile = options?.requestTurnstileToken
+      ? await options.requestTurnstileToken()
+      : ''
+    if (turnstile === null) return false
 
     setIsSending(true)
     try {
-      const res = await sendEmailVerification(email, options?.turnstileToken)
+      const res = await sendEmailVerification(email, turnstile || undefined)
       if (res?.success) {
         startCountdown()
         toast.success(i18next.t('Verification email sent'))

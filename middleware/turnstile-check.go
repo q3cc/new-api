@@ -1,58 +1,33 @@
 package middleware
 
 import (
-	"net/http"
-	"net/url"
+	"errors"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
-type turnstileCheckResponse struct {
-	Success bool `json:"success"`
-}
-
+// TurnstileCheck guards a route with the active human verification provider:
+// Cloudflare Turnstile, GeeTest v4 or reCAPTCHA v2 (the name is kept for the
+// existing routes). The browser sends the widget answer in the "turnstile"
+// query parameter for every provider; service.VerifyHuman describes its form.
 func TurnstileCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if common.TurnstileCheckEnabled {
-			response := c.Query("turnstile")
-			if response == "" {
-				common.ApiErrorT(c, "Turnstile token is empty")
-				c.Abort()
-				return
-			}
-			rawRes, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", url.Values{
-				"secret":   {common.TurnstileSecretKey},
-				"response": {response},
-				"remoteip": {c.ClientIP()},
-			})
-			if err != nil {
-				common.SysLog(err.Error())
-				c.JSON(http.StatusOK, gin.H{
-					"success": false,
-					"message": err.Error(),
-				})
-				c.Abort()
-				return
-			}
-			defer rawRes.Body.Close()
-			var res turnstileCheckResponse
-			err = common.DecodeJson(rawRes.Body, &res)
-			if err != nil {
-				common.SysLog(err.Error())
-				c.JSON(http.StatusOK, gin.H{
-					"success": false,
-					"message": err.Error(),
-				})
-				c.Abort()
-				return
-			}
-			if !res.Success {
-				common.ApiErrorT(c, "Turnstile verification failed, please refresh and try again!")
-				c.Abort()
-				return
-			}
+		err := service.VerifyHuman(c.Request.Context(), c.Query("turnstile"), c.ClientIP())
+		if err == nil {
+			c.Next()
+			return
 		}
-		c.Next()
+		switch {
+		case errors.Is(err, service.ErrHumanVerificationMissing):
+			common.ApiErrorT(c, "Please complete the human verification first")
+		case errors.Is(err, service.ErrHumanVerificationFailed):
+			common.ApiErrorT(c, "Human verification failed, please refresh and try again!")
+		default:
+			common.SysLog(common.LogText("human verification is unavailable: %s", err.Error()))
+			common.ApiErrorT(c, "Human verification is temporarily unavailable. Please try again later.")
+		}
+		c.Abort()
 	}
 }

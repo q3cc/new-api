@@ -26,8 +26,8 @@ import { toast } from 'sonner'
 import type { z } from 'zod'
 
 import { Dialog } from '@/components/dialog'
+import { HumanVerification } from '@/components/human-verification'
 import { PasswordInput } from '@/components/password-input'
-import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -97,11 +97,14 @@ export function UserAuthForm({
       status?.data?.password_login_encryption_enabled ??
       false) === true
   const {
+    humanVerificationProvider,
     isTurnstileEnabled,
+    opensOnClick,
     turnstileSiteKey,
     turnstileToken,
     setTurnstileToken,
-    validateTurnstile,
+    requestTurnstileToken,
+    verificationRef,
   } = useTurnstile()
   const { handleLoginResult } = useAuthRedirect()
 
@@ -167,10 +170,12 @@ export function UserAuthForm({
       return
     }
 
-    if (!import.meta.env.DEV && !validateTurnstile()) return
-
-    const submittedTurnstileToken = turnstileToken
-    if (isTurnstileEnabled) {
+    // The widget is not shown in development, so no answer is asked for there.
+    const submittedTurnstileToken = import.meta.env.DEV
+      ? turnstileToken
+      : await requestTurnstileToken()
+    if (submittedTurnstileToken === null) return
+    if (isTurnstileEnabled && !opensOnClick) {
       setTurnstileToken('')
       setTurnstileWidgetKey((current) => current + 1)
     }
@@ -407,10 +412,12 @@ export function UserAuthForm({
               {t('Sign in')}
             </Button>
 
-            {/* Turnstile */}
+            {/* Human verification */}
             {!import.meta.env.DEV && isTurnstileEnabled && (
               <div className='mt-2'>
-                <Turnstile
+                <HumanVerification
+                  ref={verificationRef}
+                  provider={humanVerificationProvider ?? 'turnstile'}
                   key={turnstileWidgetKey}
                   siteKey={turnstileSiteKey}
                   onVerify={setTurnstileToken}

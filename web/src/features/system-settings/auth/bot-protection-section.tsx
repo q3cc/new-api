@@ -17,10 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import * as z from 'zod'
 
 import {
   Form,
@@ -32,63 +31,67 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-
 import {
-  SettingsForm,
-  SettingsSwitchContent,
-  SettingsSwitchItem,
-} from '../components/settings-form-layout'
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+import { SettingsForm } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
-
-const botProtectionSchema = z.object({
-  TurnstileCheckEnabled: z.boolean(),
-  TurnstileSiteKey: z.string().optional(),
-  TurnstileSecretKey: z.string().optional(),
-})
-
-type BotProtectionFormValues = z.infer<typeof botProtectionSchema>
+import {
+  botProtectionSchema,
+  buildBotProtectionUpdates,
+  toBotProtectionFormValues,
+  type BotProtectionChoice,
+  type BotProtectionFormValues,
+  type BotProtectionOptions,
+} from './bot-protection-options'
 
 type BotProtectionSectionProps = {
-  defaultValues: BotProtectionFormValues
+  defaultValues: BotProtectionOptions
 }
 
-export function BotProtectionSection({
-  defaultValues,
-}: BotProtectionSectionProps) {
+export function BotProtectionSection(props: BotProtectionSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const formDefaults = useMemo(
+    () => toBotProtectionFormValues(props.defaultValues),
+    [props.defaultValues]
+  )
 
   const form = useForm<BotProtectionFormValues>({
     resolver: zodResolver(botProtectionSchema),
-    defaultValues,
+    defaultValues: formDefaults,
   })
 
   useEffect(() => {
-    form.reset(defaultValues)
-  }, [defaultValues, form])
+    form.reset(formDefaults)
+  }, [formDefaults, form])
 
-  const onSubmit = async (data: BotProtectionFormValues) => {
-    const updates = Object.entries(data).filter(
-      ([key, value]) =>
-        value !== defaultValues[key as keyof BotProtectionFormValues]
-    )
-    const turnstileEnableUpdate = updates.find(
-      ([key, value]) => key === 'TurnstileCheckEnabled' && value === true
-    )
-    const orderedUpdates = turnstileEnableUpdate
-      ? [
-          ...updates.filter(([key]) => key !== 'TurnstileCheckEnabled'),
-          turnstileEnableUpdate,
-        ]
-      : updates
+  const provider = form.watch('provider')
 
-    for (const [key, value] of orderedUpdates) {
-      await updateOption.mutateAsync({ key, value: value ?? '' })
+  const onSubmit = async (values: BotProtectionFormValues) => {
+    for (const [key, value] of buildBotProtectionUpdates(
+      props.defaultValues,
+      values
+    )) {
+      await updateOption.mutateAsync({ key, value })
     }
   }
+
+  const providerItems: { value: BotProtectionChoice; label: string }[] = [
+    { value: 'none', label: t('Off') },
+    { value: 'turnstile', label: 'Cloudflare Turnstile' },
+    { value: 'geetest', label: t('GeeTest v4') },
+    { value: 'recaptcha', label: t('Google reCAPTCHA v2') },
+  ]
+  const keepSecretPlaceholder = t('Leave empty to keep the saved value')
 
   return (
     <SettingsSection title={t('Bot Protection')}>
@@ -100,63 +103,165 @@ export function BotProtectionSection({
           />
           <FormField
             control={form.control}
-            name='TurnstileCheckEnabled'
-            render={({ field }) => (
-              <SettingsSwitchItem>
-                <SettingsSwitchContent>
-                  <FormLabel>{t('Enable Turnstile')}</FormLabel>
-                  <FormDescription>
-                    {t(
-                      'Protect login and registration with Cloudflare Turnstile'
-                    )}
-                  </FormDescription>
-                </SettingsSwitchContent>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </SettingsSwitchItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name='TurnstileSiteKey'
+            name='provider'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Site Key')}</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder={t('Your Turnstile site key')}
-                    autoComplete='off'
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
+                <FormLabel>{t('Human verification provider')}</FormLabel>
+                <Select
+                  items={providerItems}
+                  value={field.value}
+                  onValueChange={(value) => field.onChange(value)}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {providerItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  {t(
+                    'Protect login, registration, email codes, password reset and check-in with a human check'
+                  )}
+                </FormDescription>
               </FormItem>
             )}
           />
 
-          <FormField
-            control={form.control}
-            name='TurnstileSecretKey'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Secret Key')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type='password'
-                    placeholder={t('Your Turnstile secret key')}
-                    autoComplete='new-password'
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {provider === 'turnstile' && (
+            <>
+              <FormField
+                control={form.control}
+                name='turnstileSiteKey'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Site Key')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={t('Your Turnstile site key')}
+                        autoComplete='off'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='turnstileSecretKey'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Secret Key')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='password'
+                        placeholder={t('Your Turnstile secret key')}
+                        autoComplete='new-password'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </>
+          )}
+
+          {provider === 'geetest' && (
+            <>
+              <FormField
+                control={form.control}
+                name='geetestCaptchaId'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('GeeTest ID')}</FormLabel>
+                    <FormControl>
+                      <Input autoComplete='off' {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='geetestSecret'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('GeeTest KEY')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='password'
+                        placeholder={keepSecretPlaceholder}
+                        autoComplete='new-password'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'If GeeTest cannot be reached, protected requests are refused instead of skipping the check'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </>
+          )}
+
+          {provider === 'recaptcha' && (
+            <>
+              <FormField
+                control={form.control}
+                name='recaptchaSiteKey'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Site Key')}</FormLabel>
+                    <FormControl>
+                      <Input autoComplete='off' {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='recaptchaSecret'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Secret Key')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='password'
+                        placeholder={keepSecretPlaceholder}
+                        autoComplete='new-password'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </>
+          )}
         </SettingsForm>
       </Form>
     </SettingsSection>

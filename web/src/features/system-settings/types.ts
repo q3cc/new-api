@@ -195,6 +195,11 @@ export type AuthSettings = {
   TurnstileCheckEnabled: boolean
   TurnstileSiteKey: string
   TurnstileSecretKey: string
+  'human_verification.provider': string
+  'human_verification.geetest_captcha_id': string
+  'human_verification.geetest_secret': string
+  'human_verification.recaptcha_site_key': string
+  'human_verification.recaptcha_secret': string
   'passkey.enabled': boolean
   'passkey.rp_display_name': string
   'passkey.rp_id': string

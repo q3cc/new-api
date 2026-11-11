@@ -25,12 +25,12 @@ import {
   ChevronUp,
   Sparkles,
 } from 'lucide-react'
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
-import { Turnstile } from '@/components/turnstile'
+import { HumanVerification } from '@/components/human-verification'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { IconBadge } from '@/components/ui/icon-badge'
@@ -44,24 +44,40 @@ import {
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 import { handleServerError } from '@/lib/handle-server-error'
+import {
+  type HumanVerificationHandle,
+  type HumanVerificationProvider,
+  opensOnSubmit,
+} from '@/lib/human-verification'
 import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import { getCheckinStatus, performCheckin } from '../api'
 import type { CheckinRecord } from '../types'
 
+// The server refuses a check-in that lacks or fails the human check with one of
+// these messages; either one opens the verification dialog.
+const HUMAN_VERIFICATION_RETRY_MESSAGES = new Set([
+  'Please complete the human verification first',
+  'Human verification failed, please refresh and try again!',
+])
+
 interface CheckinCalendarCardProps {
   checkinEnabled: boolean
-  turnstileEnabled: boolean
+  humanVerificationProvider: HumanVerificationProvider | null
   turnstileSiteKey: string
 }
 
 export function CheckinCalendarCard({
   checkinEnabled,
-  turnstileEnabled,
+  humanVerificationProvider,
   turnstileSiteKey,
 }: CheckinCalendarCardProps) {
   const { t } = useTranslation()
+  const turnstileEnabled = humanVerificationProvider !== null
+  // GeeTest opens its own popup from the check-in button instead of a dialog.
+  const opensOnClick = opensOnSubmit(humanVerificationProvider)
+  const verificationRef = useRef<HumanVerificationHandle>(null)
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -132,10 +148,11 @@ export function CheckinCalendarCard({
   }, [checkinData, checkedToday, initialLoaded, isLoading])
 
   const shouldTriggerTurnstile = useCallback(
-    (message?: string) => {
+    (response: { message?: string; message_key?: string }) => {
       if (!turnstileEnabled) return false
-      if (typeof message !== 'string') return true
-      return message.includes('Turnstile')
+      const key = response.message_key ?? response.message
+      if (typeof key !== 'string') return true
+      return HUMAN_VERIFICATION_RETRY_MESSAGES.has(key)
     },
     [turnstileEnabled]
   )
@@ -144,7 +161,18 @@ export function CheckinCalendarCard({
     async (token?: string) => {
       setCheckinLoading(true)
       try {
-        const res = await performCheckin(token)
+        let res = await performCheckin(token)
+        if (
+          !token &&
+          opensOnClick &&
+          !res.success &&
+          shouldTriggerTurnstile(res)
+        ) {
+          const answer = await verificationRef.current?.execute()
+          if (!answer) return
+          token = answer
+          res = await performCheckin(answer)
+        }
         if (res.success && res.data) {
           toast.success(
             `${t('Check-in successful! Received')} ${formatQuotaWithCurrency(res.data.quota_awarded)}`
@@ -152,7 +180,7 @@ export function CheckinCalendarCard({
           refetch()
           setTurnstileModalVisible(false)
         } else {
-          if (!token && shouldTriggerTurnstile(res.message)) {
+          if (!token && shouldTriggerTurnstile(res)) {
             if (!turnstileSiteKey) {
               toast.error(t('Turnstile is enabled but site key is empty.'))
               return
@@ -160,7 +188,7 @@ export function CheckinCalendarCard({
             setTurnstileModalVisible(true)
             return
           }
-          if (token && shouldTriggerTurnstile(res.message)) {
+          if (token && shouldTriggerTurnstile(res)) {
             setTurnstileWidgetKey((v) => v + 1)
           }
           handleServerError(res, t('Check-in failed'))
@@ -171,7 +199,7 @@ export function CheckinCalendarCard({
         setCheckinLoading(false)
       }
     },
-    [refetch, shouldTriggerTurnstile, t, turnstileSiteKey]
+    [opensOnClick, refetch, shouldTriggerTurnstile, t, turnstileSiteKey]
   )
 
   const handlePrevMonth = () => {
@@ -270,7 +298,8 @@ export function CheckinCalendarCard({
           {t('Please complete the security check to continue.')}
         </div>
         <div className='flex justify-center py-4'>
-          <Turnstile
+          <HumanVerification
+            provider={humanVerificationProvider ?? 'turnstile'}
             key={turnstileWidgetKey}
             siteKey={turnstileSiteKey}
             onVerify={(token) => {
@@ -332,6 +361,14 @@ export function CheckinCalendarCard({
             >
               {checkinButtonLabel}
             </Button>
+            {opensOnClick && (
+              <HumanVerification
+                ref={verificationRef}
+                provider='geetest'
+                siteKey={turnstileSiteKey}
+                onVerify={() => undefined}
+              />
+            )}
           </div>
         </div>
 

@@ -25,8 +25,8 @@ import { toast } from 'sonner'
 import type { z } from 'zod'
 
 import { Dialog } from '@/components/dialog'
+import { HumanVerification } from '@/components/human-verification'
 import { PasswordInput } from '@/components/password-input'
-import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -71,11 +71,15 @@ export function SignUpForm({
 
   const { status } = useStatus()
   const {
+    humanVerificationProvider,
     isTurnstileEnabled,
+    opensOnClick,
+    turnstileReady,
     turnstileSiteKey,
     turnstileToken,
     setTurnstileToken,
-    validateTurnstile,
+    requestTurnstileToken,
+    verificationRef,
   } = useTurnstile()
   const { redirectToLogin, handleLoginResult } = useAuthRedirect()
   const {
@@ -83,10 +87,7 @@ export function SignUpForm({
     secondsLeft,
     isActive,
     sendCode,
-  } = useEmailVerification({
-    turnstileToken,
-    validateTurnstile,
-  })
+  } = useEmailVerification({ requestTurnstileToken })
 
   const form = useForm<z.infer<typeof registerFormSchema>>({
     resolver: zodResolver(registerFormSchema),
@@ -108,7 +109,6 @@ export function SignUpForm({
     status?.data?.oauth_register_enabled ??
     true
   const hasWeChatLogin = Boolean(status?.wechat_login)
-  const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
 
   const wechatQrCodeUrl = useMemo(() => {
     return (
@@ -157,7 +157,15 @@ export function SignUpForm({
       }
     }
 
-    if (!validateTurnstile()) return
+    const submittedTurnstileToken = await requestTurnstileToken()
+    if (submittedTurnstileToken === null) return
+
+    // Each human verification answer passes one request, so start a new
+    // challenge whatever the outcome.
+    if (isTurnstileEnabled && !opensOnClick) {
+      setTurnstileToken('')
+      setTurnstileWidgetKey((current) => current + 1)
+    }
 
     setIsLoading(true)
     try {
@@ -167,7 +175,7 @@ export function SignUpForm({
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
         aff_code: getAffiliateCode(),
-        turnstile: turnstileToken,
+        turnstile: submittedTurnstileToken,
       })
 
       if (res?.success) {
@@ -186,7 +194,11 @@ export function SignUpForm({
   }
 
   async function handleSendVerificationCode() {
-    if (await sendCode(emailValue || '')) {
+    // The email request uses up the answer whether or not it succeeds.
+    const usesAnswer =
+      isTurnstileEnabled && !opensOnClick && Boolean(turnstileToken)
+    await sendCode(emailValue || '')
+    if (usesAnswer) {
       setTurnstileToken('')
       setTurnstileWidgetKey((current) => current + 1)
     }
@@ -350,13 +362,16 @@ export function SignUpForm({
           </>
         )}
 
-        {/* Turnstile */}
+        {/* Human verification */}
         {isTurnstileEnabled && (
           <div className='mt-2'>
-            <Turnstile
+            <HumanVerification
+              ref={verificationRef}
+              provider={humanVerificationProvider ?? 'turnstile'}
               key={turnstileWidgetKey}
               siteKey={turnstileSiteKey}
               onVerify={setTurnstileToken}
+              onExpire={() => setTurnstileToken('')}
             />
           </div>
         )}

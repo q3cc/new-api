@@ -49,6 +49,10 @@ const STATUS_RELATED_KEYS = new Set([
   'passkey.origins',
   'QuotaRemindEnabled',
   'QuotaRemindThreshold',
+  'TurnstileCheckEnabled',
+  'TurnstileSiteKey',
+  'human_verification.provider',
+  'human_verification.recaptcha_site_key',
 ])
 
 const GROUP_RELATED_KEYS = new Set([

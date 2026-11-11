@@ -8103,6 +8103,23 @@
     "Choose a version to install.": "Выберите версию для установки.",
     "Checked for a new version": "Проверка новой версии",
     "Started an online upgrade from {{from}} to {{to}}": "Запущено онлайн-обновление с {{from}} до {{to}}",
-    "Rolled back from {{from}} to {{to}}": "Откат с {{from}} на {{to}}"
+    "Rolled back from {{from}} to {{to}}": "Откат с {{from}} на {{to}}",
+    "Please complete the human verification first": "Сначала пройдите проверку на человека",
+    "Human verification failed, please refresh and try again!": "Проверка на человека не пройдена, обновите страницу и повторите попытку!",
+    "Human verification is temporarily unavailable. Please try again later.": "Проверка на человека временно недоступна. Повторите попытку позже.",
+    "Only one human verification provider can be enabled at a time. Turn off the current one first.": "Одновременно можно включить только один способ проверки на человека. Сначала отключите текущий.",
+    "Cannot enable {{provider}} verification. Enter the {{provider}} settings first.": "Невозможно включить проверку {{provider}}. Сначала заполните настройки {{provider}}.",
+    "Turn off {{provider}} verification before clearing its keys.": "Отключите проверку {{provider}}, прежде чем удалять её ключи.",
+    "Human verification provider": "Способ проверки на человека",
+    "Protect login, registration, email codes, password reset and check-in with a human check": "Защищать вход, регистрацию, коды по почте, сброс пароля и отметку проверкой на человека",
+    "Off": "Выключено",
+    "GeeTest v4": "GeeTest v4",
+    "Google reCAPTCHA v2": "Google reCAPTCHA v2",
+    "GeeTest ID": "ID GeeTest",
+    "GeeTest KEY": "Ключ GeeTest",
+    "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "captcha_id и captcha_key сценария GeeTest v4 из консоли GeeTest",
+    "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "Если GeeTest недоступен, защищённые запросы отклоняются, а не пропускают проверку",
+    "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "Ключ reCAPTCHA v2 с флажком. Виджет и проверка используют www.recaptcha.net, доступный из материкового Китая",
+    "Leave empty to keep the saved value": "Оставьте пустым, чтобы сохранить текущее значение"
   }
 }

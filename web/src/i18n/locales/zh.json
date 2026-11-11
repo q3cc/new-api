@@ -8103,6 +8103,23 @@
     "Choose a version to install.": "请选择要安装的版本。",
     "Checked for a new version": "检查新版本",
     "Started an online upgrade from {{from}} to {{to}}": "开始在线更新：{{from}} → {{to}}",
-    "Rolled back from {{from}} to {{to}}": "从 {{from}} 回滚到 {{to}}"
+    "Rolled back from {{from}} to {{to}}": "从 {{from}} 回滚到 {{to}}",
+    "Please complete the human verification first": "请先完成人机验证",
+    "Human verification failed, please refresh and try again!": "人机验证失败，请刷新后重试！",
+    "Human verification is temporarily unavailable. Please try again later.": "人机验证暂时不可用，请稍后再试。",
+    "Only one human verification provider can be enabled at a time. Turn off the current one first.": "同一时间只能启用一种人机验证，请先关闭当前启用的那一种。",
+    "Cannot enable {{provider}} verification. Enter the {{provider}} settings first.": "无法启用 {{provider}} 验证，请先填写 {{provider}} 的配置。",
+    "Turn off {{provider}} verification before clearing its keys.": "请先关闭 {{provider}} 验证，再清空它的密钥。",
+    "Human verification provider": "人机验证方式",
+    "Protect login, registration, email codes, password reset and check-in with a human check": "为登录、注册、邮箱验证码、找回密码和签到启用人机验证",
+    "Off": "关闭",
+    "GeeTest v4": "极验行为验证 v4",
+    "Google reCAPTCHA v2": "Google reCAPTCHA v2",
+    "GeeTest ID": "极验 ID",
+    "GeeTest KEY": "极验 KEY",
+    "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "极验后台为行为验证第四代场景分配的 captcha_id 和 captcha_key",
+    "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "极验服务不可用时，受保护的请求会被拒绝，而不会跳过验证",
+    "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "reCAPTCHA v2 复选框类型的密钥。组件加载和校验都走 www.recaptcha.net，中国大陆可以访问",
+    "Leave empty to keep the saved value": "留空则保留已保存的值"
   }
 }

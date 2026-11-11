@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { z } from 'zod'
 
-import { Turnstile } from '@/components/turnstile'
+import { HumanVerification } from '@/components/human-verification'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -53,13 +53,17 @@ export function ForgotPasswordForm({
 }: React.HTMLAttributes<HTMLFormElement>) {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
+  const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
 
   const {
+    humanVerificationProvider,
     isTurnstileEnabled,
+    opensOnClick,
+    turnstileReady,
     turnstileSiteKey,
-    turnstileToken,
     setTurnstileToken,
-    validateTurnstile,
+    requestTurnstileToken,
+    verificationRef,
   } = useTurnstile()
   const {
     secondsLeft,
@@ -71,14 +75,24 @@ export function ForgotPasswordForm({
     resolver: zodResolver(forgotPasswordFormSchema),
     defaultValues: { email: '' },
   })
-  const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
 
   async function onSubmit(data: z.infer<typeof forgotPasswordFormSchema>) {
-    if (!validateTurnstile()) return
+    const submittedTurnstileToken = await requestTurnstileToken()
+    if (submittedTurnstileToken === null) return
+
+    // Each human verification answer passes one request. GeeTest starts a new
+    // challenge by itself each time it opens.
+    if (isTurnstileEnabled && !opensOnClick) {
+      setTurnstileToken('')
+      setTurnstileWidgetKey((current) => current + 1)
+    }
 
     setIsLoading(true)
     try {
-      const res = await sendPasswordResetEmail(data.email, turnstileToken)
+      const res = await sendPasswordResetEmail(
+        data.email,
+        submittedTurnstileToken
+      )
       if (res?.success) {
         form.reset()
         startCountdown()
@@ -131,9 +145,13 @@ export function ForgotPasswordForm({
 
         {isTurnstileEnabled && (
           <div className='mt-2'>
-            <Turnstile
+            <HumanVerification
+              ref={verificationRef}
+              provider={humanVerificationProvider ?? 'turnstile'}
+              key={turnstileWidgetKey}
               siteKey={turnstileSiteKey}
               onVerify={setTurnstileToken}
+              onExpire={() => setTurnstileToken('')}
             />
           </div>
         )}

@@ -8103,6 +8103,23 @@
     "Choose a version to install.": "インストールするバージョンを選んでください。",
     "Checked for a new version": "新しいバージョンを確認",
     "Started an online upgrade from {{from}} to {{to}}": "オンライン更新を開始: {{from}} → {{to}}",
-    "Rolled back from {{from}} to {{to}}": "{{from}} から {{to}} に戻しました"
+    "Rolled back from {{from}} to {{to}}": "{{from}} から {{to}} に戻しました",
+    "Please complete the human verification first": "先に人間認証を完了してください",
+    "Human verification failed, please refresh and try again!": "人間認証に失敗しました。ページを更新して再試行してください！",
+    "Human verification is temporarily unavailable. Please try again later.": "人間認証は一時的に利用できません。しばらくしてから再試行してください。",
+    "Only one human verification provider can be enabled at a time. Turn off the current one first.": "人間認証は同時に 1 つしか有効にできません。先に現在のものを無効にしてください。",
+    "Cannot enable {{provider}} verification. Enter the {{provider}} settings first.": "{{provider}} 認証を有効にできません。先に {{provider}} の設定を入力してください。",
+    "Turn off {{provider}} verification before clearing its keys.": "キーを消去する前に {{provider}} 認証を無効にしてください。",
+    "Human verification provider": "人間認証の方式",
+    "Protect login, registration, email codes, password reset and check-in with a human check": "ログイン、登録、メール認証コード、パスワード再設定、チェックインを人間認証で保護します",
+    "Off": "オフ",
+    "GeeTest v4": "GeeTest v4",
+    "Google reCAPTCHA v2": "Google reCAPTCHA v2",
+    "GeeTest ID": "GeeTest ID",
+    "GeeTest KEY": "GeeTest KEY",
+    "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "GeeTest コンソールで発行された GeeTest v4 シナリオの captcha_id と captcha_key",
+    "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "GeeTest に接続できない場合、保護されたリクエストは認証をスキップせず拒否されます",
+    "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "reCAPTCHA v2 チェックボックスのキーです。ウィジェットと検証は中国本土からアクセスできる www.recaptcha.net を使用します",
+    "Leave empty to keep the saved value": "空欄のままにすると保存済みの値を保持します"
   }
 }

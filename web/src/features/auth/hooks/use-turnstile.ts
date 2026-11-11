@@ -17,25 +17,34 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import i18next from 'i18next'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { useStatus } from '@/hooks/use-status'
+import {
+  type HumanVerificationHandle,
+  opensOnSubmit,
+  useHumanVerificationConfig,
+} from '@/lib/human-verification'
 
 /**
- * Hook for managing Turnstile verification
+ * Hook for the human verification widget on protected forms. It covers every
+ * provider the server can enforce (Turnstile, GeeTest, reCAPTCHA); the names
+ * keep "turnstile" because the server reads the answer from that parameter.
  */
 export function useTurnstile() {
-  const { status } = useStatus()
+  const { provider, siteKey } = useHumanVerificationConfig()
   const [turnstileToken, setTurnstileToken] = useState('')
+  const verificationRef = useRef<HumanVerificationHandle>(null)
 
-  const isTurnstileEnabled = !!(
-    status?.turnstile_check && status?.turnstile_site_key
-  )
-  const turnstileSiteKey = status?.turnstile_site_key || ''
+  const isTurnstileEnabled = provider !== null
+  // GeeTest opens its challenge when the protected button is clicked, so the
+  // button stays enabled before any answer exists.
+  const opensOnClick = opensOnSubmit(provider)
+  const turnstileReady =
+    !isTurnstileEnabled || opensOnClick || Boolean(turnstileToken)
 
   /**
-   * Validate if turnstile is ready when required
+   * Validate if the human check is done when required
    */
   const validateTurnstile = (): boolean => {
     if (isTurnstileEnabled && !turnstileToken) {
@@ -47,11 +56,29 @@ export function useTurnstile() {
     return true
   }
 
+  /**
+   * The answer to send with a protected request: '' when no check is enabled,
+   * or null when the request must not be sent (the visitor closed the
+   * challenge, or a widget answer is not ready yet).
+   */
+  const requestTurnstileToken = async (): Promise<string | null> => {
+    if (!isTurnstileEnabled) return ''
+    if (opensOnClick) {
+      return (await verificationRef.current?.execute()) ?? null
+    }
+    return validateTurnstile() ? turnstileToken : null
+  }
+
   return {
+    humanVerificationProvider: provider,
     isTurnstileEnabled,
-    turnstileSiteKey,
+    opensOnClick,
+    turnstileReady,
+    turnstileSiteKey: siteKey,
     turnstileToken,
     setTurnstileToken,
     validateTurnstile,
+    requestTurnstileToken,
+    verificationRef,
   }
 }

@@ -8103,6 +8103,23 @@
     "Choose a version to install.": "Choose a version to install.",
     "Checked for a new version": "Checked for a new version",
     "Started an online upgrade from {{from}} to {{to}}": "Started an online upgrade from {{from}} to {{to}}",
-    "Rolled back from {{from}} to {{to}}": "Rolled back from {{from}} to {{to}}"
+    "Rolled back from {{from}} to {{to}}": "Rolled back from {{from}} to {{to}}",
+    "Please complete the human verification first": "Please complete the human verification first",
+    "Human verification failed, please refresh and try again!": "Human verification failed, please refresh and try again!",
+    "Human verification is temporarily unavailable. Please try again later.": "Human verification is temporarily unavailable. Please try again later.",
+    "Only one human verification provider can be enabled at a time. Turn off the current one first.": "Only one human verification provider can be enabled at a time. Turn off the current one first.",
+    "Cannot enable {{provider}} verification. Enter the {{provider}} settings first.": "Cannot enable {{provider}} verification. Enter the {{provider}} settings first.",
+    "Turn off {{provider}} verification before clearing its keys.": "Turn off {{provider}} verification before clearing its keys.",
+    "Human verification provider": "Human verification provider",
+    "Protect login, registration, email codes, password reset and check-in with a human check": "Protect login, registration, email codes, password reset and check-in with a human check",
+    "Off": "Off",
+    "GeeTest v4": "GeeTest v4",
+    "Google reCAPTCHA v2": "Google reCAPTCHA v2",
+    "GeeTest ID": "GeeTest ID",
+    "GeeTest KEY": "GeeTest KEY",
+    "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console",
+    "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "If GeeTest cannot be reached, protected requests are refused instead of skipping the check",
+    "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China",
+    "Leave empty to keep the saved value": "Leave empty to keep the saved value"
   }
 }

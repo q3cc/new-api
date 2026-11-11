@@ -111,6 +111,16 @@ const AUTH_SECTIONS = [
           TurnstileCheckEnabled: settings.TurnstileCheckEnabled,
           TurnstileSiteKey: settings.TurnstileSiteKey,
           TurnstileSecretKey: settings.TurnstileSecretKey,
+          'human_verification.provider':
+            settings['human_verification.provider'],
+          'human_verification.geetest_captcha_id':
+            settings['human_verification.geetest_captcha_id'],
+          'human_verification.geetest_secret':
+            settings['human_verification.geetest_secret'],
+          'human_verification.recaptcha_site_key':
+            settings['human_verification.recaptcha_site_key'],
+          'human_verification.recaptcha_secret':
+            settings['human_verification.recaptcha_secret'],
         }}
       />
     ),

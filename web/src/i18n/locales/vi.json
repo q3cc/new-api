@@ -8103,6 +8103,23 @@
     "Choose a version to install.": "Hãy chọn phiên bản cần cài.",
     "Checked for a new version": "Đã kiểm tra phiên bản mới",
     "Started an online upgrade from {{from}} to {{to}}": "Bắt đầu cập nhật trực tuyến từ {{from}} lên {{to}}",
-    "Rolled back from {{from}} to {{to}}": "Đã quay lại từ {{from}} về {{to}}"
+    "Rolled back from {{from}} to {{to}}": "Đã quay lại từ {{from}} về {{to}}",
+    "Please complete the human verification first": "Vui lòng hoàn tất xác minh con người trước",
+    "Human verification failed, please refresh and try again!": "Xác minh con người thất bại, vui lòng tải lại trang và thử lại!",
+    "Human verification is temporarily unavailable. Please try again later.": "Xác minh con người tạm thời không khả dụng. Vui lòng thử lại sau.",
+    "Only one human verification provider can be enabled at a time. Turn off the current one first.": "Mỗi lúc chỉ có thể bật một nhà cung cấp xác minh con người. Hãy tắt nhà cung cấp hiện tại trước.",
+    "Cannot enable {{provider}} verification. Enter the {{provider}} settings first.": "Không thể bật xác minh {{provider}}. Hãy nhập cấu hình {{provider}} trước.",
+    "Turn off {{provider}} verification before clearing its keys.": "Hãy tắt xác minh {{provider}} trước khi xóa các khóa của nó.",
+    "Human verification provider": "Nhà cung cấp xác minh con người",
+    "Protect login, registration, email codes, password reset and check-in with a human check": "Bảo vệ đăng nhập, đăng ký, mã email, đặt lại mật khẩu và điểm danh bằng xác minh con người",
+    "Off": "Tắt",
+    "GeeTest v4": "GeeTest v4",
+    "Google reCAPTCHA v2": "Google reCAPTCHA v2",
+    "GeeTest ID": "ID GeeTest",
+    "GeeTest KEY": "KEY GeeTest",
+    "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "captcha_id và captcha_key của một kịch bản GeeTest v4, lấy từ bảng điều khiển GeeTest",
+    "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "Nếu không kết nối được GeeTest, các yêu cầu được bảo vệ sẽ bị từ chối thay vì bỏ qua bước xác minh",
+    "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "Khóa reCAPTCHA v2 dạng hộp kiểm. Widget và bước xác minh dùng www.recaptcha.net, truy cập được từ Trung Quốc đại lục",
+    "Leave empty to keep the saved value": "Để trống để giữ giá trị đã lưu"
   }
 }

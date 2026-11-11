@@ -253,6 +253,21 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorT(c, "Cannot enable Turnstile verification. Enter the Turnstile settings first.")
 			return
 		}
+		if err := service.ValidateHumanVerificationOption(option.Key, option.Value.(string)); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	case "TurnstileSiteKey", "TurnstileSecretKey":
+		if strings.TrimSpace(option.Value.(string)) == "" && common.TurnstileCheckEnabled {
+			common.ApiErrorT(c, "Turn off {{provider}} verification before clearing its keys.", map[string]any{"provider": "Turnstile"})
+			return
+		}
+	case "human_verification.provider", "human_verification.geetest_captcha_id", "human_verification.geetest_secret",
+		"human_verification.recaptcha_site_key", "human_verification.recaptcha_secret":
+		if err := service.ValidateHumanVerificationOption(option.Key, option.Value.(string)); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	case "TelegramOAuthEnabled":
 		if option.Value == "true" && !system_setting.GetTelegramSettings().IsConfigured() {
 			c.JSON(http.StatusOK, gin.H{
