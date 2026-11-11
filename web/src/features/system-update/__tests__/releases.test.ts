@@ -57,6 +57,44 @@ describe('system release ordering', () => {
     expect(selectLatestRelease(releases)?.tag_name).toBe('v1.0.0-rc.36')
   })
 
+  test.each([
+    ['main-20261105-232bdb2', 'main-20261111-c402cfb', -1],
+    ['main-20261105-2605c5f', 'main-20261105-232bdb2', -1],
+    ['main-20261111-c402cfb', 'main-20261111-c402cfb', 0],
+    ['main-20261112-abcdef0', 'main-20261111-c402cfb', 1],
+    ['v1.0.0-rc.49', 'main-20261111-c402cfb', null],
+    ['main-20261111-c402cfb', 'v1.0.0-rc.49', null],
+  ])('compares main build %s against %s as %s', (current, latest, expected) => {
+    expect(compareSystemVersions(current, latest)).toBe(expected)
+  })
+
+  test('selects the newest main build by publish time over semantic versions', () => {
+    const releases = [
+      {
+        tag_name: 'main-20261105-232bdb2',
+        draft: false,
+        prerelease: false,
+        published_at: '2026-11-05T15:49:46Z',
+      },
+      {
+        tag_name: 'main-20261105-ddc9a35',
+        draft: false,
+        prerelease: false,
+        published_at: '2026-11-05T14:11:51Z',
+      },
+      {
+        tag_name: 'main-20261112-abcdef0',
+        draft: true,
+        prerelease: false,
+        published_at: null,
+      },
+      { tag_name: 'v9.0.0', draft: false, prerelease: false },
+    ]
+    expect(selectLatestRelease(releases)?.tag_name).toBe(
+      'main-20261105-232bdb2'
+    )
+  })
+
   test('returns no release for an empty list or a list containing only drafts', () => {
     expect(selectLatestRelease([])).toBeNull()
     expect(

@@ -28,6 +28,20 @@ export const systemReleaseSchema = z.object({
 
 export type SystemRelease = z.infer<typeof systemReleaseSchema>
 
+/** The repository whose GitHub releases this deployment follows. */
+export const SYSTEM_RELEASE_REPO = 'q3cc/new-api'
+
+/**
+ * Every push to main publishes a release tagged main-YYYYMMDD-<sha> (see
+ * service/systemupgrade). Such builds are ordered by their date.
+ */
+const buildTagPattern = /^main-(\d{8})-([\da-f]{7,40})$/
+
+function parseBuildTag(value: string | null | undefined) {
+  const match = value?.trim().match(buildTagPattern)
+  return match ? { date: match[1], sha: match[2] } : null
+}
+
 type SystemVersion = {
   core: bigint[]
   stage: number
@@ -69,6 +83,17 @@ export function compareSystemVersions(
   left: string | null | undefined,
   right: string | null | undefined
 ): -1 | 0 | 1 | null {
+  const leftBuild = parseBuildTag(left)
+  const rightBuild = parseBuildTag(right)
+  if (leftBuild || rightBuild) {
+    if (!leftBuild || !rightBuild) return null
+    if (leftBuild.sha === rightBuild.sha) return 0
+    if (leftBuild.date > rightBuild.date) return 1
+    // The right side is the newest published build, so a different build from
+    // the same day or earlier is older. This matches service/systemupgrade.
+    return -1
+  }
+
   const a = parseSystemVersion(left)
   const b = parseSystemVersion(right)
   if (!a || !b) return null
@@ -88,28 +113,48 @@ const publishedReleaseSchema = systemReleaseSchema.extend({
   draft: z.boolean(),
 })
 
+/** The newest main build, or else the highest semantic version. */
 export function selectLatestRelease(payload: unknown): SystemRelease | null {
   if (!Array.isArray(payload)) throw new Error('Unexpected release payload')
 
-  let latest: SystemRelease | null = null
+  let latestBuild: SystemRelease | null = null
+  let latestVersion: SystemRelease | null = null
   let validPayload = payload.length === 0
   for (const item of payload) {
     const parsed = publishedReleaseSchema.safeParse(item)
     if (!parsed.success) continue
     validPayload = true
     const release = parsed.data
-    if (release.draft || !parseSystemVersion(release.tag_name)) continue
+    if (release.draft) continue
+    if (parseBuildTag(release.tag_name)) {
+      if (!latestBuild || buildPublishedAfter(release, latestBuild)) {
+        latestBuild = systemReleaseSchema.parse(release)
+      }
+      continue
+    }
+    if (!parseSystemVersion(release.tag_name)) continue
     if (
-      !latest ||
-      compareSystemVersions(release.tag_name, latest.tag_name) === 1
+      !latestVersion ||
+      compareSystemVersions(release.tag_name, latestVersion.tag_name) === 1
     ) {
-      latest = systemReleaseSchema.parse(release)
+      latestVersion = systemReleaseSchema.parse(release)
     }
   }
   if (!validPayload) throw new Error('Unexpected release payload')
-  return latest
+  return latestBuild ?? latestVersion
+}
+
+// Several builds can share a date, so the publish time orders them.
+function buildPublishedAfter(
+  release: SystemRelease,
+  current: SystemRelease
+): boolean {
+  const date = parseBuildTag(release.tag_name)?.date ?? ''
+  const currentDate = parseBuildTag(current.tag_name)?.date ?? ''
+  if (date !== currentDate) return date > currentDate
+  return (release.published_at ?? '') > (current.published_at ?? '')
 }
 
 export function getSystemReleaseUrl(release: SystemRelease): string {
-  return `https://github.com/QuantumNous/new-api/releases/tag/${encodeURIComponent(release.tag_name)}`
+  return `https://github.com/${SYSTEM_RELEASE_REPO}/releases/tag/${encodeURIComponent(release.tag_name)}`
 }
