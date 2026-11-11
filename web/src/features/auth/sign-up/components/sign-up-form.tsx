@@ -51,6 +51,7 @@ import {
 } from '@/features/auth/lib/storage'
 import { useStatus } from '@/hooks/use-status'
 import { handleServerError } from '@/lib/handle-server-error'
+import { isHumanVerificationSceneEnabled } from '@/lib/human-verification'
 import { AuthOperationError } from '@/lib/secure-verification'
 import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
@@ -70,6 +71,14 @@ export function SignUpForm({
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
 
   const { status } = useStatus()
+  const emailVerificationRequired = !!status?.email_verification
+  const isRegisterVerificationEnabled = isHumanVerificationSceneEnabled(
+    status,
+    'register'
+  )
+  const isEmailCodeVerificationEnabled =
+    emailVerificationRequired &&
+    isHumanVerificationSceneEnabled(status, 'email_verification')
   const {
     humanVerificationProvider,
     isTurnstileEnabled,
@@ -80,14 +89,24 @@ export function SignUpForm({
     setTurnstileToken,
     requestTurnstileToken,
     verificationRef,
-  } = useTurnstile()
+  } = useTurnstile(
+    emailVerificationRequired ? ['register', 'email_verification'] : 'register'
+  )
+  const emailVerificationReady =
+    !isEmailCodeVerificationEnabled || turnstileReady
+  const registerVerificationReady =
+    !isRegisterVerificationEnabled || turnstileReady
   const { redirectToLogin, handleLoginResult } = useAuthRedirect()
   const {
     isSending: isSendingCode,
     secondsLeft,
     isActive,
     sendCode,
-  } = useEmailVerification({ requestTurnstileToken })
+  } = useEmailVerification({
+    requestTurnstileToken: isEmailCodeVerificationEnabled
+      ? requestTurnstileToken
+      : undefined,
+  })
 
   const form = useForm<z.infer<typeof registerFormSchema>>({
     resolver: zodResolver(registerFormSchema),
@@ -100,7 +119,6 @@ export function SignUpForm({
   })
 
   const emailValue = form.watch('email')
-  const emailVerificationRequired = !!status?.email_verification
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
   const requiresLegalConsent = hasUserAgreement || hasPrivacyPolicy
@@ -157,12 +175,14 @@ export function SignUpForm({
       }
     }
 
-    const submittedTurnstileToken = await requestTurnstileToken()
+    const submittedTurnstileToken = isRegisterVerificationEnabled
+      ? await requestTurnstileToken()
+      : ''
     if (submittedTurnstileToken === null) return
 
     // Each human verification answer passes one request, so start a new
     // challenge whatever the outcome.
-    if (isTurnstileEnabled && !opensOnClick) {
+    if (isRegisterVerificationEnabled && !opensOnClick) {
       setTurnstileToken('')
       setTurnstileWidgetKey((current) => current + 1)
     }
@@ -196,7 +216,7 @@ export function SignUpForm({
   async function handleSendVerificationCode() {
     // The email request uses up the answer whether or not it succeeds.
     const usesAnswer =
-      isTurnstileEnabled && !opensOnClick && Boolean(turnstileToken)
+      isEmailCodeVerificationEnabled && !opensOnClick && Boolean(turnstileToken)
     await sendCode(emailValue || '')
     if (usesAnswer) {
       setTurnstileToken('')
@@ -352,7 +372,7 @@ export function SignUpForm({
                   isSendingCode ||
                   isActive ||
                   !emailValue ||
-                  !turnstileReady
+                  !emailVerificationReady
                 }
                 onClick={handleSendVerificationCode}
               >
@@ -390,7 +410,7 @@ export function SignUpForm({
           disabled={
             isLoading ||
             (requiresLegalConsent && !agreedToLegal) ||
-            !turnstileReady
+            !registerVerificationReady
           }
         >
           {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : null}

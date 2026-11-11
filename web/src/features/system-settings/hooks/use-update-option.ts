@@ -52,7 +52,15 @@ const STATUS_RELATED_KEYS = new Set([
   'TurnstileCheckEnabled',
   'TurnstileSiteKey',
   'human_verification.provider',
+  'human_verification.geetest_captcha_id',
   'human_verification.recaptcha_site_key',
+  'human_verification.login_enabled',
+  'human_verification.register_enabled',
+  'human_verification.email_verification_enabled',
+  'human_verification.reset_password_enabled',
+  'human_verification.checkin_enabled',
+  'human_verification.redemption_enabled',
+  'human_verification.lottery_enabled',
 ])
 
 const GROUP_RELATED_KEYS = new Set([

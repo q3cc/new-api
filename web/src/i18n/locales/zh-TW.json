@@ -8120,6 +8120,19 @@
     "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "極驗後台為行為驗證第四代場景分配的 captcha_id 和 captcha_key",
     "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "極驗服務無法使用時，受保護的請求會被拒絕，而不會略過驗證",
     "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "reCAPTCHA v2 核取方塊類型的金鑰。元件載入和驗證都走 www.recaptcha.net，中國大陸可以存取",
-    "Leave empty to keep the saved value": "留空則保留已儲存的值"
+    "Leave empty to keep the saved value": "留空則保留已儲存的值",
+    "Verification Scenes": "驗證場景",
+    "Choose where human verification is required when a provider is enabled": "啟用人機驗證後，按需控制各業務場景是否啟用驗證",
+    "Registration": "註冊",
+    "Email Verification Code": "發送信箱驗證碼",
+    "Password Reset": "找回密碼",
+    "Lottery & Activities": "活動參與（抽獎）",
+    "Require human verification when signing in with a password": "使用密碼登入時要求完成人機驗證",
+    "Require human verification when creating an account": "註冊新帳號時要求完成人機驗證",
+    "Require human verification before sending email verification codes": "發送註冊或驗證郵件驗證碼前要求完成人機驗證",
+    "Require human verification before sending password reset emails": "發送重設密碼郵件前要求完成人機驗證",
+    "Require human verification when claiming daily check-in rewards": "每日簽到領取獎勵時要求完成人機驗證",
+    "Require human verification when redeeming a code in the wallet": "在錢包中使用兌換碼時要求完成人機驗證",
+    "Require human verification when joining lottery activities or spinning the prize wheel": "參與抽獎活動或轉動幸運轉盤時要求完成人機驗證"
   }
 }

@@ -36,7 +36,7 @@ export function useRedemption() {
   const [redeeming, setRedeeming] = useState(false)
 
   const redeemCode = useCallback(
-    async (code: string): Promise<boolean> => {
+    async (code: string, turnstileToken?: string): Promise<boolean> => {
       if (!code || code.trim() === '') {
         toast.error(t('Please enter a redemption code'))
         return false
@@ -44,7 +44,10 @@ export function useRedemption() {
 
       try {
         setRedeeming(true)
-        const response = await redeemTopupCode({ key: code.trim() })
+        const response = await redeemTopupCode(
+          { key: code.trim() },
+          turnstileToken
+        )
 
         if (response.success) {
           if (response.redemption?.type === 'subscription') {

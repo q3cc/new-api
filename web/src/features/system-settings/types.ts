@@ -200,6 +200,13 @@ export type AuthSettings = {
   'human_verification.geetest_secret': string
   'human_verification.recaptcha_site_key': string
   'human_verification.recaptcha_secret': string
+  'human_verification.login_enabled': boolean
+  'human_verification.register_enabled': boolean
+  'human_verification.email_verification_enabled': boolean
+  'human_verification.reset_password_enabled': boolean
+  'human_verification.checkin_enabled': boolean
+  'human_verification.redemption_enabled': boolean
+  'human_verification.lottery_enabled': boolean
   'passkey.enabled': boolean
   'passkey.rp_display_name': string
   'passkey.rp_id': string

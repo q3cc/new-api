@@ -191,4 +191,28 @@ describe('Bot Protection settings saves', () => {
     await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
     expect(saved).toEqual([['human_verification.provider', '']])
   })
+
+  it('allows toggling granular verification scenes such as Login, Redemption Code, and Lottery', async () => {
+    const { saved, put } = recordSaves()
+    const user = userEvent.setup()
+    await renderSettings({
+      ...emptyOptions,
+      'human_verification.provider': 'geetest',
+      'human_verification.geetest_captcha_id': 'geetest-id',
+    })
+
+    await user.click(screen.getByRole('switch', { name: 'Login' }))
+    await user.click(screen.getByRole('switch', { name: 'Redemption Code' }))
+    await user.click(
+      screen.getByRole('switch', { name: 'Lottery & Activities' })
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(3))
+    expect(saved).toEqual([
+      ['human_verification.login_enabled', false],
+      ['human_verification.redemption_enabled', true],
+      ['human_verification.lottery_enabled', true],
+    ])
+  })
 })

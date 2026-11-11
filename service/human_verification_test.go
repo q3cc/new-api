@@ -176,6 +176,9 @@ func TestValidateHumanVerificationOption(t *testing.T) {
 		{name: "clear active GeeTest key", settings: withProvider(configured, "geetest"), key: "human_verification.geetest_secret", value: "", wantErr: true},
 		{name: "clear inactive GeeTest key", settings: withProvider(configured, "recaptcha"), key: "human_verification.geetest_secret", value: ""},
 		{name: "clear active reCAPTCHA key", settings: withProvider(configured, "recaptcha"), key: "human_verification.recaptcha_site_key", value: " ", wantErr: true},
+		{name: "enable redemption scene", settings: configured, key: "human_verification.redemption_enabled", value: "true"},
+		{name: "disable login scene", settings: configured, key: "human_verification.login_enabled", value: "false"},
+		{name: "invalid scene boolean", settings: configured, key: "human_verification.lottery_enabled", value: "invalid", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -192,6 +195,31 @@ func TestValidateHumanVerificationOption(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsHumanVerificationSceneEnabled(t *testing.T) {
+	defaults := system_setting.DefaultHumanVerificationSettings()
+	assert.Equal(t, map[string]bool{
+		system_setting.HumanVerificationSceneLogin:             true,
+		system_setting.HumanVerificationSceneRegister:          true,
+		system_setting.HumanVerificationSceneEmailVerification: true,
+		system_setting.HumanVerificationSceneResetPassword:     true,
+		system_setting.HumanVerificationSceneCheckin:           true,
+		system_setting.HumanVerificationSceneRedemption:        false,
+		system_setting.HumanVerificationSceneLottery:           false,
+	}, defaults.ScenesMap())
+
+	useHumanVerification(t, defaults, func(w http.ResponseWriter, r *http.Request) {})
+	assert.False(t, IsHumanVerificationSceneEnabled(system_setting.HumanVerificationSceneLogin), "disabled when no provider is active")
+
+	active := withProvider(defaults, system_setting.HumanVerificationProviderGeetest)
+	active.LoginEnabled = false
+	active.RedemptionEnabled = true
+	useHumanVerification(t, active, func(w http.ResponseWriter, r *http.Request) {})
+	assert.False(t, IsHumanVerificationSceneEnabled(system_setting.HumanVerificationSceneLogin))
+	assert.True(t, IsHumanVerificationSceneEnabled(system_setting.HumanVerificationSceneRegister))
+	assert.True(t, IsHumanVerificationSceneEnabled(system_setting.HumanVerificationSceneRedemption))
+	assert.False(t, IsHumanVerificationSceneEnabled(system_setting.HumanVerificationSceneLottery))
 }
 
 func withProvider(settings system_setting.HumanVerificationSettings, provider string) system_setting.HumanVerificationSettings {

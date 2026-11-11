@@ -8120,6 +8120,19 @@
     "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "captcha_id и captcha_key сценария GeeTest v4 из консоли GeeTest",
     "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "Если GeeTest недоступен, защищённые запросы отклоняются, а не пропускают проверку",
     "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "Ключ reCAPTCHA v2 с флажком. Виджет и проверка используют www.recaptcha.net, доступный из материкового Китая",
-    "Leave empty to keep the saved value": "Оставьте пустым, чтобы сохранить текущее значение"
+    "Leave empty to keep the saved value": "Оставьте пустым, чтобы сохранить текущее значение",
+    "Verification Scenes": "Сценарии проверки",
+    "Choose where human verification is required when a provider is enabled": "Выберите, где требуется проверка на человека при включённом провайдере",
+    "Registration": "Регистрация",
+    "Email Verification Code": "Код подтверждения по почте",
+    "Password Reset": "Сброс пароля",
+    "Lottery & Activities": "Розыгрыши и активности",
+    "Require human verification when signing in with a password": "Требовать проверку на человека при входе по паролю",
+    "Require human verification when creating an account": "Требовать проверку на человека при создании аккаунта",
+    "Require human verification before sending email verification codes": "Требовать проверку на человека перед отправкой кодов подтверждения по почте",
+    "Require human verification before sending password reset emails": "Требовать проверку на человека перед отправкой писем для сброса пароля",
+    "Require human verification when claiming daily check-in rewards": "Требовать проверку на человека при ежедневной отметке",
+    "Require human verification when redeeming a code in the wallet": "Требовать проверку на человека при активации промокода в кошельке",
+    "Require human verification when joining lottery activities or spinning the prize wheel": "Требовать проверку на человека при участии в розыгрышах или вращении колеса"
   }
 }

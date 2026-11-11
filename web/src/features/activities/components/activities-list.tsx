@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { EmptyState } from '@/components/empty-state'
+import { useHumanVerificationChallenge } from '@/components/human-verification'
 import {
   Collapsible,
   CollapsibleContent,
@@ -46,12 +47,21 @@ export function ActivitiesList() {
   const queryClient = useQueryClient()
   const nowSeconds = useNowSeconds()
   const { data, isPending } = useQuery(activitiesListQuery)
+  const {
+    requestToken: requestLotteryToken,
+    verificationNode: lotteryVerificationNode,
+  } = useHumanVerificationChallenge('lottery')
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: activitiesQueryKeys.all })
 
   const join = useMutation({
-    mutationFn: async (activity: LotteryActivityView) =>
-      requireServerSuccess(await joinActivity(activity.id)),
+    mutationFn: async (params: {
+      activity: LotteryActivityView
+      turnstileToken?: string
+    }) =>
+      requireServerSuccess(
+        await joinActivity(params.activity.id, params.turnstileToken)
+      ),
     onSuccess: () => {
       toast.success(t('Joined the activity'))
       void refresh()
@@ -59,11 +69,21 @@ export function ActivitiesList() {
     onError: (error) => handleServerError(error),
   })
 
+  const handleJoin = async (activity: LotteryActivityView) => {
+    const token = await requestLotteryToken()
+    if (token === null) return
+    join.mutate({ activity, turnstileToken: token || undefined })
+  }
+
   const spin = async (
     activity: LotteryActivityView
   ): Promise<LotteryEntry | null> => {
+    const token = await requestLotteryToken()
+    if (token === null) return null
     try {
-      const response = requireServerSuccess(await spinWheel(activity.id))
+      const response = requireServerSuccess(
+        await spinWheel(activity.id, token || undefined)
+      )
       return response.data ?? null
     } catch (error) {
       handleServerError(error)
@@ -98,8 +118,8 @@ export function ActivitiesList() {
       key={activity.id}
       activity={activity}
       nowSeconds={nowSeconds}
-      joining={join.isPending && join.variables?.id === activity.id}
-      onJoin={(target) => join.mutate(target)}
+      joining={join.isPending && join.variables?.activity.id === activity.id}
+      onJoin={(target) => void handleJoin(target)}
       onSpin={spin}
       onSpinSettled={handleSpinSettled}
     />
@@ -137,6 +157,7 @@ export function ActivitiesList() {
           </CollapsibleContent>
         </Collapsible>
       ) : null}
+      {lotteryVerificationNode}
     </div>
   )
 }

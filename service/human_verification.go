@@ -92,8 +92,24 @@ func ValidateHumanVerificationOption(key string, value string) error {
 		if strings.TrimSpace(value) == "" && settings.Provider == system_setting.HumanVerificationProviderRecaptcha {
 			return common.NewMessage("Turn off {{provider}} verification before clearing its keys.", map[string]any{"provider": "reCAPTCHA"})
 		}
+	case "human_verification.login_enabled", "human_verification.register_enabled",
+		"human_verification.email_verification_enabled", "human_verification.reset_password_enabled",
+		"human_verification.checkin_enabled", "human_verification.redemption_enabled",
+		"human_verification.lottery_enabled":
+		if value != "true" && value != "false" {
+			return common.NewMessage("Invalid parameters")
+		}
 	}
 	return nil
+}
+
+// IsHumanVerificationSceneEnabled reports whether human verification is
+// required for the given scene when a provider is active.
+func IsHumanVerificationSceneEnabled(scene string) bool {
+	if HumanVerificationProvider() == "" {
+		return false
+	}
+	return system_setting.GetHumanVerificationSettings().IsSceneEnabled(scene)
 }
 
 // VerifyHuman checks token against the active provider. For Turnstile and

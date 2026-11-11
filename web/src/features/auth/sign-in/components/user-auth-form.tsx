@@ -105,7 +105,7 @@ export function UserAuthForm({
     setTurnstileToken,
     requestTurnstileToken,
     verificationRef,
-  } = useTurnstile()
+  } = useTurnstile('login')
   const { handleLoginResult } = useAuthRedirect()
 
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)

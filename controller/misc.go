@@ -73,6 +73,7 @@ func GetStatus(c *gin.Context) {
 		"human_verification_provider": service.HumanVerificationProvider(),
 		"recaptcha_site_key":          system_setting.GetHumanVerificationSettings().RecaptchaSiteKey,
 		"geetest_captcha_id":          system_setting.GetHumanVerificationSettings().GeetestCaptchaId,
+		"human_verification_scenes":   system_setting.GetHumanVerificationSettings().ScenesMap(),
 		"docs_link":                   operation_setting.GetGeneralSetting().DocsLink,
 		"quota_per_unit":              common.QuotaPerUnit,
 		// 兼容旧前端：保留 display_in_currency，同时提供新的 quota_display_type

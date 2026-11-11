@@ -67,9 +67,13 @@ export async function getTopupInfo(): Promise<TopupInfoResponse> {
  * Redeem a topup code
  */
 export async function redeemTopupCode(
-  request: RedemptionRequest
+  request: RedemptionRequest,
+  turnstileToken?: string
 ): Promise<RedemptionResponse> {
-  const res = await api.post('/api/user/topup', request)
+  const url = turnstileToken
+    ? `/api/user/topup?turnstile=${encodeURIComponent(turnstileToken)}`
+    : '/api/user/topup'
+  const res = await api.post(url, request)
   return res.data
 }
 

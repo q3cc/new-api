@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 
 import {
   type HumanVerificationHandle,
+  type HumanVerificationScene,
   opensOnSubmit,
   useHumanVerificationConfig,
 } from '@/lib/human-verification'
@@ -31,8 +32,10 @@ import {
  * provider the server can enforce (Turnstile, GeeTest, reCAPTCHA); the names
  * keep "turnstile" because the server reads the answer from that parameter.
  */
-export function useTurnstile() {
-  const { provider, siteKey } = useHumanVerificationConfig()
+export function useTurnstile(
+  scene?: HumanVerificationScene | HumanVerificationScene[]
+) {
+  const { provider, siteKey } = useHumanVerificationConfig(scene)
   const [turnstileToken, setTurnstileToken] = useState('')
   const verificationRef = useRef<HumanVerificationHandle>(null)
 

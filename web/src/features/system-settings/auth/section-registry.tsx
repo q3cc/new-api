@@ -121,6 +121,20 @@ const AUTH_SECTIONS = [
             settings['human_verification.recaptcha_site_key'],
           'human_verification.recaptcha_secret':
             settings['human_verification.recaptcha_secret'],
+          'human_verification.login_enabled':
+            settings['human_verification.login_enabled'],
+          'human_verification.register_enabled':
+            settings['human_verification.register_enabled'],
+          'human_verification.email_verification_enabled':
+            settings['human_verification.email_verification_enabled'],
+          'human_verification.reset_password_enabled':
+            settings['human_verification.reset_password_enabled'],
+          'human_verification.checkin_enabled':
+            settings['human_verification.checkin_enabled'],
+          'human_verification.redemption_enabled':
+            settings['human_verification.redemption_enabled'],
+          'human_verification.lottery_enabled':
+            settings['human_verification.lottery_enabled'],
         }}
       />
     ),

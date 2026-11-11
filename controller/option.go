@@ -263,7 +263,11 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "human_verification.provider", "human_verification.geetest_captcha_id", "human_verification.geetest_secret",
-		"human_verification.recaptcha_site_key", "human_verification.recaptcha_secret":
+		"human_verification.recaptcha_site_key", "human_verification.recaptcha_secret",
+		"human_verification.login_enabled", "human_verification.register_enabled",
+		"human_verification.email_verification_enabled", "human_verification.reset_password_enabled",
+		"human_verification.checkin_enabled", "human_verification.redemption_enabled",
+		"human_verification.lottery_enabled":
 		if err := service.ValidateHumanVerificationOption(option.Key, option.Value.(string)); err != nil {
 			common.ApiError(c, err)
 			return

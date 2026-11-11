@@ -119,6 +119,8 @@ export interface SystemStatus {
     turnstile_site_key?: string
     human_verification_provider?: string
     recaptcha_site_key?: string
+    geetest_captcha_id?: string
+    human_verification_scenes?: Record<string, boolean>
     email_verification?: boolean
     self_use_mode_enabled?: boolean
     display_in_currency?: boolean
@@ -168,6 +170,8 @@ export interface SystemStatus {
   turnstile_site_key?: string
   human_verification_provider?: string
   recaptcha_site_key?: string
+  geetest_captcha_id?: string
+  human_verification_scenes?: Record<string, boolean>
   email_verification?: boolean
   self_use_mode_enabled?: boolean
   display_in_currency?: boolean

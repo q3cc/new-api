@@ -20,6 +20,28 @@ import { useStatus } from '@/hooks/use-status'
 
 export type HumanVerificationProvider = 'turnstile' | 'geetest' | 'recaptcha'
 
+export type HumanVerificationScene =
+  | 'login'
+  | 'register'
+  | 'email_verification'
+  | 'reset_password'
+  | 'checkin'
+  | 'redemption'
+  | 'lottery'
+
+export const HUMAN_VERIFICATION_SCENE_DEFAULTS: Record<
+  HumanVerificationScene,
+  boolean
+> = {
+  login: true,
+  register: true,
+  email_verification: true,
+  reset_password: true,
+  checkin: true,
+  redemption: false,
+  lottery: false,
+}
+
 /**
  * Imperative handle of a widget that opens on demand (GeeTest v4 in bind mode).
  * execute() shows the challenge and resolves with the answer, or with null when
@@ -104,17 +126,42 @@ type HumanVerificationStatus = {
   recaptcha_site_key?: string
   turnstile_check?: boolean
   turnstile_site_key?: string
+  human_verification_scenes?: Partial<Record<HumanVerificationScene, boolean>>
 } | null
+
+function isSceneEnabledInStatus(
+  status: HumanVerificationStatus,
+  scene: HumanVerificationScene
+): boolean {
+  return (
+    status?.human_verification_scenes?.[scene] ??
+    HUMAN_VERIFICATION_SCENE_DEFAULTS[scene]
+  )
+}
 
 /**
  * The provider the server enforces and the public key its widget needs (the
  * GeeTest captcha ID, or the reCAPTCHA or Turnstile site key). Older
  * servers report only turnstile_check, which still selects Turnstile.
+ * When `scene` is provided, returns `{ provider: null, siteKey: '' }` if none
+ * of the requested scenes are enabled.
  */
-export function resolveHumanVerification(status: HumanVerificationStatus): {
+export function resolveHumanVerification(
+  status: HumanVerificationStatus,
+  scene?: HumanVerificationScene | HumanVerificationScene[]
+): {
   provider: HumanVerificationProvider | null
   siteKey: string
 } {
+  if (scene !== undefined) {
+    const scenes = Array.isArray(scene) ? scene : [scene]
+    const anyEnabled = scenes.some((item) =>
+      isSceneEnabledInStatus(status, item)
+    )
+    if (!anyEnabled) {
+      return { provider: null, siteKey: '' }
+    }
+  }
   const reported = status?.human_verification_provider
   if (reported === 'geetest') {
     return status?.geetest_captcha_id
@@ -136,7 +183,16 @@ export function resolveHumanVerification(status: HumanVerificationStatus): {
   return { provider: null, siteKey: '' }
 }
 
-export function useHumanVerificationConfig() {
+export function isHumanVerificationSceneEnabled(
+  status: HumanVerificationStatus,
+  scene: HumanVerificationScene
+): boolean {
+  return resolveHumanVerification(status, scene).provider !== null
+}
+
+export function useHumanVerificationConfig(
+  scene?: HumanVerificationScene | HumanVerificationScene[]
+) {
   const { status } = useStatus()
-  return resolveHumanVerification(status)
+  return resolveHumanVerification(status, scene)
 }

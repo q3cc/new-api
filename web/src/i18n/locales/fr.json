@@ -8120,6 +8120,19 @@
     "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "Le captcha_id et le captcha_key d'un scénario GeeTest v4, depuis la console GeeTest",
     "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "Si GeeTest est injoignable, les requêtes protégées sont refusées au lieu d'ignorer la vérification",
     "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "Une clé reCAPTCHA v2 de type case à cocher. Le widget et la vérification passent par www.recaptcha.net, accessible depuis la Chine continentale",
-    "Leave empty to keep the saved value": "Laisser vide pour conserver la valeur enregistrée"
+    "Leave empty to keep the saved value": "Laisser vide pour conserver la valeur enregistrée",
+    "Verification Scenes": "Scènes de vérification",
+    "Choose where human verification is required when a provider is enabled": "Choisissez où la vérification humaine est requise lorsqu'un fournisseur est activé",
+    "Registration": "Inscription",
+    "Email Verification Code": "Code de vérification e-mail",
+    "Password Reset": "Réinitialisation du mot de passe",
+    "Lottery & Activities": "Tombola et activités",
+    "Require human verification when signing in with a password": "Exiger une vérification humaine lors de la connexion par mot de passe",
+    "Require human verification when creating an account": "Exiger une vérification humaine lors de la création d'un compte",
+    "Require human verification before sending email verification codes": "Exiger une vérification humaine avant l'envoi des codes de vérification par e-mail",
+    "Require human verification before sending password reset emails": "Exiger une vérification humaine avant l'envoi des e-mails de réinitialisation du mot de passe",
+    "Require human verification when claiming daily check-in rewards": "Exiger une vérification humaine lors du pointage quotidien",
+    "Require human verification when redeeming a code in the wallet": "Exiger une vérification humaine lors de l'utilisation d'un code dans le portefeuille",
+    "Require human verification when joining lottery activities or spinning the prize wheel": "Exiger une vérification humaine pour participer aux activités de tombola ou tourner la roue"
   }
 }

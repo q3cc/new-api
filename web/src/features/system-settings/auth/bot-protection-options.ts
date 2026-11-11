@@ -34,6 +34,13 @@ export const botProtectionSchema = z.object({
   geetestSecret: z.string(),
   recaptchaSiteKey: z.string(),
   recaptchaSecret: z.string(),
+  loginEnabled: z.boolean(),
+  registerEnabled: z.boolean(),
+  emailVerificationEnabled: z.boolean(),
+  resetPasswordEnabled: z.boolean(),
+  checkinEnabled: z.boolean(),
+  redemptionEnabled: z.boolean(),
+  lotteryEnabled: z.boolean(),
 })
 
 export type BotProtectionFormValues = z.infer<typeof botProtectionSchema>
@@ -48,10 +55,27 @@ export type BotProtectionOptions = {
   'human_verification.geetest_secret'?: string
   'human_verification.recaptcha_site_key'?: string
   'human_verification.recaptcha_secret'?: string
+  'human_verification.login_enabled'?: boolean
+  'human_verification.register_enabled'?: boolean
+  'human_verification.email_verification_enabled'?: boolean
+  'human_verification.reset_password_enabled'?: boolean
+  'human_verification.checkin_enabled'?: boolean
+  'human_verification.redemption_enabled'?: boolean
+  'human_verification.lottery_enabled'?: boolean
 }
 
 type OptionKey = keyof BotProtectionOptions
 export type BotProtectionUpdate = [OptionKey, string | boolean]
+
+const SCENE_DEFAULT_BY_KEY: Partial<Record<OptionKey, boolean>> = {
+  'human_verification.login_enabled': true,
+  'human_verification.register_enabled': true,
+  'human_verification.email_verification_enabled': true,
+  'human_verification.reset_password_enabled': true,
+  'human_verification.checkin_enabled': true,
+  'human_verification.redemption_enabled': false,
+  'human_verification.lottery_enabled': false,
+}
 
 export function toBotProtectionFormValues(
   options: BotProtectionOptions
@@ -68,6 +92,16 @@ export function toBotProtectionFormValues(
     geetestSecret: options['human_verification.geetest_secret'] ?? '',
     recaptchaSiteKey: options['human_verification.recaptcha_site_key'] ?? '',
     recaptchaSecret: options['human_verification.recaptcha_secret'] ?? '',
+    loginEnabled: options['human_verification.login_enabled'] ?? true,
+    registerEnabled: options['human_verification.register_enabled'] ?? true,
+    emailVerificationEnabled:
+      options['human_verification.email_verification_enabled'] ?? true,
+    resetPasswordEnabled:
+      options['human_verification.reset_password_enabled'] ?? true,
+    checkinEnabled: options['human_verification.checkin_enabled'] ?? true,
+    redemptionEnabled:
+      options['human_verification.redemption_enabled'] ?? false,
+    lotteryEnabled: options['human_verification.lottery_enabled'] ?? false,
   }
 }
 
@@ -105,11 +139,23 @@ export function buildBotProtectionUpdates(
     ['human_verification.geetest_secret', values.geetestSecret],
     ['human_verification.recaptcha_site_key', values.recaptchaSiteKey],
     ['human_verification.recaptcha_secret', values.recaptchaSecret],
+    ['human_verification.login_enabled', values.loginEnabled],
+    ['human_verification.register_enabled', values.registerEnabled],
+    [
+      'human_verification.email_verification_enabled',
+      values.emailVerificationEnabled,
+    ],
+    ['human_verification.reset_password_enabled', values.resetPasswordEnabled],
+    ['human_verification.checkin_enabled', values.checkinEnabled],
+    ['human_verification.redemption_enabled', values.redemptionEnabled],
+    ['human_verification.lottery_enabled', values.lotteryEnabled],
   ]
   const changed = next.filter(([key, value]) => {
     if (SECRET_KEYS.has(key) && value === '') return false
     const previous =
-      saved[key] ?? (key === 'TurnstileCheckEnabled' ? false : '')
+      saved[key] ??
+      SCENE_DEFAULT_BY_KEY[key] ??
+      (key === 'TurnstileCheckEnabled' ? false : '')
     return value !== previous
   })
   const isSwitchOff = ([key, value]: BotProtectionUpdate) =>

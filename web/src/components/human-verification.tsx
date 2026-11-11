@@ -17,7 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  type ReactNode,
   type Ref,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -31,10 +33,14 @@ import {
   GEETEST_SCRIPT_URL,
   type HumanVerificationHandle,
   type HumanVerificationProvider,
+  type HumanVerificationScene,
   loadScript,
+  opensOnSubmit,
   RECAPTCHA_SCRIPT_URL,
+  useHumanVerificationConfig,
 } from '@/lib/human-verification'
 
+import { Dialog } from './dialog'
 import { Turnstile } from './turnstile'
 
 type GeetestValidate = {
@@ -276,4 +282,103 @@ export function HumanVerification(props: HumanVerificationProps) {
       className={props.className}
     />
   )
+}
+
+/**
+ * On-demand human verification for action buttons (such as Redemption Code and
+ * Lottery). When the scene is disabled or no provider is active, requestToken()
+ * resolves with '' and verificationNode is null. For GeeTest, requestToken()
+ * opens its bind-mode challenge directly; for Turnstile / reCAPTCHA, it opens
+ * a Security Check dialog and resolves once the widget reports a token.
+ */
+export function useHumanVerificationChallenge(scene: HumanVerificationScene) {
+  const { t } = useTranslation()
+  const { provider, siteKey } = useHumanVerificationConfig(scene)
+  const verificationRef = useRef<HumanVerificationHandle>(null)
+  const pendingResolveRef = useRef<((token: string | null) => void) | null>(
+    null
+  )
+  const [modalOpen, setModalOpen] = useState(false)
+  const [widgetKey, setWidgetKey] = useState(0)
+
+  const enabled = provider !== null
+  const opensDirectly = opensOnSubmit(provider)
+
+  const finishPending = useCallback((token: string | null) => {
+    const resolve = pendingResolveRef.current
+    pendingResolveRef.current = null
+    resolve?.(token)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      finishPending(null)
+    }
+  }, [finishPending])
+
+  const requestToken = useCallback(async (): Promise<string | null> => {
+    if (!enabled) return ''
+    if (!siteKey) {
+      toast.error(t('Turnstile is enabled but site key is empty.'))
+      return null
+    }
+    if (opensDirectly) {
+      return (await verificationRef.current?.execute()) ?? null
+    }
+    finishPending(null)
+    setWidgetKey((current) => current + 1)
+    setModalOpen(true)
+    return new Promise<string | null>((resolve) => {
+      pendingResolveRef.current = resolve
+    })
+  }, [enabled, finishPending, opensDirectly, siteKey, t])
+
+  const verificationNode: ReactNode = !enabled ? null : opensDirectly ? (
+    <HumanVerification
+      ref={verificationRef}
+      provider='geetest'
+      siteKey={siteKey}
+      onVerify={() => undefined}
+    />
+  ) : (
+    <Dialog
+      open={modalOpen}
+      onOpenChange={(open) => {
+        setModalOpen(open)
+        if (!open) {
+          setWidgetKey((current) => current + 1)
+          finishPending(null)
+        }
+      }}
+      title={t('Security Check')}
+      contentClassName='sm:max-w-md'
+      contentHeight='auto'
+      bodyClassName='space-y-4'
+    >
+      <div className='text-muted-foreground text-sm'>
+        {t('Please complete the security check to continue.')}
+      </div>
+      <div className='flex justify-center py-4'>
+        <HumanVerification
+          provider={provider}
+          key={widgetKey}
+          siteKey={siteKey}
+          onVerify={(token) => {
+            setModalOpen(false)
+            setWidgetKey((current) => current + 1)
+            finishPending(token)
+          }}
+          onExpire={() => {
+            setWidgetKey((current) => current + 1)
+          }}
+        />
+      </div>
+    </Dialog>
+  )
+
+  return {
+    isVerificationEnabled: enabled,
+    requestToken,
+    verificationNode,
+  }
 }

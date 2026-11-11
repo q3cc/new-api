@@ -8120,6 +8120,19 @@
     "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "captcha_id và captcha_key của một kịch bản GeeTest v4, lấy từ bảng điều khiển GeeTest",
     "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "Nếu không kết nối được GeeTest, các yêu cầu được bảo vệ sẽ bị từ chối thay vì bỏ qua bước xác minh",
     "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "Khóa reCAPTCHA v2 dạng hộp kiểm. Widget và bước xác minh dùng www.recaptcha.net, truy cập được từ Trung Quốc đại lục",
-    "Leave empty to keep the saved value": "Để trống để giữ giá trị đã lưu"
+    "Leave empty to keep the saved value": "Để trống để giữ giá trị đã lưu",
+    "Verification Scenes": "Ngữ cảnh xác minh",
+    "Choose where human verification is required when a provider is enabled": "Chọn nơi yêu cầu xác minh con người khi bật nhà cung cấp",
+    "Registration": "Đăng ký",
+    "Email Verification Code": "Mã xác minh email",
+    "Password Reset": "Đặt lại mật khẩu",
+    "Lottery & Activities": "Quay thưởng & Hoạt động",
+    "Require human verification when signing in with a password": "Yêu cầu xác minh con người khi đăng nhập bằng mật khẩu",
+    "Require human verification when creating an account": "Yêu cầu xác minh con người khi tạo tài khoản",
+    "Require human verification before sending email verification codes": "Yêu cầu xác minh con người trước khi gửi mã xác minh email",
+    "Require human verification before sending password reset emails": "Yêu cầu xác minh con người trước khi gửi email đặt lại mật khẩu",
+    "Require human verification when claiming daily check-in rewards": "Yêu cầu xác minh con người khi điểm danh hằng ngày",
+    "Require human verification when redeeming a code in the wallet": "Yêu cầu xác minh con người khi đổi mã trong ví",
+    "Require human verification when joining lottery activities or spinning the prize wheel": "Yêu cầu xác minh con người khi tham gia hoạt động quay thưởng hoặc quay vòng quay"
   }
 }

@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { useHumanVerificationChallenge } from '@/components/human-verification'
 import { SectionPageLayout } from '@/components/layout'
 import { TrialBalanceCard } from '@/features/trial-credit/balance-card'
 import { useStatus } from '@/hooks/use-status'
@@ -114,6 +115,10 @@ export function Wallet(props: WalletProps) {
     transferring,
   } = useAffiliate()
   const { redeeming, redeemCode } = useRedemption()
+  const {
+    requestToken: requestRedemptionToken,
+    verificationNode: redemptionVerificationNode,
+  } = useHumanVerificationChallenge('redemption')
   const { processing: creemProcessing, processCreemPayment } = useCreemPayment()
   const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment()
   const { processing: pancakeProcessing, processWaffoPancakePayment } =
@@ -225,9 +230,12 @@ export function Wallet(props: WalletProps) {
 
   // Handle redemption
   const handleRedeem = async () => {
-    if (!redemptionCode) return
+    if (!redemptionCode.trim()) return
 
-    const success = await redeemCode(redemptionCode)
+    const turnstileToken = await requestRedemptionToken()
+    if (turnstileToken === null) return
+
+    const success = await redeemCode(redemptionCode, turnstileToken || undefined)
     if (success) {
       setRedemptionCode('')
       setSubscriptionRefreshKey((key) => key + 1)
@@ -415,6 +423,8 @@ export function Wallet(props: WalletProps) {
         product={selectedCreemProduct}
         processing={creemProcessing}
       />
+
+      {redemptionVerificationNode}
     </>
   )
 }

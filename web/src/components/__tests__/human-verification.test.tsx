@@ -128,6 +128,41 @@ describe('resolveHumanVerification', () => {
       siteKey: '',
     })
   })
+
+  it('respects granular scene switches and defaults', () => {
+    const status = {
+      human_verification_provider: 'geetest',
+      geetest_captcha_id: 'captcha-id',
+      human_verification_scenes: {
+        login: false,
+        register: true,
+        redemption: true,
+        lottery: false,
+      },
+    }
+    expect(resolveHumanVerification(status, 'login')).toEqual({
+      provider: null,
+      siteKey: '',
+    })
+    expect(resolveHumanVerification(status, 'register')).toEqual({
+      provider: 'geetest',
+      siteKey: 'captcha-id',
+    })
+    expect(resolveHumanVerification(status, 'redemption')).toEqual({
+      provider: 'geetest',
+      siteKey: 'captcha-id',
+    })
+    expect(resolveHumanVerification(status, 'lottery')).toEqual({
+      provider: null,
+      siteKey: '',
+    })
+    expect(
+      resolveHumanVerification(status, ['login', 'email_verification'])
+    ).toEqual({
+      provider: 'geetest',
+      siteKey: 'captcha-id',
+    })
+  })
 })
 
 describe('captchaLanguage', () => {

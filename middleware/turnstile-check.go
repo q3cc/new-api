@@ -10,10 +10,20 @@ import (
 
 // TurnstileCheck guards a route with the active human verification provider:
 // Cloudflare Turnstile, GeeTest v4 or reCAPTCHA v2 (the name is kept for the
-// existing routes). The browser sends the widget answer in the "turnstile"
-// query parameter for every provider; service.VerifyHuman describes its form.
-func TurnstileCheck() gin.HandlerFunc {
+// existing routes). When a scene is supplied, the check is skipped if that
+// scene is disabled in HumanVerificationSettings. The browser sends the widget
+// answer in the "turnstile" query parameter for every provider;
+// service.VerifyHuman describes its form.
+func TurnstileCheck(scene ...string) gin.HandlerFunc {
+	var targetScene string
+	if len(scene) > 0 {
+		targetScene = scene[0]
+	}
 	return func(c *gin.Context) {
+		if targetScene != "" && !service.IsHumanVerificationSceneEnabled(targetScene) {
+			c.Next()
+			return
+		}
 		err := service.VerifyHuman(c.Request.Context(), c.Query("turnstile"), c.ClientIP())
 		if err == nil {
 			c.Next()

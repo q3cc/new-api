@@ -38,7 +38,7 @@ export function Profile() {
   const permissions = useAuthStore((s) => s.auth.user?.permissions)
 
   const checkinEnabled = status?.checkin_enabled === true
-  const humanVerification = useHumanVerificationConfig()
+  const humanVerification = useHumanVerificationConfig('checkin')
   const canConfigureSidebar = permissions?.sidebar_settings !== false
   // Older cached status payloads lack these fields; the site default is on.
   const quotaRemindEnabled = status?.quota_remind_enabled !== false

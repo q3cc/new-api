@@ -8120,6 +8120,19 @@
     "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "GeeTest コンソールで発行された GeeTest v4 シナリオの captcha_id と captcha_key",
     "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "GeeTest に接続できない場合、保護されたリクエストは認証をスキップせず拒否されます",
     "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "reCAPTCHA v2 チェックボックスのキーです。ウィジェットと検証は中国本土からアクセスできる www.recaptcha.net を使用します",
-    "Leave empty to keep the saved value": "空欄のままにすると保存済みの値を保持します"
+    "Leave empty to keep the saved value": "空欄のままにすると保存済みの値を保持します",
+    "Verification Scenes": "認証対象シーン",
+    "Choose where human verification is required when a provider is enabled": "人間認証を有効にした際に保護する機能を選択します",
+    "Registration": "登録",
+    "Email Verification Code": "メール認証コード",
+    "Password Reset": "パスワード再設定",
+    "Lottery & Activities": "抽選・イベント参加",
+    "Require human verification when signing in with a password": "パスワードでログインする際に人間認証を要求します",
+    "Require human verification when creating an account": "アカウント登録時に人間認証を要求します",
+    "Require human verification before sending email verification codes": "メール認証コードを送信する前に人間認証を要求します",
+    "Require human verification before sending password reset emails": "パスワード再設定メールを送信する前に人間認証を要求します",
+    "Require human verification when claiming daily check-in rewards": "毎日のチェックイン報酬を受け取る際に人間認証を要求します",
+    "Require human verification when redeeming a code in the wallet": "ウォレットで引き換えコードを使用する際に人間認証を要求します",
+    "Require human verification when joining lottery activities or spinning the prize wheel": "抽選イベントへの参加やルーレットを回す際に人間認証を要求します"
   }
 }

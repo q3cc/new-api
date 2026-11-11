@@ -74,15 +74,25 @@ export const activitiesListQuery = queryOptions({
   },
 })
 
-export async function joinActivity(id: number): Promise<ApiResponse> {
-  const res = await api.post(`/api/lottery/activities/${id}/join`)
+export async function joinActivity(
+  id: number,
+  turnstileToken?: string
+): Promise<ApiResponse> {
+  const url = turnstileToken
+    ? `/api/lottery/activities/${id}/join?turnstile=${encodeURIComponent(turnstileToken)}`
+    : `/api/lottery/activities/${id}/join`
+  const res = await api.post(url)
   return res.data
 }
 
 export async function spinWheel(
-  id: number
+  id: number,
+  turnstileToken?: string
 ): Promise<ApiResponse<LotteryEntry>> {
-  const res = await api.post(`/api/lottery/activities/${id}/spin`)
+  const url = turnstileToken
+    ? `/api/lottery/activities/${id}/spin?turnstile=${encodeURIComponent(turnstileToken)}`
+    : `/api/lottery/activities/${id}/spin`
+  const res = await api.post(url)
   return res.data
 }
 

@@ -8120,6 +8120,19 @@
     "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console": "The captcha_id and captcha_key of a GeeTest v4 scenario, from the GeeTest console",
     "If GeeTest cannot be reached, protected requests are refused instead of skipping the check": "If GeeTest cannot be reached, protected requests are refused instead of skipping the check",
     "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China": "A reCAPTCHA v2 checkbox key. The widget and verification use www.recaptcha.net, which is reachable from mainland China",
-    "Leave empty to keep the saved value": "Leave empty to keep the saved value"
+    "Leave empty to keep the saved value": "Leave empty to keep the saved value",
+    "Verification Scenes": "Verification Scenes",
+    "Choose where human verification is required when a provider is enabled": "Choose where human verification is required when a provider is enabled",
+    "Registration": "Registration",
+    "Email Verification Code": "Email Verification Code",
+    "Password Reset": "Password Reset",
+    "Lottery & Activities": "Lottery & Activities",
+    "Require human verification when signing in with a password": "Require human verification when signing in with a password",
+    "Require human verification when creating an account": "Require human verification when creating an account",
+    "Require human verification before sending email verification codes": "Require human verification before sending email verification codes",
+    "Require human verification before sending password reset emails": "Require human verification before sending password reset emails",
+    "Require human verification when claiming daily check-in rewards": "Require human verification when claiming daily check-in rewards",
+    "Require human verification when redeeming a code in the wallet": "Require human verification when redeeming a code in the wallet",
+    "Require human verification when joining lottery activities or spinning the prize wheel": "Require human verification when joining lottery activities or spinning the prize wheel"
   }
 }

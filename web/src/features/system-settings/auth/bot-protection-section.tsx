@@ -39,8 +39,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 
-import { SettingsForm } from '../components/settings-form-layout'
+import {
+  SettingsControlGroup,
+  SettingsForm,
+  SettingsSwitchContent,
+  SettingsSwitchItem,
+} from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
@@ -90,6 +96,66 @@ export function BotProtectionSection(props: BotProtectionSectionProps) {
     { value: 'turnstile', label: 'Cloudflare Turnstile' },
     { value: 'geetest', label: t('GeeTest v4') },
     { value: 'recaptcha', label: t('Google reCAPTCHA v2') },
+  ]
+  const sceneItems: {
+    name:
+      | 'loginEnabled'
+      | 'registerEnabled'
+      | 'emailVerificationEnabled'
+      | 'resetPasswordEnabled'
+      | 'checkinEnabled'
+      | 'redemptionEnabled'
+      | 'lotteryEnabled'
+    label: string
+    description: string
+  }[] = [
+    {
+      name: 'loginEnabled',
+      label: t('Login'),
+      description: t(
+        'Require human verification when signing in with a password'
+      ),
+    },
+    {
+      name: 'registerEnabled',
+      label: t('Registration'),
+      description: t('Require human verification when creating an account'),
+    },
+    {
+      name: 'emailVerificationEnabled',
+      label: t('Email Verification Code'),
+      description: t(
+        'Require human verification before sending email verification codes'
+      ),
+    },
+    {
+      name: 'resetPasswordEnabled',
+      label: t('Password Reset'),
+      description: t(
+        'Require human verification before sending password reset emails'
+      ),
+    },
+    {
+      name: 'checkinEnabled',
+      label: t('Daily Check-in'),
+      description: t(
+        'Require human verification when claiming daily check-in rewards'
+      ),
+    },
+    {
+      name: 'redemptionEnabled',
+      label: t('Redemption Code'),
+      description: t(
+        'Require human verification when redeeming a code in the wallet'
+      ),
+    },
+    {
+      name: 'lotteryEnabled',
+      label: t('Lottery & Activities'),
+      description: t(
+        'Require human verification when joining lottery activities or spinning the prize wheel'
+      ),
+    },
   ]
   const keepSecretPlaceholder = t('Leave empty to keep the saved value')
 
@@ -261,6 +327,42 @@ export function BotProtectionSection(props: BotProtectionSectionProps) {
                 )}
               />
             </>
+          )}
+
+          {provider !== 'none' && (
+            <SettingsControlGroup className='divide-border/60 space-y-0 divide-y'>
+              <div className='pb-2.5'>
+                <div className='text-sm font-medium'>
+                  {t('Verification Scenes')}
+                </div>
+                <p className='text-muted-foreground mt-0.5 text-xs'>
+                  {t(
+                    'Choose where human verification is required when a provider is enabled'
+                  )}
+                </p>
+              </div>
+              {sceneItems.map((scene) => (
+                <FormField
+                  key={scene.name}
+                  control={form.control}
+                  name={scene.name}
+                  render={({ field }) => (
+                    <SettingsSwitchItem>
+                      <SettingsSwitchContent>
+                        <FormLabel>{scene.label}</FormLabel>
+                        <FormDescription>{scene.description}</FormDescription>
+                      </SettingsSwitchContent>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </SettingsSwitchItem>
+                  )}
+                />
+              ))}
+            </SettingsControlGroup>
           )}
         </SettingsForm>
       </Form>
