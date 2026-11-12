@@ -44,17 +44,8 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import { getPaymentErrorTranslation } from '@/features/wallet/lib/payment'
 import { handleServerError } from '@/lib/handle-server-error'
 import { cn } from '@/lib/utils'
@@ -112,9 +103,6 @@ const paymentSchema = z.object({
   PayAddress: z.string(),
   EpayId: z.string(),
   EpayKey: z.string(),
-  EpaySignType: z.string(),
-  EpayMerchantPrivateKey: z.string(),
-  EpayPlatformPublicKey: z.string(),
   Price: z.coerce.number().min(0),
   MinTopUp: z.coerce.number().min(0),
   CustomCallbackAddress: z
@@ -445,9 +433,6 @@ export function PaymentSettingsSection({
       PayAddress: removeTrailingSlash(values.PayAddress),
       EpayId: values.EpayId.trim(),
       EpayKey: values.EpayKey.trim(),
-      EpaySignType: values.EpaySignType,
-      EpayMerchantPrivateKey: values.EpayMerchantPrivateKey.trim(),
-      EpayPlatformPublicKey: values.EpayPlatformPublicKey.trim(),
       Price: values.Price,
       MinTopUp: values.MinTopUp,
       CustomCallbackAddress: removeTrailingSlash(values.CustomCallbackAddress),
@@ -492,9 +477,6 @@ export function PaymentSettingsSection({
       PayAddress: removeTrailingSlash(initialRef.current.PayAddress),
       EpayId: initialRef.current.EpayId.trim(),
       EpayKey: initialRef.current.EpayKey.trim(),
-      EpaySignType: initialRef.current.EpaySignType,
-      EpayMerchantPrivateKey: initialRef.current.EpayMerchantPrivateKey.trim(),
-      EpayPlatformPublicKey: initialRef.current.EpayPlatformPublicKey.trim(),
       Price: initialRef.current.Price,
       MinTopUp: initialRef.current.MinTopUp,
       CustomCallbackAddress: removeTrailingSlash(
@@ -540,42 +522,6 @@ export function PaymentSettingsSection({
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
 
-    if (sanitized.PayAddress !== initial.PayAddress) {
-      updates.push({ key: 'PayAddress', value: sanitized.PayAddress })
-    }
-
-    if (sanitized.EpayId !== initial.EpayId) {
-      updates.push({ key: 'EpayId', value: sanitized.EpayId })
-    }
-
-    if (sanitized.EpayKey && sanitized.EpayKey !== initial.EpayKey) {
-      updates.push({ key: 'EpayKey', value: sanitized.EpayKey })
-    }
-
-    // Keys go first: the server only accepts RSA once both saved keys work.
-    if (
-      sanitized.EpayMerchantPrivateKey &&
-      sanitized.EpayMerchantPrivateKey !== initial.EpayMerchantPrivateKey
-    ) {
-      updates.push({
-        key: 'payment_setting.epay_merchant_private_key',
-        value: sanitized.EpayMerchantPrivateKey,
-      })
-    }
-
-    if (sanitized.EpayPlatformPublicKey !== initial.EpayPlatformPublicKey) {
-      updates.push({
-        key: 'payment_setting.epay_platform_public_key',
-        value: sanitized.EpayPlatformPublicKey,
-      })
-    }
-
-    if (sanitized.EpaySignType !== initial.EpaySignType) {
-      updates.push({
-        key: 'payment_setting.epay_sign_type',
-        value: sanitized.EpaySignType,
-      })
-    }
     if (sanitized.Price !== initial.Price) {
       updates.push({ key: 'Price', value: sanitized.Price })
     }
