@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -58,6 +59,7 @@ func TestSystemUpgradeStatusReportsRunningVersion(t *testing.T) {
 			Supervised     bool   `json:"supervised"`
 			CurrentVersion string `json:"current_version"`
 			DrainTimeout   int64  `json:"drain_timeout"`
+			CanUpgrade     bool   `json:"can_upgrade"`
 		} `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
@@ -65,4 +67,22 @@ func TestSystemUpgradeStatusReportsRunningVersion(t *testing.T) {
 	assert.False(t, result.Data.Supervised)
 	assert.Equal(t, common.Version, result.Data.CurrentVersion)
 	assert.EqualValues(t, 7200, result.Data.DrainTimeout)
+	assert.True(t, result.Data.CanUpgrade)
+}
+
+func TestSystemUpgradeStatusForAdministratorOmitsUpgradeDetails(t *testing.T) {
+	_, identity, _ := setupAdminUserTest(t)
+
+	response := adminUserRequest(http.MethodGet, "/api/system-upgrade/status", "", "", identity, common.RoleAdminUser, nil, GetSystemUpgradeStatus)
+
+	var result struct {
+		Success bool                       `json:"success"`
+		Data    map[string]json.RawMessage `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+	require.True(t, result.Success)
+	assert.JSONEq(t, `false`, string(result.Data["can_upgrade"]))
+	assert.JSONEq(t, `{"downloaded":0,"total":0}`, string(result.Data["progress"]))
+	assert.NotContains(t, result.Data, "supervisor")
+	assert.Contains(t, result.Data, "check")
 }

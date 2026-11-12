@@ -17,11 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { useSyncExternalStore } from 'react'
 
 import { api } from '@/lib/api'
 import { ROLE } from '@/lib/roles'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
+
+import {
+  subscribeSystemUpdatePreferences,
+  useSystemUpdatePreferencesStore,
+} from './store'
 
 type Envelope<T> = { success: boolean; message?: string; data: T }
 
@@ -52,6 +58,11 @@ export type OnlineUpgradeStatus = {
     checked_at: number
     error?: string
   }
+  /**
+   * Whether this user may install or roll back. Administrators below root
+   * only see whether a new version exists.
+   */
+  can_upgrade: boolean
   /** This server's part: downloading and verifying the new binary. */
   progress: {
     phase?: 'downloading' | 'handing_over' | 'handed_over' | 'failed'
@@ -117,17 +128,55 @@ export function isUpgradeInProgress(status?: OnlineUpgradeStatus) {
   )
 }
 
-/** The online upgrade status, for super administrators only. */
+/**
+ * The server's release check and upgrade status. Every administrator sees
+ * whether a new version exists; only root may install it.
+ */
 export function useOnlineUpgradeStatus() {
-  const isRoot = useAuthStore(
-    (state) => (state.auth.user?.role ?? 0) >= ROLE.SUPER_ADMIN
+  const isAdmin = useAuthStore(
+    (state) => (state.auth.user?.role ?? 0) >= ROLE.ADMIN
   )
   return useQuery({
     queryKey: onlineUpgradeQueryKey,
     queryFn: ({ signal }) => getOnlineUpgradeStatus(signal),
-    enabled: isRoot,
+    enabled: isAdmin,
     refetchInterval: (query) =>
       isUpgradeInProgress(query.state.data) ? 2_000 : 60_000,
     meta: { errorToast: false },
   })
+}
+
+/**
+ * The newest release this administrator should hear about, honouring the
+ * versions they chose to ignore.
+ */
+export function useUpdateNotice() {
+  const user = useAuthStore((state) => state.auth.user)
+  const query = useOnlineUpgradeStatus()
+  const status = query.data
+  const latest = status?.check.has_update ? status.check.latest : undefined
+  const isIgnored = useSyncExternalStore(subscribeSystemUpdatePreferences, () =>
+    Boolean(
+      user &&
+      latest &&
+      useSystemUpdatePreferencesStore
+        .getState()
+        .ignoredVersionsByUserId[user.id]?.includes(latest.version)
+    )
+  )
+
+  const setIgnored = (ignored: boolean) => {
+    if (!user || !latest) return
+    useSystemUpdatePreferencesStore
+      .getState()
+      .setVersionIgnored(user.id, latest.version, ignored)
+  }
+
+  return {
+    status,
+    latest,
+    isIgnored,
+    notify: Boolean(latest) && !isIgnored,
+    setIgnored,
+  }
 }

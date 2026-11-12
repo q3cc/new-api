@@ -18,12 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
+import { lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   SecureVerificationDialog,
   useSecureVerification,
@@ -47,6 +49,12 @@ type UpgradeStep = {
   tone: 'info' | 'success' | 'error'
   percent?: number
 }
+
+const ReleaseMarkdown = lazy(() =>
+  import('@/components/ui/markdown').then((module) => ({
+    default: module.Markdown,
+  }))
+)
 
 /** Describes where an upgrade stands, from download to the old version exiting. */
 function describeUpgrade(
@@ -113,7 +121,10 @@ function describeUpgrade(
   return null
 }
 
-/** Super administrators check GitHub for a new version and install it in place. */
+/**
+ * The server's release check. Every administrator can check for a new
+ * version; root also installs it in place or rolls back.
+ */
 export function OnlineUpgradeCard() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -182,9 +193,10 @@ export function OnlineUpgradeCard() {
   }
 
   const latest = status.check.latest
+  const canUpgrade = status.can_upgrade
   const busy =
     isUpgradeInProgress(status) || upgrade.isPending || rollback.isPending
-  const step = describeUpgrade(status, t)
+  const step = canUpgrade ? describeUpgrade(status, t) : null
   const previous = status.supervisor?.previous
   const drainHours = Math.round((status.drain_timeout / 3600) * 10) / 10
   let checkText = t('Updates have not been checked yet.')
@@ -201,17 +213,19 @@ export function OnlineUpgradeCard() {
     >
       <div className='space-y-1'>
         <h3 id='online-upgrade-title' className='font-semibold'>
-          {t('Online upgrade')}
+          {canUpgrade ? t('Online upgrade') : t('System updates')}
         </h3>
-        <p className='text-muted-foreground text-sm'>
-          {t(
-            'Open connections stay on the current version for up to {{hours}} hours; new connections go to the new version right away.',
-            { hours: drainHours }
-          )}
-        </p>
+        {canUpgrade && (
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Open connections stay on the current version for up to {{hours}} hours; new connections go to the new version right away.',
+              { hours: drainHours }
+            )}
+          </p>
+        )}
       </div>
 
-      {!status.supervised && (
+      {canUpgrade && !status.supervised && (
         <Alert>
           <AlertTitle>{t('Online upgrade is not enabled')}</AlertTitle>
           <AlertDescription>
@@ -285,9 +299,13 @@ export function OnlineUpgradeCard() {
           <div className='text-muted-foreground text-sm'>
             {t('Changes in this version')}
           </div>
-          <pre className='bg-muted max-h-48 overflow-auto rounded-md p-3 text-xs whitespace-pre-wrap'>
-            {latest.notes}
-          </pre>
+          <div className='bg-muted max-h-64 overflow-auto rounded-md p-3 text-sm'>
+            <Suspense fallback={<Skeleton className='h-24 w-full' />}>
+              <ReleaseMarkdown baseUrl={latest.url || undefined}>
+                {latest.notes}
+              </ReleaseMarkdown>
+            </Suspense>
+          </div>
         </div>
       )}
 
@@ -300,7 +318,7 @@ export function OnlineUpgradeCard() {
         >
           {check.isPending ? t('Checking updates...') : t('Check for updates')}
         </Button>
-        {status.supervised && status.check.has_update && latest && (
+        {canUpgrade && status.supervised && status.check.has_update && latest && (
           <Button
             type='button'
             disabled={busy}
@@ -309,7 +327,7 @@ export function OnlineUpgradeCard() {
             {t('Upgrade to {{version}}', { version: latest.version })}
           </Button>
         )}
-        {status.supervised && previous && (
+        {canUpgrade && status.supervised && previous && (
           <Button
             type='button'
             variant='ghost'

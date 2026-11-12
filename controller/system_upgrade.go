@@ -14,20 +14,29 @@ type systemUpgradeStatus struct {
 	CurrentVersion string                    `json:"current_version"`
 	DrainTimeout   int64                     `json:"drain_timeout"`
 	Check          systemupgrade.CheckResult `json:"check"`
-	Progress       systemupgrade.Progress    `json:"progress"`
-	Supervisor     *hotupgrade.Status        `json:"supervisor,omitempty"`
+	// CanUpgrade tells the console whether this user may install or roll back.
+	CanUpgrade bool                   `json:"can_upgrade"`
+	Progress   systemupgrade.Progress `json:"progress"`
+	Supervisor *hotupgrade.Status     `json:"supervisor,omitempty"`
 }
 
-// GetSystemUpgradeStatus reports the running and latest versions and the
-// progress of an online upgrade.
+// GetSystemUpgradeStatus reports the running and latest versions and, for
+// root, the progress of an online upgrade.
 func GetSystemUpgradeStatus(c *gin.Context) {
 	status := systemUpgradeStatus{
 		Supervised:     systemupgrade.Supervised(),
 		CurrentVersion: common.Version,
 		DrainTimeout:   int64(hotupgrade.DrainTimeout().Seconds()),
 		Check:          systemupgrade.LastCheck(),
-		Progress:       systemupgrade.CurrentProgress(),
+		CanUpgrade:     c.GetInt("role") >= common.RoleRootUser,
 	}
+	if !status.CanUpgrade {
+		// Administrators only learn whether a new version exists; worker
+		// processes and download progress stay with root.
+		common.ApiSuccess(c, status)
+		return
+	}
+	status.Progress = systemupgrade.CurrentProgress()
 	if status.Supervised {
 		if supervisor, err := hotupgrade.ReadStatus(); err == nil {
 			status.Supervisor = &supervisor

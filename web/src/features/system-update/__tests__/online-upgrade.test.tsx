@@ -58,6 +58,7 @@ function statusWith(
     },
     progress: { downloaded: 0, total: 0 },
     supervisor: { phase: 'idle', draining: [] },
+    can_upgrade: true,
     ...overrides,
   }
 }
@@ -108,6 +109,43 @@ function renderCard() {
 }
 
 describe('online upgrade card', () => {
+  it('for an administrator below root reports the new version but offers no install', async () => {
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: 2, username: 'admin', role: ROLE.ADMIN })
+    mockStatus(
+      statusWith({
+        supervised: false,
+        can_upgrade: false,
+        supervisor: undefined,
+        check: {
+          has_update: true,
+          checked_at: 1_793_600_000,
+          latest: {
+            version: LATEST,
+            notes: '',
+            url: '',
+            published_at: 1_793_590_000,
+          },
+        },
+      })
+    )
+    renderCard()
+
+    expect(
+      await screen.findByText(`New version available: ${LATEST}`)
+    ).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'Check for updates' })
+    ).toBeEnabled()
+    expect(
+      screen.queryByText('Online upgrade is not enabled')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: `Upgrade to ${LATEST}` })
+    ).not.toBeInTheDocument()
+  })
+
   it('without the supervisor explains how to enable it and offers no upgrade', async () => {
     mockStatus(statusWith({ supervised: false }))
     renderCard()

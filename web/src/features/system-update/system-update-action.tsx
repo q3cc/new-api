@@ -27,15 +27,13 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { useStatus } from '@/hooks/use-status'
 import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { OnlineUpgradeCard } from './components/online-upgrade-card'
-import { useOnlineUpgradeStatus } from './online-upgrade'
+import { useUpdateNotice } from './online-upgrade'
 import { SystemUpdateDialog } from './system-update-dialog'
-import { useSystemUpdate } from './use-system-update'
 
 type SystemUpdateActionProps = {
   /** Version labels expand when the header's system-brand container has room. */
@@ -53,28 +51,28 @@ export function SystemUpdateAction(props: SystemUpdateActionProps) {
 
 function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
   const { t } = useTranslation()
-  const update = useSystemUpdate()
-  const isRoot = useAuthStore(
-    (state) => (state.auth.user?.role ?? 0) >= ROLE.SUPER_ADMIN
-  )
-  // Super administrators also see this server's own releases, which they
-  // can install online.
-  const online = useOnlineUpgradeStatus()
-  const onlineVersion = online.data?.check?.has_update
-    ? online.data.check.latest?.version
-    : undefined
-  const notify = update.shouldNotify || Boolean(onlineVersion)
+  // The server checks its own releases; every entry reads that one result.
+  const notice = useUpdateNotice()
+  const { status: siteStatus } = useStatus()
+  const notify = notice.notify
+  const checkFailed = Boolean(notice.status?.check.error)
   const [open, setOpen] = useState(false)
   const compact = props.compact ?? true
   const versionPresentation = props.presentation === 'version'
-  const version = update.currentVersion?.trim() || t('Unknown version')
+  const runningVersion =
+    notice.status?.current_version?.trim() || siteStatus?.version?.trim()
+  // Development builds report v0.0.0, which names no release.
+  const version =
+    runningVersion && runningVersion !== 'v0.0.0' && runningVersion !== '0.0.0'
+      ? runningVersion
+      : t('Unknown version')
   const label = notify ? t('Update available') : t('Check for updates')
   let description = label
   if (notify) {
     description = t('New version available: {{version}}', {
-      version: onlineVersion ?? update.release?.tag_name,
+      version: notice.latest?.version,
     })
-  } else if (update.snapshot?.error) {
+  } else if (checkFailed) {
     description = t('Failed to check for updates')
   }
   const updateAnnouncement = notify ? description : ''
@@ -84,22 +82,18 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
       { version }
     )
     description =
-      notify || update.snapshot?.error
+      notify || checkFailed
         ? `${versionDescription}\n${description}`
         : versionDescription
   }
 
   let triggerContent = (
     <>
-      {update.checking ? (
-        <Spinner data-icon='inline-start' aria-hidden='true' />
-      ) : (
-        <HugeiconsIcon
-          icon={notify ? ArrowUp01Icon : RefreshIcon}
-          data-icon='inline-start'
-          aria-hidden='true'
-        />
-      )}
+      <HugeiconsIcon
+        icon={notify ? ArrowUp01Icon : RefreshIcon}
+        data-icon='inline-start'
+        aria-hidden='true'
+      />
       <span className={cn(compact && 'hidden lg:inline')}>{label}</span>
     </>
   )
@@ -133,15 +127,13 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
     <SystemUpdateDialog
       open={open}
       onOpenChange={setOpen}
-      update={update}
-      onlineUpgrade={isRoot ? <OnlineUpgradeCard /> : null}
+      notice={notice}
       trigger={
         <Button
           type='button'
           variant={!versionPresentation && notify ? 'outline' : 'ghost'}
           aria-label={description}
           title={description}
-          aria-busy={update.checking}
           className={cn(
             'relative',
             versionPresentation &&

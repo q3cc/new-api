@@ -24,29 +24,7 @@ import {
   type StateStorage,
 } from 'zustand/middleware'
 
-import { systemReleaseSchema } from './releases'
-
-const updateSnapshotSchema = z
-  .object({
-    release: systemReleaseSchema.nullable(),
-    lastCheckedAt: z.number().finite().nonnegative(),
-    lastAttemptAt: z.number().finite().nonnegative(),
-    error: z.enum(['network', 'rate-limit', 'timeout', 'payload']).nullable(),
-  })
-  .refine(
-    (snapshot) =>
-      snapshot.lastCheckedAt <= snapshot.lastAttemptAt &&
-      snapshot.lastAttemptAt <= Date.now()
-  )
-
-export type SystemUpdateSnapshot = z.infer<typeof updateSnapshotSchema>
-
-interface SystemUpdateStore {
-  snapshot: SystemUpdateSnapshot | null
-  setSnapshot: (snapshot: SystemUpdateSnapshot) => void
-}
-
-// Checking and notification preferences remain usable when storage is blocked.
+// Notification preferences remain usable when storage is blocked.
 const updateStorage: StateStorage = {
   getItem: (key) => {
     try {
@@ -70,29 +48,6 @@ const updateStorage: StateStorage = {
     }
   },
 }
-
-export const useSystemUpdateStore = create<SystemUpdateStore>()(
-  persist(
-    (set) => ({
-      snapshot: null,
-      setSnapshot: (snapshot) => set({ snapshot }),
-    }),
-    {
-      name: 'system-update:v1',
-      storage: createJSONStorage(() => updateStorage),
-      partialize: (state) => ({ snapshot: state.snapshot }),
-      merge: (persisted, current) => {
-        const parsed = z
-          .object({ snapshot: updateSnapshotSchema.nullable() })
-          .safeParse(persisted)
-        return {
-          ...current,
-          snapshot: parsed.success ? parsed.data.snapshot : null,
-        }
-      },
-    }
-  )
-)
 
 const preferencesStorageKey = 'system-update-preferences:v1'
 const updatePreferencesSchema = z.object({

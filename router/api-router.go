@@ -419,12 +419,14 @@ func SetApiRouter(router *gin.Engine) {
 			systemTaskRoute.GET("/:task_id", controller.GetSystemTask)
 		}
 		systemUpgradeRoute := apiRouter.Group("/system-upgrade")
-		systemUpgradeRoute.Use(middleware.RootAuth(), middleware.DisableCache())
+		systemUpgradeRoute.Use(middleware.DisableCache())
 		{
-			systemUpgradeRoute.GET("/status", controller.GetSystemUpgradeStatus)
-			systemUpgradeRoute.POST("/check", middleware.CriticalRateLimit(), controller.CheckSystemUpgrade)
-			systemUpgradeRoute.POST("/apply", middleware.CriticalRateLimit(), controller.ApplySystemUpgrade)
-			systemUpgradeRoute.POST("/rollback", middleware.CriticalRateLimit(), controller.RollbackSystemUpgrade)
+			// Administrators see whether a new version exists; only root installs
+			// or rolls back.
+			systemUpgradeRoute.GET("/status", middleware.AdminAuth(), controller.GetSystemUpgradeStatus)
+			systemUpgradeRoute.POST("/check", middleware.AdminAuth(), middleware.CriticalRateLimit(), controller.CheckSystemUpgrade)
+			systemUpgradeRoute.POST("/apply", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.ApplySystemUpgrade)
+			systemUpgradeRoute.POST("/rollback", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.RollbackSystemUpgrade)
 		}
 		systemInfoRoute := apiRouter.Group("/system-info")
 		systemInfoRoute.Use(middleware.RootAuth())
