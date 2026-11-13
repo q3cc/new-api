@@ -30,16 +30,34 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { GeneralError } from '../general-error'
 
+const post = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: {} })))
+vi.mock('@/lib/http-client', () => ({ api: { post } }))
+
+// The page reloads through a cache-busted URL after dropping cached files.
 const reload = vi.fn()
+const deleteCache = vi.fn(() => Promise.resolve(true))
 
 beforeEach(() => {
   sessionStorage.clear()
+  reload.mockClear()
+  post.mockClear()
+  deleteCache.mockClear()
+  vi.stubGlobal('caches', {
+    keys: () => Promise.resolve(['assets']),
+    delete: deleteCache,
+  })
   const realWindow = window
   vi.stubGlobal(
     'window',
     new Proxy(realWindow, {
       get(target, property) {
-        if (property === 'location') return { ...target.location, reload }
+        if (property === 'location') {
+          return {
+            ...target.location,
+            href: target.location.href,
+            replace: reload,
+          }
+        }
         return Reflect.get(target, property, target)
       },
     })
@@ -90,6 +108,8 @@ test.each([
     await screen.findByText('Current page')
     await act(() => router.navigate({ to: '/wallet' }))
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    expect(reload).toHaveBeenCalledWith(expect.stringMatching(/[?&]_v=\d+/))
+    expect(deleteCache).toHaveBeenCalledExactlyOnceWith('assets')
     view.unmount()
 
     const afterReload = createTestRouter(error)
@@ -121,8 +141,44 @@ test('failed and repeated intent preloads keep the current page usable until nav
   await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
 })
 
-test.each([undefined, 429, 500])(
-  'non-chunk errors preserve their actual HTTP status (%s) without reloading',
+test.each([500, 502])(
+  'a server error (%s) drops cached files and reloads once, then displays its status',
+  async (status) => {
+    const error = {
+      config: { method: 'get', url: '/api/user/self' },
+      response: { status, headers: { 'x-oneapi-request-id': 'req-1' } },
+    }
+    const router = createTestRouter(error)
+    const view = render(<RouterProvider router={router} />)
+    await screen.findByText('Current page')
+    await act(() => router.navigate({ to: '/wallet' }))
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    expect(deleteCache).toHaveBeenCalledExactlyOnceWith('assets')
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      '/api/client-error',
+      expect.objectContaining({
+        status,
+        page: '/',
+        request: 'GET /api/user/self',
+        request_id: 'req-1',
+      }),
+      expect.anything()
+    )
+    view.unmount()
+
+    const afterReload = createTestRouter(error)
+    render(<RouterProvider router={afterReload} />)
+    await screen.findByText('Current page')
+    await act(() => afterReload.navigate({ to: '/wallet' }))
+    expect(
+      await screen.findByRole('heading', { name: String(status) })
+    ).toBeVisible()
+    expect(reload).toHaveBeenCalledTimes(1)
+  }
+)
+
+test.each([undefined, 429])(
+  'other errors preserve their actual HTTP status (%s) without reloading',
   async (status) => {
     const error = status ? { response: { status } } : new Error('Render failed')
     const router = createTestRouter(error)
@@ -135,6 +191,19 @@ test.each([undefined, 429, 500])(
       ).toBeVisible()
     } else {
       expect(screen.queryByText('500')).not.toBeInTheDocument()
+    }
+    if (status) {
+      expect(post).not.toHaveBeenCalled()
+    } else {
+      expect(post).toHaveBeenCalledExactlyOnceWith(
+        '/api/client-error',
+        expect.objectContaining({
+          message: 'Render failed',
+          stack: expect.stringContaining('Render failed'),
+          status: 0,
+        }),
+        expect.anything()
+      )
     }
     if (status === 429) {
       expect(screen.getByText('Too many requests')).toBeVisible()

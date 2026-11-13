@@ -179,7 +179,7 @@ export async function probeForNewVersion(
  * Drop anything the browser keeps that could serve the previous build again,
  * then replace the current history entry with a cache-busted URL.
  */
-async function defaultReload(): Promise<void> {
+export async function reloadWithoutCache(): Promise<void> {
   if (typeof caches !== 'undefined') {
     try {
       const names = await caches.keys()
@@ -211,7 +211,7 @@ async function runCheck(config: VersionCheckerConfig): Promise<void> {
     const result = await probeForNewVersion(config.indexPath)
     if (currentGeneration !== generation || !result.hasNewVersion) return
     updateNotified = true
-    const reload = config.reload ?? defaultReload
+    const reload = config.reload ?? reloadWithoutCache
     const forceReload = config.forceReload ?? (() => window.location.reload())
     const title = result.version
       ? t('New version available: {{version}}', { version: result.version })

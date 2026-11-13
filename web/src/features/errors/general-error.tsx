@@ -21,7 +21,9 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { reportClientError } from '@/lib/client-error-report'
 import { cn } from '@/lib/utils'
+import { reloadWithoutCache } from '@/lib/version-checker'
 
 const FEEDBACK_URL = 'https://github.com/QuantumNous/new-api/issues'
 
@@ -46,29 +48,39 @@ export function GeneralError({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { history } = useRouter()
+  const status = getHttpStatus(error)
   useEffect(() => {
+    // What the visitor asked for and was refused (4xx) is not a fault.
+    if (error === undefined || (status !== undefined && status < 500)) return
+    const reported = reportClientError(error)
+
+    // A route chunk that no longer exists and a server error are both often
+    // gone after a fresh load: a deploy replaced the files, or the server was
+    // restarting.
+    let key: string | undefined
     if (
-      !(error instanceof Error) ||
-      (error.name !== 'ChunkLoadError' &&
-        !/^Loading (CSS )?chunk .+ failed\./.test(error.message))
+      error instanceof Error &&
+      (error.name === 'ChunkLoadError' ||
+        /^Loading (CSS )?chunk .+ failed\./.test(error.message))
     ) {
-      return
+      key = `tanstack_router_reload:${error.message}`
+    } else if (status !== undefined) {
+      key = `server_error_reload:${status}:${window.location.pathname}`
     }
+    if (!key) return
 
     // Recover only when the failed route is displayed, never on intent preload.
     // Keep the marker across reloads so a persistent failure shows this page.
     try {
-      const key = `tanstack_router_reload:${error.message}`
       if (sessionStorage.getItem(key)) return
       sessionStorage.setItem(key, '1')
     } catch {
       // Without a persistent marker, reloading could loop indefinitely.
       return
     }
-    window.location.reload()
-  }, [error])
+    void reported.then(reloadWithoutCache).catch(() => window.location.reload())
+  }, [error, status])
 
-  const status = getHttpStatus(error)
   const isRateLimited = status === 429
   const title = isRateLimited
     ? t('Too many requests')

@@ -52,6 +52,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/about", controller.GetAbout)
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
+		apiRouter.POST("/client-error", middleware.CriticalRateLimit(), middleware.TryUserAuth(), anonymousRequestBodyLimit, controller.ReportClientError)
 		apiRouter.GET("/home/wallpaper", controller.GetHomeWallpaper)
 		apiRouter.GET("/home/wallpaper/:id", controller.GetHomeWallpaperImage)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
