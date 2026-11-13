@@ -5217,6 +5217,7 @@
     "Port must be a positive integer": "端口必须为正整数",
     "Position {{position}}": "第 {{position}} 位",
     "Possibly an upstream timeout": "可能是上游超时",
+    "The server restarted during this request, so half of the charge ({{quota}}) was waived": "服务器在此请求进行中重启，已减免一半费用（{{quota}}）",
     "Post Delta": "结算差额",
     "PostgreSQL detected": "检测到 PostgreSQL",
     "PostgreSQL offers advanced reliability and data integrity for production workloads.": "PostgreSQL 为生产工作负载提供高级可靠性和数据完整性。",

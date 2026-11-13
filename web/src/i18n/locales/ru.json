@@ -5217,6 +5217,7 @@
     "Port must be a positive integer": "Порт должен быть положительным целым числом",
     "Position {{position}}": "Позиция {{position}}",
     "Possibly an upstream timeout": "Возможно, истекло время ожидания upstream",
+    "The server restarted during this request, so half of the charge ({{quota}}) was waived": "Сервер перезапустился во время этого запроса, поэтому половина стоимости ({{quota}}) списана не была",
     "Post Delta": "Дельта после расчёта",
     "PostgreSQL detected": "PostgreSQL обнаружен",
     "PostgreSQL offers advanced reliability and data integrity for production workloads.": "PostgreSQL обеспечивает высокую надёжность и целостность данных для продакшен-нагрузок.",

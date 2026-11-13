@@ -35,7 +35,7 @@ func TestMain(m *testing.M) {
 			fmt.Println(os.Getenv("HOTUPGRADE_TEST_VERSION"))
 			os.Exit(0)
 		}
-		if os.Getenv("HOTUPGRADE_TEST_CRASH") == "1" {
+		if os.Getenv("HOTUPGRADE_TEST_CRASH") == "1" || os.Getenv("HOTUPGRADE_TEST_CRASH_VERSION") == os.Getenv("HOTUPGRADE_TEST_VERSION") {
 			os.Exit(3)
 		}
 		runTestWorker()
@@ -71,7 +71,16 @@ func runTestWorker() {
 		for range chunks {
 			fmt.Fprintln(w, "chunk")
 			w.(http.Flusher).Flush()
-			time.Sleep(100 * time.Millisecond)
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-r.Context().Done():
+				// Stands for settling the request's charge after it was cut.
+				if path := os.Getenv("HOTUPGRADE_TEST_SETTLED"); path != "" && common.IsForcedClose() {
+					time.Sleep(300 * time.Millisecond)
+					_ = os.WriteFile(path, []byte(version), 0o600)
+				}
+				return
+			}
 		}
 	})
 	mux.HandleFunc("/hold", func(w http.ResponseWriter, r *http.Request) {
@@ -385,7 +394,8 @@ func TestUpgradeRefusesBinaryOutsideUpgradeDirectory(t *testing.T) {
 }
 
 func TestOldVersionIsStoppedAtDrainDeadline(t *testing.T) {
-	env := newTestEnv(t, EnvDrainTimeout+"=1")
+	settled := filepath.Join(t.TempDir(), "settled")
+	env := newTestEnv(t, EnvDrainTimeout+"=1", "HOTUPGRADE_TEST_SETTLED="+settled)
 	env.start("v1")
 	oldPid := env.status().Active.Pid
 
@@ -398,6 +408,9 @@ func TestOldVersionIsStoppedAtDrainDeadline(t *testing.T) {
 	lines, _ := finishStream()
 	assert.Less(t, lines, 100, "the stream past the deadline is cut")
 	assert.Equal(t, "v2", env.servedVersion())
+	by, err := os.ReadFile(settled)
+	require.NoError(t, err, "the cut request finishes its settlement before the old version exits")
+	assert.Equal(t, "v1", string(by))
 }
 
 func TestRollbackReturnsToPreviousVersion(t *testing.T) {
@@ -428,6 +441,29 @@ func TestRestartKeepsUpgradedVersionUntilImageChanges(t *testing.T) {
 	assert.Equal(t, "v5", env.servedVersion(), "a new image replaces the upgraded binary")
 	_, err := os.Stat(filepath.Join(env.dir, "upgrade", "bin", "new-api-v2"))
 	assert.True(t, os.IsNotExist(err), "the stale download is removed")
+}
+
+func TestRestartFallsBackWhenInstalledVersionDoesNotStart(t *testing.T) {
+	env := newTestEnv(t)
+	env.start("v1")
+	code, body := env.requestUpgrade(env.download("v2", false))
+	require.Equal(t, http.StatusOK, code, body)
+	require.Eventually(t, func() bool { return env.status().Phase == PhaseSucceeded }, 10*time.Second, 50*time.Millisecond)
+
+	env.stop()
+	env.extra = []string{"HOTUPGRADE_TEST_CRASH_VERSION=v2"}
+	env.start("v1")
+	assert.Equal(t, "v1", env.servedVersion(), "the version before the one that does not start serves instead")
+	status := env.status()
+	assert.Equal(t, PhaseFailed, status.Phase)
+	assert.Equal(t, "v2", status.TargetVersion)
+	assert.Equal(t, "v1", status.Current.Version)
+	assert.Equal(t, 1, status.Active.Generation)
+
+	env.stop()
+	env.extra = nil
+	env.start("v1")
+	assert.Equal(t, "v2", env.servedVersion(), "the installed version is tried again on the next restart")
 }
 
 func TestStoppingSupervisorStopsEveryWorker(t *testing.T) {

@@ -5217,6 +5217,7 @@
     "Port must be a positive integer": "Le port doit être un entier positif",
     "Position {{position}}": "Position {{position}}",
     "Possibly an upstream timeout": "Probablement un délai d'attente en amont",
+    "The server restarted during this request, so half of the charge ({{quota}}) was waived": "Le serveur a redémarré pendant cette requête ; la moitié du coût ({{quota}}) a été annulée",
     "Post Delta": "Delta post-calcul",
     "PostgreSQL detected": "PostgreSQL détecté",
     "PostgreSQL offers advanced reliability and data integrity for production workloads.": "PostgreSQL offre une fiabilité avancée et une intégrité des données pour les charges de travail en production.",

@@ -5217,6 +5217,7 @@
     "Port must be a positive integer": "Cổng phải là số nguyên dương",
     "Position {{position}}": "Vị trí {{position}}",
     "Possibly an upstream timeout": "Có thể do thượng nguồn hết thời gian chờ",
+    "The server restarted during this request, so half of the charge ({{quota}}) was waived": "Máy chủ khởi động lại trong khi xử lý yêu cầu này nên một nửa chi phí ({{quota}}) đã được miễn",
     "Post Delta": "Chênh lệch sau",
     "PostgreSQL detected": "Phát hiện PostgreSQL",
     "PostgreSQL offers advanced reliability and data integrity for production workloads.": "PostgreSQL cung cấp độ tin cậy cao và tính toàn vẹn dữ liệu cho khối lượng công việc production.",

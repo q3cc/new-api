@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -118,24 +119,67 @@ func RunSupervisor(cfg SupervisorConfig) error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
 
-	first, err := s.spawn(s.state.Current)
-	if err != nil {
-		return err
+	// An installed version that no longer starts must not keep the container
+	// in a restart loop nobody can reach the console of: the version before
+	// it, then the image's own binary, are tried in its place. state.json is
+	// left as it is, so the next restart tries the installed version again
+	// in case the fault was not its own, such as a database that was down.
+	installed := s.state.Current
+	releases := []Release{installed}
+	if previous := s.state.Previous; previous != nil && previous.Path != installed.Path && fileMatches(*previous) == nil {
+		releases = append(releases, *previous)
 	}
-	s.mu.Lock()
-	s.active = first
-	s.status.Phase = PhaseIdle
-	s.writeStatusLocked()
-	s.mu.Unlock()
+	if image := (Release{Version: cfg.ImageVersion, Path: cfg.ImageBinary}); !slices.ContainsFunc(releases, func(r Release) bool { return r.Path == image.Path }) {
+		releases = append(releases, image)
+	}
+	var startErr error
+	for _, release := range releases {
+		s.mu.Lock()
+		s.nextGen = 0
+		s.mu.Unlock()
+		first, err := s.spawn(release)
+		if err != nil {
+			startErr = fmt.Errorf("failed to start %s: %w", release.Version, err)
+			s.cfg.Logf("%v", startErr)
+			continue
+		}
+		s.mu.Lock()
+		s.active = first
+		s.status.Phase = PhaseIdle
+		if release.Path != installed.Path {
+			s.state.Current = release
+			s.state.Previous = nil
+			s.status.Phase = PhaseFailed
+			s.status.TargetVersion = installed.Version
+			s.status.Error = fmt.Sprintf("%s did not start after a restart; running %s instead", installed.Version, release.Version)
+		}
+		s.writeStatusLocked()
+		s.mu.Unlock()
 
-	select {
-	case <-first.ready:
-		s.cfg.Logf("worker %d (%s) is serving", first.info.Generation, first.release.Version)
-	case <-first.exited:
-		return fmt.Errorf("worker exited before it started serving: %s", exitText(first))
-	case sig := <-signals:
-		s.shutdown(sig)
-		return nil
+		select {
+		case <-first.ready:
+			s.cfg.Logf("worker %d (%s) is serving", first.info.Generation, first.release.Version)
+			startErr = nil
+		case <-first.exited:
+			startErr = fmt.Errorf("worker (%s) exited before it started serving: %s", release.Version, exitText(first))
+			s.cfg.Logf("%v", startErr)
+			// This exit was handled here; it is not a serving worker dying.
+			s.mu.Lock()
+			s.active = nil
+			s.mu.Unlock()
+			select {
+			case <-s.failed:
+			default:
+			}
+			continue
+		case sig := <-signals:
+			s.shutdown(sig)
+			return nil
+		}
+		break
+	}
+	if startErr != nil {
+		return startErr
 	}
 
 	select {
@@ -177,7 +221,7 @@ func nonblockingFile(ln *net.TCPListener) (*os.File, error) {
 	return os.NewFile(uintptr(dupFd), "listener"), nil
 }
 
-// workerBaseEnv drops variables a worker must not inherit and gives every
+// workerBaseEnv clears variables a worker must not inherit and gives every
 // worker of this container the same session secret, so a user served by the
 // old worker stays signed in on the new one.
 func (s *supervisor) workerBaseEnv() []string {
@@ -196,6 +240,9 @@ func (s *supervisor) workerBaseEnv() []string {
 		}
 		env = append(env, kv)
 	}
+	// Set but empty, so a VERSION line in the worker's .env file is ignored
+	// as well: godotenv leaves variables that are already set alone.
+	env = append(env, "VERSION=")
 	if !hasSecret {
 		secret := make([]byte, 32)
 		_, _ = rand.Read(secret)
@@ -424,7 +471,9 @@ func (s *supervisor) switchTo(target Release) error {
 		candidate.info.Generation, target.Version, old.info.Generation, old.release.Version)
 	_ = old.cmd.Process.Signal(syscall.SIGUSR2)
 	go func() {
-		limit := time.NewTimer(s.cfg.DrainTimeout + time.Minute)
+		// Past its drain deadline the worker still closes what is open,
+		// settles those requests and writes its in-memory state.
+		limit := time.NewTimer(s.cfg.DrainTimeout + 2*time.Minute)
 		defer limit.Stop()
 		select {
 		case <-old.exited:

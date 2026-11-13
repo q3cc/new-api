@@ -51,6 +51,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		os.Exit(jsplugin.RunCLI(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	// The supervisor reads its settings, and the environment it gives every
+	// worker, before InitResources runs, so .env is loaded here as well.
+	_ = godotenv.Load(".env")
 	if hotupgrade.SupervisorRequested() {
 		flag.Parse()
 		if !*common.PrintVersion && !*common.PrintHelp {

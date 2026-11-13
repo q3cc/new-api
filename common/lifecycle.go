@@ -25,6 +25,11 @@ var (
 
 	openConnections atomic.Int64
 	backgroundWork  atomic.Int64
+
+	forcedClose     atomic.Bool
+	forcedCloseMu   sync.Mutex
+	forcedCloseSeq  uint64
+	forcedCloseHook = map[uint64]func(){}
 )
 
 // UpgradeWorkerGeneration returns this process's worker generation under the
@@ -92,6 +97,53 @@ func OnDrain(hook func()) func() {
 		drainHooksMu.Lock()
 		delete(drainHooks, id)
 		drainHooksMu.Unlock()
+	}
+}
+
+// StartForcedClose marks the shutdown deadline as passed: connections still
+// open are cut, and the requests they carried settle what they used so far.
+// It runs the hooks that close hijacked connections.
+func StartForcedClose() {
+	if forcedClose.Swap(true) {
+		return
+	}
+	forcedCloseMu.Lock()
+	hooks := make([]func(), 0, len(forcedCloseHook))
+	for _, hook := range forcedCloseHook {
+		hooks = append(hooks, hook)
+	}
+	forcedCloseMu.Unlock()
+	for _, hook := range hooks {
+		hook()
+	}
+}
+
+// IsForcedClose reports whether the server cut the connections that were
+// still open at the shutdown deadline. A request settling after that was
+// interrupted by the server, not by its client or the upstream.
+func IsForcedClose() bool {
+	return forcedClose.Load()
+}
+
+// OnForcedClose runs hook when the shutdown deadline cuts open connections,
+// or right away if it already has. A handler that hijacked its connection
+// registers a hook that closes it, because http.Server.Close does not. The
+// returned function removes the hook.
+func OnForcedClose(hook func()) func() {
+	forcedCloseMu.Lock()
+	if forcedClose.Load() {
+		forcedCloseMu.Unlock()
+		hook()
+		return func() {}
+	}
+	forcedCloseSeq++
+	id := forcedCloseSeq
+	forcedCloseHook[id] = hook
+	forcedCloseMu.Unlock()
+	return func() {
+		forcedCloseMu.Lock()
+		delete(forcedCloseHook, id)
+		forcedCloseMu.Unlock()
 	}
 }
 

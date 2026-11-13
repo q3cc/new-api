@@ -19,7 +19,7 @@ services:
     image: calciumion/new-api:latest
     container_name: new-api
     restart: always
-#    stop_grace_period: 2m  # 与 HOT_UPGRADE_ENABLED 一起使用，让 docker stop 时进行中的请求有时间完成 (Use with HOT_UPGRADE_ENABLED so docker stop lets running requests finish)
+#    stop_grace_period: 5m  # 与 HOT_UPGRADE_ENABLED 一起使用：docker stop 后进行中的请求有 2 分钟完成，超时的连接会被关闭并按已用量的一半结算，其余时间用于结算和写入数据 (Use with HOT_UPGRADE_ENABLED: after docker stop, running requests get 2 minutes to finish; connections still open are then closed and charged half of what they used, and the rest of the time is for settling and saving data)
     command: --log-dir /app/logs
     ports:
       - "3000:3000"

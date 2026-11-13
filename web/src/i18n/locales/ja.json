@@ -5217,6 +5217,7 @@
     "Port must be a positive integer": "ポートは正の整数でなければなりません",
     "Position {{position}}": "{{position}} 番目",
     "Possibly an upstream timeout": "上流のタイムアウトの可能性があります",
+    "The server restarted during this request, so half of the charge ({{quota}}) was waived": "このリクエストの処理中にサーバーが再起動したため、料金の半分（{{quota}}）を免除しました",
     "Post Delta": "事後差額",
     "PostgreSQL detected": "PostgreSQLが検出されました",
     "PostgreSQL offers advanced reliability and data integrity for production workloads.": "PostgreSQL は本番ワークロード向けの高度な信頼性とデータ整合性を提供します。",

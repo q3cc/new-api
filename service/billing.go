@@ -107,3 +107,17 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 	}
 	return nil
 }
+
+// quotaAfterForcedClose returns what a request pays when the server cut its
+// connection at the shutdown deadline: half of what it used up to then, the
+// other half waived because the interruption was the server's doing. Any
+// other request pays quota unchanged.
+func quotaAfterForcedClose(quota int, content []*common.Message) (int, []*common.Message) {
+	if !common.IsForcedClose() || quota <= 0 {
+		return quota, content
+	}
+	charged := quota / 2
+	return charged, append(content, common.NewMessage("The server restarted during this request, so half of the charge ({{quota}}) was waived", map[string]any{
+		"quota": logger.FormatQuota(quota - charged),
+	}))
+}

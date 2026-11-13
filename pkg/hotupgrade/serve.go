@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -19,6 +20,9 @@ type ServeOptions struct {
 	ShutdownTimeout time.Duration
 	// DrainTimeout bounds an upgrade drain (SIGUSR2 from the supervisor).
 	DrainTimeout time.Duration
+	// SettleTimeout is how long requests cut off at the deadline get to
+	// settle their charges; 30 seconds when zero.
+	SettleTimeout time.Duration
 	// Started runs once the server accepts connections.
 	Started func()
 	// Finish runs after requests, connections and background work are done,
@@ -29,11 +33,22 @@ type ServeOptions struct {
 
 // Serve runs the server until it is told to stop, then drains it. Under the
 // supervisor it serves the shared socket and reports readiness and remaining
-// connections; on its own it listens on Server.Addr as before.
+// connections; on its own it listens on Server.Addr as before. Connections
+// still open at the deadline are closed, and their requests get SettleTimeout
+// to settle what they used before the process exits.
 func Serve(opts ServeOptions) error {
 	worker := Current()
 	counter := &ConnCounter{}
 	opts.Server.ConnState = counter.Hook
+	// Requests whose handler has not returned, WebSockets included: a cut-off
+	// request still has its charge to settle after its connection is closed.
+	var running atomic.Int64
+	handler := opts.Server.Handler
+	opts.Server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		running.Add(1)
+		defer running.Add(-1)
+		handler.ServeHTTP(w, r)
+	})
 
 	var ln net.Listener
 	var err error
@@ -98,11 +113,22 @@ func Serve(opts ServeOptions) error {
 		stopReports := reportConnections(worker, counter)
 		defer stopReports()
 	}
-	if err := opts.Server.Shutdown(ctx); err != nil {
-		opts.Logf("requests still running at the deadline were cut off: %v", err)
-	}
-	if err := common.WaitConnections(ctx); err != nil {
-		opts.Logf("%d WebSocket connections still open at the deadline were cut off", common.OpenConnections())
+	shutdownErr := opts.Server.Shutdown(ctx)
+	if shutdownErr != nil || common.WaitConnections(ctx) != nil {
+		opts.Logf("%d requests still running at the deadline; closing their connections and settling their charges", running.Load())
+		common.StartForcedClose()
+		_ = opts.Server.Close()
+		settleTimeout := opts.SettleTimeout
+		if settleTimeout <= 0 {
+			settleTimeout = 30 * time.Second
+		}
+		settleDeadline := time.Now().Add(settleTimeout)
+		for running.Load() > 0 && time.Now().Before(settleDeadline) {
+			time.Sleep(50 * time.Millisecond)
+		}
+		if left := running.Load(); left > 0 {
+			opts.Logf("%d requests did not settle within %s", left, settleTimeout)
+		}
 	}
 	// Work started by finished requests, such as quota refunds, and running
 	// background tasks get at least a short grace period, even when the

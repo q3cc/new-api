@@ -120,6 +120,7 @@ func ResponsesWebSocket(c *gin.Context) {
 	}
 	defer common.TrackConnection()()
 	defer ws.Close()
+	defer common.OnForcedClose(func() { _ = ws.Close() })()
 
 	if apiError := relay.ResponsesWebSocketHelper(c, ws, runner); apiError != nil {
 		logger.LogError(c, common.LogText("responses websocket relay error: %s", common.LocalLogPreview(apiError.Error())))

@@ -91,6 +91,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// the deferred calls below has finished too.
 		defer common.TrackConnection()()
 		defer ws.Close()
+		defer common.OnForcedClose(func() { _ = ws.Close() })()
 	}
 
 	defer func() {
