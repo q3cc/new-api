@@ -67,6 +67,7 @@ import { useStatus } from '@/hooks/use-status'
 import { getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { orderGroupNames } from '@/lib/group-order'
+import { MIXED_GROUP_TAG, resolveGroupTag } from '@/lib/group-tag'
 import { handleServerError } from '@/lib/handle-server-error'
 import {
   requireServerSuccess,
@@ -173,6 +174,11 @@ export function ApiKeysMutateDrawer({
           label: key,
           desc: info.desc ? translateServerText(t, info.desc) : key,
           ratio: info.ratio,
+          // Auto routes across groups, so it sits with the mixed ones.
+          tag:
+            key === 'auto'
+              ? MIXED_GROUP_TAG
+              : resolveGroupTag(key, info.desc, info.tag),
         }
       }
     )

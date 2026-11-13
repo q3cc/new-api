@@ -8169,6 +8169,10 @@
     "Require human verification before sending password reset emails": "Yêu cầu xác minh con người trước khi gửi email đặt lại mật khẩu",
     "Require human verification when claiming daily check-in rewards": "Yêu cầu xác minh con người khi điểm danh hằng ngày",
     "Require human verification when redeeming a code in the wallet": "Yêu cầu xác minh con người khi đổi mã trong ví",
-    "Require human verification when joining lottery activities or spinning the prize wheel": "Yêu cầu xác minh con người khi tham gia hoạt động quay thưởng hoặc quay vòng quay"
+    "Require human verification when joining lottery activities or spinning the prize wheel": "Yêu cầu xác minh con người khi tham gia hoạt động quay thưởng hoặc quay vòng quay",
+    "Filter groups by tag": "Lọc nhóm theo thẻ",
+    "Mixed": "Tổng hợp",
+    "Auto ({{tag}})": "Tự động ({{tag}})",
+    "Group tag": "Thẻ nhóm"
   }
 }

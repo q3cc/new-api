@@ -20,6 +20,7 @@ import { Check, ChevronsUpDown } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { GroupTagIcon } from '@/components/group-tag-icon'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -35,6 +36,11 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useMediaQuery } from '@/hooks'
+import {
+  getGroupTagLabel,
+  MIXED_GROUP_TAG,
+  OTHER_GROUP_TAG,
+} from '@/lib/group-tag'
 import { cn } from '@/lib/utils'
 
 import {
@@ -48,6 +54,8 @@ export type ApiKeyGroupOption = {
   label: string
   desc?: string
   ratio?: number | string
+  /** Provider tag id from @/lib/group-tag; untagged options read as "other". */
+  tag?: string
 }
 
 type ApiKeyGroupComboboxProps = {
@@ -56,6 +64,25 @@ type ApiKeyGroupComboboxProps = {
   onValueChange: (value: string) => void
   placeholder?: string
   disabled?: boolean
+}
+
+type TagSection = { tag: string; options: ApiKeyGroupOption[] }
+
+// Sections follow the order the groups arrive in, so an administrator's group
+// order decides which provider comes first; mixed and other close the list.
+function groupByTag(options: ApiKeyGroupOption[]): TagSection[] {
+  const sections = new Map<string, ApiKeyGroupOption[]>()
+  for (const option of options) {
+    const tag = option.tag ?? OTHER_GROUP_TAG
+    const section = sections.get(tag)
+    if (section) section.push(option)
+    else sections.set(tag, [option])
+  }
+  const last = [MIXED_GROUP_TAG, OTHER_GROUP_TAG]
+  return [
+    ...[...sections.keys()].filter((tag) => !last.includes(tag)),
+    ...last.filter((tag) => sections.has(tag)),
+  ].map((tag) => ({ tag, options: sections.get(tag) ?? [] }))
 }
 
 export function ApiKeyGroupCombobox({
@@ -68,15 +95,26 @@ export function ApiKeyGroupCombobox({
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
+  const [activeTag, setActiveTag] = useState('')
   const shouldReduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const selectedOption = options.find((option) => option.value === value)
   const isAutoSelected = selectedOption?.value === 'auto'
 
-  const filteredOptions = useMemo(() => {
-    const search = searchValue.trim().toLowerCase()
-    if (!search) return options
+  // Tags are only worth showing when the groups span more than one of them.
+  const tagSections = useMemo(() => groupByTag(options), [options])
+  const showTags = tagSections.length > 1
+  const tagFilter =
+    showTags && tagSections.some((section) => section.tag === activeTag)
+      ? activeTag
+      : ''
 
-    return options.filter((option) => {
+  const filteredSections = useMemo(() => {
+    const search = searchValue.trim().toLowerCase()
+    const matches = options.filter((option) => {
+      if (tagFilter && (option.tag ?? OTHER_GROUP_TAG) !== tagFilter) {
+        return false
+      }
+      if (!search) return true
       const ratioText = String(option.ratio ?? '').toLowerCase()
       return (
         option.value.toLowerCase().includes(search) ||
@@ -85,13 +123,25 @@ export function ApiKeyGroupCombobox({
         ratioText.includes(search)
       )
     })
-  }, [options, searchValue])
+    return showTags
+      ? groupByTag(matches)
+      : [{ tag: OTHER_GROUP_TAG, options: matches }]
+  }, [options, searchValue, showTags, tagFilter])
 
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue)
     setOpen(false)
     setSearchValue('')
   }
+
+  const tagChips = [
+    { tag: '', label: t('All'), count: options.length },
+    ...tagSections.map((section) => ({
+      tag: section.tag,
+      label: getGroupTagLabel(section.tag, t),
+      count: section.options.length,
+    })),
+  ]
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -119,15 +169,23 @@ export function ApiKeyGroupCombobox({
           <AutoGroupFlowBorder shouldReduceMotion={shouldReduceMotion} />
         )}
         <span className='flex min-w-0 flex-1 items-center justify-between gap-2 sm:gap-3'>
-          <span className='min-w-0'>
-            <span className='block truncate font-medium'>
-              {selectedOption?.label || placeholder || t('Select a group')}
-            </span>
-            {selectedOption?.desc && (
-              <span className='text-muted-foreground block truncate text-[11px] sm:text-xs'>
-                {selectedOption.desc}
-              </span>
+          <span className='flex min-w-0 items-center gap-3'>
+            {showTags && selectedOption && (
+              <GroupTagIcon
+                tag={selectedOption.tag ?? OTHER_GROUP_TAG}
+                size={20}
+              />
             )}
+            <span className='min-w-0'>
+              <span className='block truncate font-medium'>
+                {selectedOption?.label || placeholder || t('Select a group')}
+              </span>
+              {selectedOption?.desc && (
+                <span className='text-muted-foreground block truncate text-[11px] sm:text-xs'>
+                  {selectedOption.desc}
+                </span>
+              )}
+            </span>
           </span>
           <span className='hidden sm:block'>
             <GroupRatioBadge
@@ -154,58 +212,124 @@ export function ApiKeyGroupCombobox({
             value={searchValue}
             onValueChange={setSearchValue}
           />
-          <CommandList className='max-h-[360px]'>
-            <CommandEmpty>{t('No group found.')}</CommandEmpty>
-            <CommandGroup>
-              {filteredOptions.map((option) => {
-                const isAutoOption = option.value === 'auto'
-
+          {showTags && (
+            <div
+              role='group'
+              aria-label={t('Filter groups by tag')}
+              className='flex flex-wrap gap-1.5 border-b px-2 py-2'
+            >
+              {tagChips.map((chip) => {
+                const active = chip.tag === tagFilter
                 return (
-                  <CommandItem
-                    key={option.value}
-                    value={option.value}
-                    data-auto-group-effect={isAutoOption ? 'option' : undefined}
-                    onSelect={() => handleSelect(option.value)}
+                  <Button
+                    key={chip.tag || 'all'}
+                    type='button'
+                    size='sm'
+                    variant='outline'
+                    aria-pressed={active}
+                    // Keep typing focus in the search box when a chip is clicked.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setActiveTag(chip.tag)}
                     className={cn(
-                      'data-[selected=true]:bg-muted items-start gap-3 rounded-lg px-3 py-3 transition-colors',
-                      isAutoOption &&
-                        cn(
-                          AUTO_GROUP_FRAME_CLASS_NAME,
-                          'border-primary/35 data-[selected=true]:border-primary/55'
-                        )
+                      'h-7 gap-1.5 rounded-full px-2.5 text-xs',
+                      active &&
+                        'border-primary/60 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary'
                     )}
                   >
-                    {isAutoOption && (
-                      <AutoGroupFlowBorder
-                        shouldReduceMotion={shouldReduceMotion}
-                      />
-                    )}
-                    <Check
-                      aria-hidden='true'
+                    {chip.tag && <GroupTagIcon tag={chip.tag} size={14} />}
+                    <span>{chip.label}</span>
+                    <span
                       className={cn(
-                        'mt-0.5 size-4',
-                        value === option.value ? 'opacity-100' : 'opacity-0'
+                        'tabular-nums',
+                        active ? 'text-primary/80' : 'text-muted-foreground'
                       )}
-                    />
-                    <span className='min-w-0 flex-1'>
-                      <span className='block truncate font-medium'>
-                        {option.label}
-                      </span>
-                      {option.desc && (
-                        <span className='text-muted-foreground block truncate text-xs'>
-                          {option.desc}
-                        </span>
-                      )}
+                    >
+                      {chip.count}
                     </span>
-                    <GroupRatioBadge
-                      ratio={option.ratio}
-                      isAuto={isAutoOption}
-                      shouldReduceMotion={shouldReduceMotion}
-                    />
-                  </CommandItem>
+                  </Button>
                 )
               })}
-            </CommandGroup>
+            </div>
+          )}
+          <CommandList className='max-h-[360px]'>
+            <CommandEmpty>{t('No group found.')}</CommandEmpty>
+            {filteredSections.map((section) => {
+              if (section.options.length === 0) return null
+              return (
+                <CommandGroup
+                  key={section.tag}
+                  heading={
+                    showTags ? (
+                      <span className='flex items-center gap-1.5'>
+                        <GroupTagIcon tag={section.tag} size={14} />
+                        <span>{getGroupTagLabel(section.tag, t)}</span>
+                        <span className='tabular-nums'>
+                          {section.options.length}
+                        </span>
+                      </span>
+                    ) : undefined
+                  }
+                >
+                  {section.options.map((option) => {
+                    const isAutoOption = option.value === 'auto'
+                    const isChosen = value === option.value
+
+                    return (
+                      <CommandItem
+                        key={option.value}
+                        value={option.value}
+                        data-auto-group-effect={
+                          isAutoOption ? 'option' : undefined
+                        }
+                        onSelect={() => handleSelect(option.value)}
+                        className={cn(
+                          'data-[selected=true]:bg-muted items-center gap-3 rounded-lg px-3 py-3 transition-colors',
+                          isAutoOption &&
+                            cn(
+                              AUTO_GROUP_FRAME_CLASS_NAME,
+                              'border-primary/35 data-[selected=true]:border-primary/55'
+                            )
+                        )}
+                      >
+                        {isAutoOption && (
+                          <AutoGroupFlowBorder
+                            shouldReduceMotion={shouldReduceMotion}
+                          />
+                        )}
+                        {showTags && (
+                          <GroupTagIcon
+                            tag={option.tag ?? OTHER_GROUP_TAG}
+                            size={20}
+                          />
+                        )}
+                        <span className='min-w-0 flex-1'>
+                          <span className='block truncate font-medium'>
+                            {option.label}
+                          </span>
+                          {option.desc && (
+                            <span className='text-muted-foreground block truncate text-xs'>
+                              {option.desc}
+                            </span>
+                          )}
+                        </span>
+                        <Check
+                          aria-hidden='true'
+                          className={cn(
+                            'size-4',
+                            isChosen ? 'opacity-100' : 'opacity-0'
+                          )}
+                        />
+                        <GroupRatioBadge
+                          ratio={option.ratio}
+                          isAuto={isAutoOption}
+                          shouldReduceMotion={shouldReduceMotion}
+                        />
+                      </CommandItem>
+                    )
+                  })}
+                </CommandGroup>
+              )
+            })}
           </CommandList>
         </Command>
       </PopoverContent>

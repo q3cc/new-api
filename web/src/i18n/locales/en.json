@@ -8169,6 +8169,10 @@
     "Require human verification before sending password reset emails": "Require human verification before sending password reset emails",
     "Require human verification when claiming daily check-in rewards": "Require human verification when claiming daily check-in rewards",
     "Require human verification when redeeming a code in the wallet": "Require human verification when redeeming a code in the wallet",
-    "Require human verification when joining lottery activities or spinning the prize wheel": "Require human verification when joining lottery activities or spinning the prize wheel"
+    "Require human verification when joining lottery activities or spinning the prize wheel": "Require human verification when joining lottery activities or spinning the prize wheel",
+    "Filter groups by tag": "Filter groups by tag",
+    "Mixed": "Mixed",
+    "Auto ({{tag}})": "Auto ({{tag}})",
+    "Group tag": "Group tag"
   }
 }

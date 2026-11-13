@@ -152,6 +152,7 @@ const createGroupSchema = (t: Translate) =>
         parsed.every((item) => typeof item === 'string'),
       predicateMessage: 'Expected a JSON array of group identifiers',
     }),
+    GroupTag: createJsonStringField(t),
   })
 
 type ModelFormValues = z.infer<ReturnType<typeof createModelSchema>>
@@ -261,6 +262,7 @@ export function RatioSettingsCard({
       groupDefaults.GroupSpecialUsableGroup
     ),
     GroupOrder: normalizeJsonString(groupDefaults.GroupOrder),
+    GroupTag: normalizeJsonString(groupDefaults.GroupTag),
   })
   const modelSchema = useMemo(() => createModelSchema(t), [t])
   const groupSchema = useMemo(() => createGroupSchema(t), [t])
@@ -300,6 +302,7 @@ export function RatioSettingsCard({
         groupDefaults.GroupSpecialUsableGroup
       ),
       GroupOrder: formatJsonForTextarea(groupDefaults.GroupOrder),
+      GroupTag: formatJsonForTextarea(groupDefaults.GroupTag),
     },
   })
 
@@ -353,6 +356,7 @@ export function RatioSettingsCard({
         groupDefaults.GroupSpecialUsableGroup
       ),
       GroupOrder: normalizeJsonString(groupDefaults.GroupOrder),
+      GroupTag: normalizeJsonString(groupDefaults.GroupTag),
     }
 
     groupForm.reset({
@@ -366,6 +370,7 @@ export function RatioSettingsCard({
         groupDefaults.GroupSpecialUsableGroup
       ),
       GroupOrder: formatJsonForTextarea(groupDefaults.GroupOrder),
+      GroupTag: formatJsonForTextarea(groupDefaults.GroupTag),
     })
   }, [groupDefaults, groupForm])
 
@@ -433,6 +438,7 @@ export function RatioSettingsCard({
           values.GroupSpecialUsableGroup
         ),
         GroupOrder: normalizeJsonString(values.GroupOrder),
+        GroupTag: normalizeJsonString(values.GroupTag),
       }
 
       // Map form field names to API keys (most are 1:1, except GroupSpecialUsableGroup)
@@ -440,6 +446,7 @@ export function RatioSettingsCard({
         GroupSpecialUsableGroup:
           'group_ratio_setting.group_special_usable_group',
         GroupOrder: 'group_ratio_setting.group_order',
+        GroupTag: 'group_ratio_setting.group_tag',
       }
 
       const updates = (

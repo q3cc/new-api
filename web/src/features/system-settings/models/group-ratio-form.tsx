@@ -75,6 +75,7 @@ type GroupFormValues = {
   DefaultUseAutoGroup: boolean
   GroupSpecialUsableGroup: string
   GroupOrder: string
+  GroupTag: string
 }
 
 type GroupRatioFormProps = {
@@ -174,6 +175,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
             groupGroupRatio={values.GroupGroupRatio ?? ''}
             autoGroups={values.AutoGroups ?? ''}
             groupOrder={values.GroupOrder ?? ''}
+            groupTag={values.GroupTag ?? ''}
             maxTokenAutoGroupsField={
               <FormField
                 control={form.control}

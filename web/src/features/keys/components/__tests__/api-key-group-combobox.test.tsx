@@ -67,13 +67,25 @@ const options = [
   { value: 'vip', label: 'vip', desc: 'Priority group', ratio: 3 },
 ]
 
-function Harness(props: { initialValue: string }) {
+// Tagged the way the drawer tags them: providers in the order groups arrive.
+const taggedOptions = [
+  { value: 'gpt-team', label: 'gpt-team', desc: 'Team seats', tag: 'chatgpt' },
+  { value: 'misc', label: 'misc', desc: 'Everything else', tag: 'other' },
+  { value: 'claude-max', label: 'claude-max', desc: 'Max plan', tag: 'claude' },
+  { value: 'all-in', label: 'all-in', desc: 'Every model', tag: 'mixed' },
+  { value: 'claude-aws', label: 'claude-aws', desc: 'AWS', tag: 'claude' },
+]
+
+function Harness(props: {
+  initialValue: string
+  options?: typeof taggedOptions
+}) {
   const [value, setValue] = useState(props.initialValue)
 
   return (
     <I18nextProvider i18n={i18n}>
       <ApiKeyGroupCombobox
-        options={options}
+        options={props.options ?? options}
         value={value}
         onValueChange={setValue}
       />
@@ -220,5 +232,120 @@ describe('API key group combobox Auto effect', () => {
     expect(autoOption.querySelector('[data-auto-group-flow-border]')).toBe(null)
     expect(within(autoOption).getByText('Auto')).toBeInTheDocument()
     setReducedMotion(false)
+  })
+})
+
+// Text as read out: decorative icons (and their loading placeholders) are
+// aria-hidden and left out.
+function accessibleText(element: HTMLElement): string {
+  const copy = element.cloneNode(true) as HTMLElement
+  copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove())
+  return copy.textContent ?? ''
+}
+
+function visibleGroupNames(): string[] {
+  return [
+    ...document.querySelectorAll<HTMLElement>('[data-slot="command-item"]'),
+  ].map((item) => {
+    const text = accessibleText(item)
+    const option = [...options, ...taggedOptions].find((candidate) =>
+      text.startsWith(`${candidate.label}${candidate.desc}`)
+    )
+    return option?.value ?? text
+  })
+}
+
+describe('API key group combobox tag filter', () => {
+  test('lists a chip per tag with its count and sections in arrival order, mixed and other last', () => {
+    render(<Harness initialValue='claude-max' options={taggedOptions} />)
+    fireEvent.click(getTrigger())
+
+    const chips = within(
+      screen.getByRole('group', { name: 'Filter groups by tag' })
+    ).getAllByRole('button')
+    expect(chips.map(accessibleText)).toEqual([
+      'All5',
+      'ChatGPT1',
+      'Claude2',
+      'Mixed1',
+      'Other1',
+    ])
+    expect(chips[0]).toHaveAttribute('aria-pressed', 'true')
+    expect(visibleGroupNames()).toEqual([
+      'gpt-team',
+      'claude-max',
+      'claude-aws',
+      'all-in',
+      'misc',
+    ])
+  })
+
+  test('shows only the groups of the tag whose chip is pressed, and all of them again on All', () => {
+    render(<Harness initialValue='claude-max' options={taggedOptions} />)
+    fireEvent.click(getTrigger())
+    const filter = within(
+      screen.getByRole('group', { name: 'Filter groups by tag' })
+    )
+
+    fireEvent.click(filter.getByRole('button', { name: /Claude/ }))
+    expect(filter.getByRole('button', { name: /Claude/ })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    expect(filter.getByRole('button', { name: /All/ })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+    expect(visibleGroupNames()).toEqual(['claude-max', 'claude-aws'])
+
+    fireEvent.click(filter.getByRole('button', { name: /All/ }))
+    expect(visibleGroupNames()).toHaveLength(5)
+  })
+
+  test('applies the search within the pressed tag and reports when nothing matches', () => {
+    render(<Harness initialValue='claude-max' options={taggedOptions} />)
+    fireEvent.click(getTrigger())
+    fireEvent.click(
+      within(
+        screen.getByRole('group', { name: 'Filter groups by tag' })
+      ).getByRole('button', { name: /Claude/ })
+    )
+    const search = screen.getByPlaceholderText('Search...')
+
+    fireEvent.input(search, { target: { value: 'aws' } })
+    expect(visibleGroupNames()).toEqual(['claude-aws'])
+
+    fireEvent.input(search, { target: { value: 'team' } })
+    expect(visibleGroupNames()).toEqual([])
+    expect(screen.getByText('No group found.')).toBeInTheDocument()
+  })
+
+  test('selects a group from a filtered tag and closes the popup', () => {
+    const { container } = render(
+      <Harness initialValue='claude-max' options={taggedOptions} />
+    )
+    fireEvent.click(getTrigger())
+    fireEvent.click(
+      within(
+        screen.getByRole('group', { name: 'Filter groups by tag' })
+      ).getByRole('button', { name: /ChatGPT/ })
+    )
+
+    fireEvent.click(getCommandItem('Team seats'))
+
+    expect(within(container).getByTestId('selected-group')).toHaveTextContent(
+      'gpt-team'
+    )
+    expect(getTrigger()).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  test('omits the tag filter when every group has the same tag', () => {
+    render(<Harness initialValue='default' />)
+    fireEvent.click(getTrigger())
+
+    expect(
+      screen.queryByRole('group', { name: 'Filter groups by tag' })
+    ).not.toBeInTheDocument()
+    expect(visibleGroupNames()).toEqual(['auto', 'default', 'vip'])
   })
 })

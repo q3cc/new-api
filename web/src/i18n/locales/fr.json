@@ -8169,6 +8169,10 @@
     "Require human verification before sending password reset emails": "Exiger une vérification humaine avant l'envoi des e-mails de réinitialisation du mot de passe",
     "Require human verification when claiming daily check-in rewards": "Exiger une vérification humaine lors du pointage quotidien",
     "Require human verification when redeeming a code in the wallet": "Exiger une vérification humaine lors de l'utilisation d'un code dans le portefeuille",
-    "Require human verification when joining lottery activities or spinning the prize wheel": "Exiger une vérification humaine pour participer aux activités de tombola ou tourner la roue"
+    "Require human verification when joining lottery activities or spinning the prize wheel": "Exiger une vérification humaine pour participer aux activités de tombola ou tourner la roue",
+    "Filter groups by tag": "Filtrer les groupes par étiquette",
+    "Mixed": "Mixte",
+    "Auto ({{tag}})": "Auto ({{tag}})",
+    "Group tag": "Étiquette du groupe"
   }
 }

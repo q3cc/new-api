@@ -67,6 +67,7 @@ const GROUP_RELATED_KEYS = new Set([
   'GroupRatio',
   'UserUsableGroups',
   'group_ratio_setting.group_order',
+  'group_ratio_setting.group_tag',
 ])
 
 export function useUpdateOption() {

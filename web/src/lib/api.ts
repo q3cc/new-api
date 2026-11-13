@@ -66,7 +66,8 @@ export async function getUserModels(): Promise<{
 export async function getUserGroups(): Promise<{
   success: boolean
   message?: string
-  data?: Record<string, { desc: string; ratio: number | string }>
+  // tag is set only for groups an administrator tagged (see @/lib/group-tag).
+  data?: Record<string, { desc: string; ratio: number | string; tag?: string }>
   group_order?: string[]
 }> {
   const res = await api.get('/api/user/self/groups')

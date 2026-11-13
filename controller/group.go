@@ -44,6 +44,13 @@ func GetUserGroups(c *gin.Context) {
 			"desc":  setting.GetUsableGroupDescription("auto"),
 		}
 	}
+	// "tag" is present only for groups an administrator tagged; the web console
+	// detects the tag of the others from their name and description.
+	for groupName, info := range usableGroups {
+		if tag := ratio_setting.GetGroupTag(groupName); tag != "" {
+			info["tag"] = tag
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success":     true,
 		"message":     "",

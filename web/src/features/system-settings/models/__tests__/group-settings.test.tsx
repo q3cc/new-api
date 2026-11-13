@@ -36,6 +36,7 @@ import { GroupRatioForm } from '../group-ratio-form'
 
 const defaults = {
   GroupOrder: '[]',
+  GroupTag: '{}',
   GroupRatio: '{"default":1,"vip":0.8}',
   TopupGroupRatio: '{"vip":1.2}',
   UserUsableGroups: '{"default":"Standard access","vip":"Premium access"}',
@@ -48,6 +49,7 @@ const defaults = {
 
 const schema = z.object({
   GroupOrder: z.string(),
+  GroupTag: z.string(),
   GroupRatio: z.string(),
   TopupGroupRatio: z.string(),
   UserUsableGroups: z.string(),
@@ -100,6 +102,35 @@ describe('group settings workspace', () => {
     ])
     expect(onSave.mock.calls[0][0].MaxTokenAutoGroups).toBe(5)
   })
+  it('offers the detected tag as Auto and saves the tag an administrator assigns', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn(async (_values: typeof defaults) => {})
+    render(
+      <Fixture
+        initial={{
+          GroupRatio: '{"claude-max":1,"vip":0.8}',
+          TopupGroupRatio: '{}',
+          UserUsableGroups: '{"claude-max":"Max plan","vip":"Premium access"}',
+          GroupTag: '{"removed-group":"gemini"}',
+        }}
+        onSave={onSave}
+      />
+    )
+    const tags = screen.getAllByRole('combobox', { name: 'Group tag' })
+    expect(tags[0]).toHaveValue('Auto (Claude)')
+    expect(tags[1]).toHaveValue('Auto (Other)')
+
+    await user.click(tags[1])
+    await user.click(await screen.findByRole('option', { name: 'DeepSeek' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    expect(JSON.parse(onSave.mock.calls[0][0].GroupTag)).toEqual({
+      vip: 'deepseek',
+    })
+  })
   it('filters by description and clears search without discarding edits', async () => {
     const user = userEvent.setup()
     render(<Fixture />)
@@ -149,7 +180,9 @@ describe('group settings workspace', () => {
         .map((input) => input.value)
     ).toEqual(['group_2', 'group_1', 'default', 'vip'])
 
-    await user.click(screen.getByRole('button', { name: 'Save group settings' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     const saved = onSave.mock.calls[0][0]
     expect(JSON.parse(saved.GroupRatio)).toEqual({

@@ -279,6 +279,7 @@ export type ModelSettings = {
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
   'group_ratio_setting.group_order': string
+  'group_ratio_setting.group_tag': string
   'model_deployment.ionet.api_key': string
   'model_deployment.ionet.enabled': boolean
 }
@@ -320,6 +321,7 @@ export type BillingSettings = {
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
   'group_ratio_setting.group_order': string
+  'group_ratio_setting.group_tag': string
   PayAddress: string
   EpayId: string
   EpayKey: string

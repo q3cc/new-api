@@ -34,6 +34,7 @@ function PricingFixture() {
       <GroupRatioVisualEditor
         section='pricing'
         groupOrder='[]'
+        groupTag='{}'
         onSectionChange={() => {}}
         defaultUseAutoGroupField={null}
         groupRatio={settings.GroupRatio}

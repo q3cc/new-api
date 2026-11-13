@@ -8169,6 +8169,10 @@
     "Require human verification before sending password reset emails": "發送重設密碼郵件前要求完成人機驗證",
     "Require human verification when claiming daily check-in rewards": "每日簽到領取獎勵時要求完成人機驗證",
     "Require human verification when redeeming a code in the wallet": "在錢包中使用兌換碼時要求完成人機驗證",
-    "Require human verification when joining lottery activities or spinning the prize wheel": "參與抽獎活動或轉動幸運轉盤時要求完成人機驗證"
+    "Require human verification when joining lottery activities or spinning the prize wheel": "參與抽獎活動或轉動幸運轉盤時要求完成人機驗證",
+    "Filter groups by tag": "依標籤篩選分組",
+    "Mixed": "綜合",
+    "Auto ({{tag}})": "自動（{{tag}}）",
+    "Group tag": "分組標籤"
   }
 }

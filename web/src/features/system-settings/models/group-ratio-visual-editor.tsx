@@ -50,6 +50,7 @@ import {
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
 import { EmptyState } from '@/components/empty-state'
+import { GroupTagIcon } from '@/components/group-tag-icon'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -85,6 +86,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
+import { detectGroupTag, getGroupTagLabel, GROUP_TAGS } from '@/lib/group-tag'
 import { cn } from '@/lib/utils'
 
 import { safeJsonParse } from '../utils/json-parser'
@@ -108,6 +110,7 @@ type GroupRatioVisualEditorProps = {
   maxTokenAutoGroupsField: ReactNode
   groupSpecialUsableGroup: string
   groupOrder: string
+  groupTag: string
   onChange: (field: string, value: string) => void
 }
 
@@ -118,7 +121,12 @@ type GroupPricingRow = {
   topupRatio: string
   selectable: boolean
   description: string
+  /** Assigned provider tag; '' lets the tag follow the name and description. */
+  tag: string
 }
+
+// Combobox value of the "detect automatically" choice; not a tag id.
+const AUTO_TAG_VALUE = 'auto'
 
 type DropPosition = 'before' | 'after'
 
@@ -203,11 +211,13 @@ function buildGroupPricingRows(
   groupRatio: string,
   userUsableGroups: string,
   topupGroupRatio: string,
-  groupOrder: string
+  groupOrder: string,
+  groupTag: string
 ): GroupPricingRow[] {
   const ratioMap = parseRatioMap(groupRatio)
   const usableMap = parseUsableMap(userUsableGroups)
   const topupMap = parseRatioMap(topupGroupRatio)
+  const tagMap = parseUsableMap(groupTag)
   const names = new Set([
     ...Object.keys(ratioMap),
     ...Object.keys(usableMap),
@@ -225,6 +235,7 @@ function buildGroupPricingRows(
     topupRatio: Object.hasOwn(topupMap, name) ? String(topupMap[name]) : '',
     selectable: Object.hasOwn(usableMap, name),
     description: String(usableMap[name] ?? ''),
+    tag: typeof tagMap[name] === 'string' ? tagMap[name] : '',
   }))
 }
 
@@ -232,6 +243,7 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
   const groupRatio: Record<string, number> = {}
   const userUsableGroups: Record<string, string> = {}
   const topupGroupRatio: Record<string, number> = {}
+  const groupTag: Record<string, string> = {}
 
   for (const row of rows) {
     const name = row.name.trim()
@@ -239,6 +251,9 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
     groupRatio[name] = normalizeRatio(row.ratio)
     if (row.selectable) {
       userUsableGroups[name] = row.description
+    }
+    if (row.tag) {
+      groupTag[name] = row.tag
     }
     const topup = row.topupRatio.trim()
     if (topup !== '' && Number.isFinite(Number(topup))) {
@@ -255,6 +270,7 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
       null,
       2
     ),
+    GroupTag: JSON.stringify(groupTag, null, 2),
   }
 }
 
@@ -269,6 +285,7 @@ function groupPricingSignature(rows: GroupPricingRow[]): string {
       parseRatioMap(serialized.TopupGroupRatio)
     ),
     groupOrder: parseGroupOrder(serialized.GroupOrder),
+    groupTag: canonicalizeRecord(parseUsableMap(serialized.GroupTag)),
   })
 }
 
@@ -276,7 +293,8 @@ function sourceGroupPricingSignature(
   groupRatio: string,
   userUsableGroups: string,
   topupGroupRatio: string,
-  groupOrder: string
+  groupOrder: string,
+  groupTag: string
 ): string {
   const groupNames = new Set([
     ...Object.keys(parseRatioMap(groupRatio)),
@@ -288,6 +306,15 @@ function sourceGroupPricingSignature(
     userUsableGroups: canonicalizeRecord(parseUsableMap(userUsableGroups)),
     topupGroupRatio: canonicalizeRecord(parseRatioMap(topupGroupRatio)),
     groupOrder: resolveGroupOrder(parseGroupOrder(groupOrder), [...groupNames]),
+    // Tags of groups that no longer exist are dropped when rows are saved.
+    groupTag: canonicalizeRecord(
+      Object.fromEntries(
+        Object.entries(parseUsableMap(groupTag)).filter(
+          ([name, tag]) =>
+            groupNames.has(name) && typeof tag === 'string' && tag !== ''
+        )
+      )
+    ),
   })
 }
 
@@ -343,6 +370,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   maxTokenAutoGroupsField,
   groupSpecialUsableGroup,
   groupOrder,
+  groupTag,
   onChange,
 }: GroupRatioVisualEditorProps) {
   const { t, i18n } = useTranslation()
@@ -436,6 +464,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       <TabsContent value='pricing' keepMounted>
         <GroupPricingTable
           groupOrder={groupOrder}
+          groupTag={groupTag}
           groupRatio={groupRatio}
           userUsableGroups={userUsableGroups}
           topupGroupRatio={topupGroupRatio}
@@ -545,6 +574,7 @@ type GroupPricingTableProps = {
   userUsableGroups: string
   topupGroupRatio: string
   groupOrder: string
+  groupTag: string
   onChange: (field: string, value: string) => void
   onShowDetail: (name: string) => void
 }
@@ -554,6 +584,7 @@ function GroupPricingTable({
   userUsableGroups,
   topupGroupRatio,
   groupOrder,
+  groupTag,
   onChange,
   onShowDetail,
 }: GroupPricingTableProps) {
@@ -564,7 +595,8 @@ function GroupPricingTable({
       groupRatio,
       userUsableGroups,
       topupGroupRatio,
-      groupOrder
+      groupOrder,
+      groupTag
     )
   )
   const rowsRef = useRef(rows)
@@ -580,7 +612,8 @@ function GroupPricingTable({
       groupRatio,
       userUsableGroups,
       topupGroupRatio,
-      groupOrder
+      groupOrder,
+      groupTag
     )
     setRows((currentRows) => {
       if (groupPricingSignature(currentRows) === incomingSignature) {
@@ -590,10 +623,11 @@ function GroupPricingTable({
         groupRatio,
         userUsableGroups,
         topupGroupRatio,
-        groupOrder
+        groupOrder,
+        groupTag
       )
     })
-  }, [groupRatio, userUsableGroups, topupGroupRatio, groupOrder])
+  }, [groupRatio, userUsableGroups, topupGroupRatio, groupOrder, groupTag])
 
   const emitRows = useCallback(
     (nextRows: GroupPricingRow[]) => {
@@ -604,6 +638,7 @@ function GroupPricingTable({
       onChange('UserUsableGroups', serialized.UserUsableGroups)
       onChange('TopupGroupRatio', serialized.TopupGroupRatio)
       onChange('GroupOrder', serialized.GroupOrder)
+      onChange('GroupTag', serialized.GroupTag)
     },
     [onChange]
   )
@@ -638,6 +673,7 @@ function GroupPricingTable({
         topupRatio: '',
         selectable: true,
         description: '',
+        tag: '',
       },
       ...rows,
     ])
@@ -952,6 +988,49 @@ function GroupPricingTable({
                       -
                     </span>
                   ),
+              },
+              {
+                id: 'tag',
+                header: t('Tag'),
+                className: 'w-44',
+                cell: (row) => {
+                  if (!row.selectable) {
+                    return (
+                      <span className='text-muted-foreground px-3 text-sm'>
+                        -
+                      </span>
+                    )
+                  }
+                  const detected = detectGroupTag(row.name, row.description)
+                  return (
+                    <Combobox
+                      options={[
+                        {
+                          value: AUTO_TAG_VALUE,
+                          label: t('Auto ({{tag}})', {
+                            tag: getGroupTagLabel(detected, t),
+                          }),
+                          icon: <GroupTagIcon tag={detected} />,
+                        },
+                        ...GROUP_TAGS.map((tag) => ({
+                          value: tag.id,
+                          label: getGroupTagLabel(tag.id, t),
+                          icon: <GroupTagIcon tag={tag.id} />,
+                        })),
+                      ]}
+                      value={row.tag || AUTO_TAG_VALUE}
+                      onValueChange={(value) =>
+                        updateRow(
+                          row._id,
+                          'tag',
+                          !value || value === AUTO_TAG_VALUE ? '' : value
+                        )
+                      }
+                      className='w-full'
+                      aria-label={t('Group tag')}
+                    />
+                  )
+                },
               },
               {
                 id: 'actions',

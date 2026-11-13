@@ -2,6 +2,7 @@ package ratio_setting
 
 import (
 	"errors"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -33,6 +34,11 @@ type GroupRatioSetting struct {
 	GroupGroupRatio         *types.RWMap[string, map[string]float64] `json:"group_group_ratio"`
 	GroupSpecialUsableGroup *types.RWMap[string, map[string]string]  `json:"group_special_usable_group"`
 	GroupOrder              []string                                 `json:"group_order"`
+	// GroupTag is the provider tag (for example "claude" or "mixed") an
+	// administrator assigned to a group for the API key group picker. A group
+	// without an entry is tagged by the web console from its name and
+	// description.
+	GroupTag *types.RWMap[string, string] `json:"group_tag"`
 }
 
 var groupRatioSetting GroupRatioSetting
@@ -49,6 +55,7 @@ func init() {
 		GroupRatio:              groupRatioMap,
 		GroupGroupRatio:         groupGroupRatioMap,
 		GroupOrder:              []string{},
+		GroupTag:                types.NewRWMap[string, string](),
 	}
 
 	config.GlobalConfig.Register("group_ratio_setting", &groupRatioSetting)
@@ -162,6 +169,40 @@ func CheckGroupRatio(jsonStr string) error {
 	for name, ratio := range checkGroupRatio {
 		if ratio < 0 {
 			return errors.New("group ratio must be not less than 0: " + name)
+		}
+	}
+	return nil
+}
+
+// GetGroupTag returns the provider tag an administrator assigned to a group,
+// or "" when the group has none.
+func GetGroupTag(name string) string {
+	tags := GetGroupRatioSetting().GroupTag
+	if tags == nil {
+		return ""
+	}
+	tag, _ := tags.Get(name)
+	return tag
+}
+
+var groupTagPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// CheckGroupTag validates the group -> provider tag option. The set of known
+// tags lives in the web console, so only the shape is checked here.
+func CheckGroupTag(jsonStr string) error {
+	var tags map[string]string
+	if err := common.Unmarshal([]byte(jsonStr), &tags); err != nil {
+		return err
+	}
+	if tags == nil {
+		return errors.New("group tag must be a JSON object")
+	}
+	for name, tag := range tags {
+		if strings.TrimSpace(name) == "" {
+			return errors.New("group tag contains an empty group name")
+		}
+		if !groupTagPattern.MatchString(tag) {
+			return errors.New("group tag is invalid for group: " + name)
 		}
 	}
 	return nil

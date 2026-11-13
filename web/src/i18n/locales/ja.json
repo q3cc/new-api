@@ -8169,6 +8169,10 @@
     "Require human verification before sending password reset emails": "パスワード再設定メールを送信する前に人間認証を要求します",
     "Require human verification when claiming daily check-in rewards": "毎日のチェックイン報酬を受け取る際に人間認証を要求します",
     "Require human verification when redeeming a code in the wallet": "ウォレットで引き換えコードを使用する際に人間認証を要求します",
-    "Require human verification when joining lottery activities or spinning the prize wheel": "抽選イベントへの参加やルーレットを回す際に人間認証を要求します"
+    "Require human verification when joining lottery activities or spinning the prize wheel": "抽選イベントへの参加やルーレットを回す際に人間認証を要求します",
+    "Filter groups by tag": "タグでグループを絞り込む",
+    "Mixed": "総合",
+    "Auto ({{tag}})": "自動（{{tag}}）",
+    "Group tag": "グループタグ"
   }
 }

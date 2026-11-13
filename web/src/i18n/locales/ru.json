@@ -8169,6 +8169,10 @@
     "Require human verification before sending password reset emails": "Требовать проверку на человека перед отправкой писем для сброса пароля",
     "Require human verification when claiming daily check-in rewards": "Требовать проверку на человека при ежедневной отметке",
     "Require human verification when redeeming a code in the wallet": "Требовать проверку на человека при активации промокода в кошельке",
-    "Require human verification when joining lottery activities or spinning the prize wheel": "Требовать проверку на человека при участии в розыгрышах или вращении колеса"
+    "Require human verification when joining lottery activities or spinning the prize wheel": "Требовать проверку на человека при участии в розыгрышах или вращении колеса",
+    "Filter groups by tag": "Фильтровать группы по тегу",
+    "Mixed": "Смешанные",
+    "Auto ({{tag}})": "Авто ({{tag}})",
+    "Group tag": "Тег группы"
   }
 }
