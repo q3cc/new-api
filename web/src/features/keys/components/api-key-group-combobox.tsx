@@ -68,6 +68,11 @@ type ApiKeyGroupComboboxProps = {
 
 type TagSection = { tag: string; options: ApiKeyGroupOption[] }
 
+// The auto group routes across the others, so it belongs to no tag: it is
+// listed first, on its own, whichever tag is pressed.
+const AUTO_GROUP = 'auto'
+const PINNED_SECTION = ''
+
 // Sections follow the order the groups arrive in, so an administrator's group
 // order decides which provider comes first; mixed and other close the list.
 function groupByTag(options: ApiKeyGroupOption[]): TagSection[] {
@@ -101,7 +106,10 @@ export function ApiKeyGroupCombobox({
   const isAutoSelected = selectedOption?.value === 'auto'
 
   // Tags are only worth showing when the groups span more than one of them.
-  const tagSections = useMemo(() => groupByTag(options), [options])
+  const tagSections = useMemo(
+    () => groupByTag(options.filter((option) => option.value !== AUTO_GROUP)),
+    [options]
+  )
   const showTags = tagSections.length > 1
   const tagFilter =
     showTags && tagSections.some((section) => section.tag === activeTag)
@@ -111,7 +119,15 @@ export function ApiKeyGroupCombobox({
   const filteredSections = useMemo(() => {
     const search = searchValue.trim().toLowerCase()
     const matches = options.filter((option) => {
-      if (tagFilter && (option.tag ?? OTHER_GROUP_TAG) !== tagFilter) {
+      // A group with no provider tag is not tied to one provider, so it stays
+      // listed, after the pressed tag's groups, whichever tag is pressed.
+      const tag = option.tag ?? OTHER_GROUP_TAG
+      if (
+        tagFilter &&
+        option.value !== AUTO_GROUP &&
+        tag !== tagFilter &&
+        tag !== OTHER_GROUP_TAG
+      ) {
         return false
       }
       if (!search) return true
@@ -123,9 +139,24 @@ export function ApiKeyGroupCombobox({
         ratioText.includes(search)
       )
     })
-    return showTags
-      ? groupByTag(matches)
-      : [{ tag: OTHER_GROUP_TAG, options: matches }]
+    if (!showTags) {
+      return [
+        {
+          tag: PINNED_SECTION,
+          options: [
+            ...matches.filter((option) => option.value === AUTO_GROUP),
+            ...matches.filter((option) => option.value !== AUTO_GROUP),
+          ],
+        },
+      ]
+    }
+    return [
+      {
+        tag: PINNED_SECTION,
+        options: matches.filter((option) => option.value === AUTO_GROUP),
+      },
+      ...groupByTag(matches.filter((option) => option.value !== AUTO_GROUP)),
+    ]
   }, [options, searchValue, showTags, tagFilter])
 
   const handleSelect = (selectedValue: string) => {
@@ -257,9 +288,9 @@ export function ApiKeyGroupCombobox({
               if (section.options.length === 0) return null
               return (
                 <CommandGroup
-                  key={section.tag}
+                  key={section.tag || 'pinned'}
                   heading={
-                    showTags ? (
+                    showTags && section.tag !== PINNED_SECTION ? (
                       <span className='flex items-center gap-1.5'>
                         <GroupTagIcon tag={section.tag} size={14} />
                         <span>{getGroupTagLabel(section.tag, t)}</span>

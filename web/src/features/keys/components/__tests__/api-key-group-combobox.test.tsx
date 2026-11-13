@@ -280,7 +280,7 @@ describe('API key group combobox tag filter', () => {
     ])
   })
 
-  test('shows only the groups of the tag whose chip is pressed, and all of them again on All', () => {
+  test('shows the groups of the tag whose chip is pressed followed by the untagged ones, and all of them again on All', () => {
     render(<Harness initialValue='claude-max' options={taggedOptions} />)
     fireEvent.click(getTrigger())
     const filter = within(
@@ -296,7 +296,10 @@ describe('API key group combobox tag filter', () => {
       'aria-pressed',
       'false'
     )
-    expect(visibleGroupNames()).toEqual(['claude-max', 'claude-aws'])
+    expect(visibleGroupNames()).toEqual(['claude-max', 'claude-aws', 'misc'])
+
+    fireEvent.click(filter.getByRole('button', { name: /Other/ }))
+    expect(visibleGroupNames()).toEqual(['misc'])
 
     fireEvent.click(filter.getByRole('button', { name: /All/ }))
     expect(visibleGroupNames()).toHaveLength(5)
@@ -337,6 +340,43 @@ describe('API key group combobox tag filter', () => {
       'gpt-team'
     )
     expect(getTrigger()).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  test('keeps the auto group first and listed under every tag, without counting it in a tag', () => {
+    render(
+      <Harness
+        initialValue='claude-max'
+        options={[
+          ...taggedOptions,
+          { value: 'auto', label: 'auto', desc: 'Auto routing', tag: 'mixed' },
+        ]}
+      />
+    )
+    fireEvent.click(getTrigger())
+    const filter = within(
+      screen.getByRole('group', { name: 'Filter groups by tag' })
+    )
+    expect(filter.getAllByRole('button').map(accessibleText)).toEqual([
+      'All6',
+      'ChatGPT1',
+      'Claude2',
+      'Mixed1',
+      'Other1',
+    ])
+    expect(visibleGroupNames()[0]).toBe('autoAuto routing')
+
+    fireEvent.click(filter.getByRole('button', { name: /Claude/ }))
+    expect(visibleGroupNames()).toEqual([
+      'autoAuto routing',
+      'claude-max',
+      'claude-aws',
+      'misc',
+    ])
+
+    fireEvent.input(screen.getByPlaceholderText('Search...'), {
+      target: { value: 'aws' },
+    })
+    expect(visibleGroupNames()).toEqual(['claude-aws'])
   })
 
   test('omits the tag filter when every group has the same tag', () => {
