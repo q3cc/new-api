@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"html"
 	"net/smtp"
 	"slices"
 	"strings"
@@ -75,7 +76,75 @@ func newSMTPClient(addr string) (*smtp.Client, error) {
 	return client, nil
 }
 
+// Colors, corner radius and button shape of the web console's light theme, so
+// mail reads as part of the same product. Mail clients need them inline.
+const (
+	emailColorPage       = "#f5f5f5"
+	emailColorCard       = "#ffffff"
+	emailColorText       = "#0a0a0a"
+	emailColorMuted      = "#606060"
+	emailColorBorder     = "#e8e8e8"
+	emailColorPrimary    = "#3ea4ec"
+	emailFontFamily      = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue','PingFang SC','Microsoft YaHei',sans-serif"
+	emailButtonTextColor = "#ffffff"
+)
+
+// EmailButton is the main action of a mail: a link drawn as the console's
+// primary button. label is text and link an address; both are escaped.
+func EmailButton(label string, link string) string {
+	return fmt.Sprintf(`<p style="margin:24px 0 8px;">`+"\n"+
+		`<a href="%s" style="display:inline-block;padding:10px 22px;border-radius:999px;background:%s;color:%s;font-size:14px;font-weight:600;text-decoration:none;">%s</a>`+"\n"+
+		`</p>`,
+		html.EscapeString(link), emailColorPrimary, emailButtonTextColor, html.EscapeString(label))
+}
+
+// emailDocument lays a mail's content out the way the web console looks: the
+// system name over a white rounded card on a light page, with the subject as
+// the heading. content is the HTML a caller wrote; it is placed as it is.
+func emailDocument(subject string, content string) string {
+	name := html.EscapeString(SystemName)
+	brand := fmt.Sprintf(`<span style="font-size:16px;font-weight:600;color:%s;">%s</span>`, emailColorText, name)
+	if strings.HasPrefix(Logo, "https://") || strings.HasPrefix(Logo, "http://") {
+		brand = fmt.Sprintf(`<img src="%s" alt="" width="28" height="28" style="vertical-align:middle;border-radius:8px;margin-right:10px;" />`,
+			html.EscapeString(Logo)) + "\n" + brand
+	}
+	return strings.Join([]string{
+		`<!DOCTYPE html>`,
+		`<html>`,
+		`<head>`,
+		`<meta charset="UTF-8" />`,
+		`<meta name="viewport" content="width=device-width, initial-scale=1.0" />`,
+		`</head>`,
+		fmt.Sprintf(`<body style="margin:0;padding:0;background:%s;">`, emailColorPage),
+		fmt.Sprintf(`<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:%s;padding:32px 16px;font-family:%s;">`, emailColorPage, emailFontFamily),
+		`<tr>`,
+		`<td align="center">`,
+		`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">`,
+		`<tr>`,
+		`<td style="padding:0 4px 16px;">`,
+		brand,
+		`</td>`,
+		`</tr>`,
+		`<tr>`,
+		fmt.Sprintf(`<td style="background:%s;border:1px solid %s;border-radius:16px;padding:28px 28px 24px;color:%s;font-size:14px;line-height:1.7;">`, emailColorCard, emailColorBorder, emailColorText),
+		fmt.Sprintf(`<h1 style="margin:0 0 16px;font-size:20px;line-height:1.4;font-weight:600;color:%s;">%s</h1>`, emailColorText, html.EscapeString(subject)),
+		content,
+		`</td>`,
+		`</tr>`,
+		`<tr>`,
+		fmt.Sprintf(`<td style="padding:16px 4px 0;color:%s;font-size:12px;line-height:1.6;">%s</td>`, emailColorMuted, name),
+		`</tr>`,
+		`</table>`,
+		`</td>`,
+		`</tr>`,
+		`</table>`,
+		`</body>`,
+		`</html>`,
+	}, "\n")
+}
+
 func SendEmail(subject string, receiver string, content string) error {
+	content = emailDocument(subject, content)
 	OptionMapRWMutex.RLock()
 	provider := OptionMap["EmailProvider"]
 	resendKey := OptionMap["ResendApiKey"]
