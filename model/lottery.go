@@ -2,7 +2,9 @@ package model
 
 import (
 	"crypto/rand"
+	"database/sql/driver"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"slices"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 
 	"gorm.io/gorm"
 )
@@ -50,7 +53,85 @@ const (
 	lotteryHistoryLimit = 20
 	// lotteryUserWinsLimit caps the wins listed in a user's activity state.
 	lotteryUserWinsLimit = 50
+
+	maxLotteryWinnerFields       = 10
+	maxLotteryWinnerLabelLength  = 64
+	maxLotteryWinnerValueLength  = 255
+	maxLotteryWinnerNoticeLength = 1000
+
+	// An entry's win email: not owed, waiting to be sent, or handed to the
+	// mailer. Entries drawn before win notices existed owe none.
+	lotteryWinNoticeNone    = 0
+	lotteryWinNoticePending = 1
+	lotteryWinNoticeSent    = 2
 )
+
+// Personal messages a drawn activity sends its winners; English message keys
+// the console translates with the message's params.
+const (
+	UserMessageLotteryWinTitle       = "You won a prize"
+	UserMessageLotteryWinContent     = "You won {{prize}} in the activity {{activity}}."
+	UserMessageLotteryWinInfoContent = "You won {{prize}} in the activity {{activity}}. Open Activities and fill in the information needed to receive it."
+)
+
+// LotteryWinnerField is one piece of information an activity asks the winners
+// of its manually delivered prizes for, such as a shipping address. Balance
+// and subscription prizes are delivered by the system and ask for nothing.
+type LotteryWinnerField struct {
+	Label    string `json:"label"`
+	Required bool   `json:"required"`
+}
+
+// LotteryWinnerAnswer is what a winner filled in for one field, kept with the
+// label it answered so later edits of the activity do not change its meaning.
+type LotteryWinnerAnswer struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// LotteryJSONList is a list stored as JSON text; an empty list is stored as
+// an empty string and read back as an empty list.
+type LotteryJSONList[T any] []T
+
+func (l LotteryJSONList[T]) Value() (driver.Value, error) {
+	if len(l) == 0 {
+		return "", nil
+	}
+	data, err := common.Marshal([]T(l))
+	if err != nil {
+		return nil, err
+	}
+	return string(data), nil
+}
+
+func (l *LotteryJSONList[T]) Scan(value any) error {
+	var text string
+	switch v := value.(type) {
+	case nil:
+	case string:
+		text = v
+	case []byte:
+		text = string(v)
+	default:
+		return fmt.Errorf("unsupported lottery list value %T", value)
+	}
+	items := []T{}
+	if text != "" {
+		if err := common.UnmarshalJsonStr(text, &items); err != nil {
+			return err
+		}
+	}
+	*l = items
+	return nil
+}
+
+// MarshalJSON writes an unset list as [] so clients never see null.
+func (l LotteryJSONList[T]) MarshalJSON() ([]byte, error) {
+	if l == nil {
+		return []byte("[]"), nil
+	}
+	return common.Marshal([]T(l))
+}
 
 // LotteryActivity is one lottery. Wheel activities award on every spin;
 // scheduled and participant-count activities collect entries and award them
@@ -98,6 +179,11 @@ type LotteryActivity struct {
 
 	// EntryCount counts entries (participants or spins). Every entry first
 	// increments it, which serializes entries of one activity on all databases.
+	// WinnerNotice tells winners how the prize reaches them; WinnerFields is
+	// the information they are asked to fill in to receive it.
+	WinnerNotice string                              `json:"winner_notice" gorm:"type:text"`
+	WinnerFields LotteryJSONList[LotteryWinnerField] `json:"winner_fields" gorm:"type:text"`
+
 	EntryCount int   `json:"entry_count" gorm:"type:int;default:0"`
 	DrawnAt    int64 `json:"drawn_at" gorm:"bigint;default:0"`
 	CreatedAt  int64 `json:"created_at" gorm:"bigint"`
@@ -133,7 +219,11 @@ type LotteryEntry struct {
 	DeliveryStatus string `json:"delivery_status" gorm:"type:varchar(16);default:'none';index"`
 	DeliveryNote   string `json:"delivery_note" gorm:"type:varchar(255);default:''"`
 	DeliveredAt    int64  `json:"delivered_at" gorm:"bigint;default:0"`
-	CreatedAt      int64  `json:"created_at" gorm:"bigint"`
+	// WinnerInfo is what the winner filled in for the activity's WinnerFields.
+	WinnerInfo   LotteryJSONList[LotteryWinnerAnswer] `json:"winner_info" gorm:"type:text"`
+	WinnerInfoAt int64                                `json:"winner_info_at" gorm:"bigint;default:0"`
+	WinNotice    int                                  `json:"-" gorm:"type:int;default:0;index"`
+	CreatedAt    int64                                `json:"created_at" gorm:"bigint"`
 
 	// Leaderboard entries record the locked rank and score. A disqualified
 	// entry gets no prize and the entries after it move up.
@@ -176,6 +266,27 @@ func lotteryToday() string {
 	return time.Now().Format("2006-01-02")
 }
 
+// validateWinnerInfoRequest checks the notice and the fields winners fill in.
+func (a *LotteryActivity) validateWinnerInfoRequest() error {
+	a.WinnerNotice = strings.TrimSpace(a.WinnerNotice)
+	if utf8.RuneCountInString(a.WinnerNotice) > maxLotteryWinnerNoticeLength {
+		return common.NewMessage("The winner notice must be at most 1000 characters")
+	}
+	if len(a.WinnerFields) > maxLotteryWinnerFields {
+		return common.NewMessage("Winners can be asked for at most 10 pieces of information")
+	}
+	labels := make(map[string]bool, len(a.WinnerFields))
+	for i := range a.WinnerFields {
+		label := strings.TrimSpace(a.WinnerFields[i].Label)
+		if label == "" || utf8.RuneCountInString(label) > maxLotteryWinnerLabelLength || labels[label] {
+			return common.NewMessage("Each piece of winner information needs a unique name of at most 64 characters")
+		}
+		labels[label] = true
+		a.WinnerFields[i].Label = label
+	}
+	return nil
+}
+
 // Validate checks an activity and its prizes before they are saved.
 func (a *LotteryActivity) Validate() error {
 	a.Title = strings.TrimSpace(a.Title)
@@ -188,6 +299,9 @@ func (a *LotteryActivity) Validate() error {
 	a.Rules = strings.TrimSpace(a.Rules)
 	if utf8.RuneCountInString(a.Rules) > maxLotteryRulesLength {
 		return common.NewMessage("Activity rules must be at most 10000 characters")
+	}
+	if err := a.validateWinnerInfoRequest(); err != nil {
+		return err
 	}
 	if a.StartTime < 0 || a.EndTime < 0 || a.DrawTime < 0 || a.SpendStartTime < 0 || a.SpendEndTime < 0 ||
 		a.InviteStartTime < 0 || a.InviteEndTime < 0 {
@@ -316,6 +430,10 @@ func (a *LotteryActivity) Validate() error {
 	if probability > LotteryProbabilityScale {
 		return common.NewMessage("Prize probabilities add up to more than 100%")
 	}
+	// Only manually delivered prizes need anything from their winners.
+	if !slices.ContainsFunc(a.Prizes, func(prize LotteryPrize) bool { return prize.Type == LotteryPrizeManual }) {
+		a.WinnerFields = nil
+	}
 	return nil
 }
 
@@ -405,8 +523,8 @@ func CreateLotteryActivity(activity *LotteryActivity) error {
 }
 
 // UpdateLotteryActivity saves an edited activity. Once anyone has entered,
-// only the title, description, rules text and end time may change, so
-// entrants keep the mechanics they joined under.
+// only the title, description, rules text, end time and what winners are told
+// and asked for may change, so entrants keep the mechanics they joined under.
 func UpdateLotteryActivity(update *LotteryActivity) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var current LotteryActivity
@@ -434,11 +552,16 @@ func UpdateLotteryActivity(update *LotteryActivity) error {
 			if current.Mode == LotteryModeScheduled && (update.EndTime == 0 || update.EndTime > current.DrawTime) {
 				update.EndTime = current.DrawTime
 			}
+			if err := update.validateWinnerInfoRequest(); err != nil {
+				return err
+			}
 			return tx.Model(&current).Updates(map[string]any{
-				"title":       title,
-				"description": update.Description,
-				"rules":       rules,
-				"end_time":    update.EndTime,
+				"title":         title,
+				"description":   update.Description,
+				"rules":         rules,
+				"end_time":      update.EndTime,
+				"winner_notice": update.WinnerNotice,
+				"winner_fields": update.WinnerFields,
 			}).Error
 		}
 		if err := update.Validate(); err != nil {
@@ -450,6 +573,7 @@ func UpdateLotteryActivity(update *LotteryActivity) error {
 			"min_invites", "invite_start_time", "invite_end_time",
 			"rank_metric", "rank_min_value", "leaderboard_style",
 			"wheel_total_limit", "wheel_daily_limit",
+			"winner_notice", "winner_fields",
 		).Updates(update).Error; err != nil {
 			return err
 		}
@@ -746,6 +870,11 @@ func DrawLotteryActivity(activityId int) error {
 		if err := tx.Where("activity_id = ?", activityId).Order("sort_order asc, id asc").Find(&prizes).Error; err != nil {
 			return err
 		}
+		var activity LotteryActivity
+		if err := tx.Select("title", "winner_fields").First(&activity, activityId).Error; err != nil {
+			return err
+		}
+		var messages []UserMessage
 		for i := len(entries) - 1; i > 0; i-- {
 			j, err := lotteryIntN(i + 1)
 			if err != nil {
@@ -762,9 +891,16 @@ func DrawLotteryActivity(activityId int) error {
 					"prize_name":      prize.Name,
 					"prize_type":      prize.Type,
 					"delivery_status": LotteryDeliveryPending,
+					"win_notice":      lotteryWinNoticePending,
 				}).Error; err != nil {
 					return err
 				}
+				content := UserMessageLotteryWinContent
+				if prize.Type == LotteryPrizeManual && len(activity.WinnerFields) > 0 {
+					content = UserMessageLotteryWinInfoContent
+				}
+				messages = append(messages, UserMessage{UserId: entry.UserId, Title: UserMessageLotteryWinTitle, Content: content,
+					Params: MessageParams{"prize": prize.Name, "activity": activity.Title}})
 				if prize.Type != LotteryPrizeManual {
 					winners = append(winners, entry.Id)
 				}
@@ -774,7 +910,10 @@ func DrawLotteryActivity(activityId int) error {
 			}
 			next += count
 		}
-		return nil
+		if len(messages) == 0 {
+			return nil
+		}
+		return tx.CreateInBatches(&messages, 100).Error
 	})
 	if err != nil {
 		return err
@@ -923,6 +1062,10 @@ func ListLotteryWinners(activityId int, limit int) ([]LotteryWinner, int64, erro
 type LotteryWin struct {
 	LotteryEntry
 	ActivityTitle string `json:"activity_title"`
+	// WinnerNotice and WinnerFields are the activity's, so the winner can read
+	// the notice and fill in the information without loading the activity.
+	WinnerNotice string                              `json:"winner_notice"`
+	WinnerFields LotteryJSONList[LotteryWinnerField] `json:"winner_fields"`
 }
 
 func ListUserLotteryWins(userId int, limit int) ([]LotteryWin, error) {
@@ -936,19 +1079,110 @@ func ListUserLotteryWins(userId int, limit int) ([]LotteryWin, error) {
 	}
 	var activities []LotteryActivity
 	if len(ids) > 0 {
-		if err := DB.Select("id", "title").Where("id IN ?", ids).Find(&activities).Error; err != nil {
+		if err := DB.Select("id", "title", "winner_notice", "winner_fields").Where("id IN ?", ids).Find(&activities).Error; err != nil {
 			return nil, err
 		}
 	}
-	titles := make(map[int]string, len(activities))
+	byId := make(map[int]LotteryActivity, len(activities))
 	for _, activity := range activities {
-		titles[activity.Id] = activity.Title
+		byId[activity.Id] = activity
 	}
 	wins := make([]LotteryWin, len(entries))
 	for i, entry := range entries {
-		wins[i] = LotteryWin{LotteryEntry: entry, ActivityTitle: titles[entry.ActivityId]}
+		activity := byId[entry.ActivityId]
+		wins[i] = LotteryWin{LotteryEntry: entry, ActivityTitle: activity.Title, WinnerNotice: activity.WinnerNotice, WinnerFields: activity.WinnerFields}
 	}
 	return wins, nil
+}
+
+// SubmitLotteryWinnerInfo saves what the winner of a manually delivered prize
+// filled in for the activity's winner fields, one value per field in the same
+// order. It can be corrected until the prize is marked as delivered.
+func SubmitLotteryWinnerInfo(entryId int, userId int, values []string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var entry LotteryEntry
+		if err := lockForUpdate(tx).Where("id = ? AND user_id = ? AND prize_id > 0", entryId, userId).First(&entry).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.NewMessage("Prize not found")
+			}
+			return err
+		}
+		if entry.PrizeType != LotteryPrizeManual {
+			return common.NewMessage("This prize is delivered automatically and needs no information")
+		}
+		if entry.DeliveryStatus == LotteryDeliveryDelivered {
+			return common.NewMessage("This prize has already been delivered")
+		}
+		var activity LotteryActivity
+		if err := tx.Select("winner_fields").First(&activity, entry.ActivityId).Error; err != nil {
+			return err
+		}
+		if len(activity.WinnerFields) == 0 || len(values) != len(activity.WinnerFields) {
+			return common.NewMessage("The information this activity asks for has changed. Refresh and try again.")
+		}
+		answers := make(LotteryJSONList[LotteryWinnerAnswer], len(values))
+		for i, field := range activity.WinnerFields {
+			value := strings.TrimSpace(values[i])
+			if value == "" && field.Required {
+				return common.NewMessage("{{label}} is required", map[string]any{"label": field.Label})
+			}
+			if utf8.RuneCountInString(value) > maxLotteryWinnerValueLength {
+				return common.NewMessage("{{label}} must be at most 255 characters", map[string]any{"label": field.Label})
+			}
+			answers[i] = LotteryWinnerAnswer{Label: field.Label, Value: value}
+		}
+		return tx.Model(&LotteryEntry{}).Where("id = ?", entry.Id).
+			Updates(map[string]any{"winner_info": answers, "winner_info_at": common.GetTimestamp()}).Error
+	})
+}
+
+// LotteryWinNotice is a win whose email is due, with what the email says and
+// who receives it.
+type LotteryWinNotice struct {
+	UserId        int
+	Email         string
+	Setting       dto.UserSetting
+	PrizeName     string
+	ActivityTitle string
+	WinnerNotice  string
+	// WinnerFields is empty for a prize the system delivers on its own.
+	WinnerFields LotteryJSONList[LotteryWinnerField]
+}
+
+// TakeDueLotteryWinNotices hands out the wins whose email has not been sent.
+// Each win is handed out once, even with several nodes asking: a win is
+// marked before it is returned, so a mail that then fails is not retried.
+func TakeDueLotteryWinNotices(limit int) ([]LotteryWinNotice, error) {
+	var entries []LotteryEntry
+	if err := DB.Select("id", "activity_id", "user_id", "prize_name", "prize_type").
+		Where("win_notice = ?", lotteryWinNoticePending).Order("id asc").Limit(limit).Find(&entries).Error; err != nil {
+		return nil, err
+	}
+	var notices []LotteryWinNotice
+	for _, entry := range entries {
+		result := DB.Model(&LotteryEntry{}).Where("id = ? AND win_notice = ?", entry.Id, lotteryWinNoticePending).
+			Update("win_notice", lotteryWinNoticeSent)
+		if result.Error != nil {
+			return notices, result.Error
+		}
+		if result.RowsAffected != 1 {
+			continue
+		}
+		var activity LotteryActivity
+		if err := DB.Select("title", "winner_notice", "winner_fields").First(&activity, entry.ActivityId).Error; err != nil {
+			continue
+		}
+		var user User
+		if err := DB.Select("id", "email", "setting").Where("id = ? AND status = ?", entry.UserId, common.UserStatusEnabled).First(&user).Error; err != nil {
+			continue
+		}
+		if entry.PrizeType != LotteryPrizeManual {
+			activity.WinnerFields = nil
+		}
+		notices = append(notices, LotteryWinNotice{UserId: user.Id, Email: user.Email, Setting: user.GetSetting(), PrizeName: entry.PrizeName,
+			ActivityTitle: activity.Title, WinnerNotice: activity.WinnerNotice, WinnerFields: activity.WinnerFields})
+	}
+	return notices, nil
 }
 
 // RunDueLotteryDraws draws scheduled activities whose draw time has passed

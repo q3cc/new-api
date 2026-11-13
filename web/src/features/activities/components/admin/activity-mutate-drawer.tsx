@@ -70,6 +70,7 @@ import {
 } from '../../lib/activity-form'
 import type { LotteryActivity, LotteryMode } from '../../types'
 import { ActivityPrizesField } from './activity-prizes-field'
+import { ActivityWinnerInfoField } from './activity-winner-info-field'
 import { LeaderboardRulesField } from './leaderboard-rules-field'
 
 type ActivityMutateDrawerProps = {
@@ -609,6 +610,11 @@ export function ActivityMutateDrawer(props: ActivityMutateDrawerProps) {
                   <ActivityPrizesField form={form} />
                 </SideDrawerSection>
               </fieldset>
+
+              <SideDrawerSection>
+                <SideDrawerSectionHeader title={t('For winners')} />
+                <ActivityWinnerInfoField form={form} />
+              </SideDrawerSection>
             </fieldset>
           </form>
         </Form>

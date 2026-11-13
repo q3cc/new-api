@@ -79,6 +79,14 @@ notify.quota_low_bark: "{{.Prompt}}，剩余额度：{{.Quota}}，请及时充�
 notify.quota_low_gotify: "{{.Prompt}}，当前剩余额度为 {{.Quota}}，请及时充值。"
 notify.quota_low_email: "{{.Prompt}}，当前剩余额度为 {{.Quota}}，为了不影响您的使用，请及时充值。<br/>充值链接：<a href='{{.Link}}'>{{.Link}}</a>"
 
+# Email sent to the winners of a drawn activity
+lottery.win_email_subject: "{{.SystemName}}中奖通知"
+lottery.win_email: "恭喜！您在活动 <b>{{.Activity}}</b> 中抽中了 <b>{{.Prize}}</b>。"
+lottery.win_email_fields: "领取奖品需要您填写：{{.Fields}}。请在活动页面的“我的奖品”中找到该奖品并填写。"
+lottery.win_email_fill: "填写领奖信息"
+lottery.win_email_view: "查看我的奖品"
+lottery.win_email_field_separator: "、"
+
 # Channel notices sent to administrators who receive them and to model update watchers
 channel.notify_disabled_subject: "通道「{{.Name}}」（#{{.Id}}）已被禁用"
 channel.notify_disabled_content: "通道「{{.Name}}」（#{{.Id}}）已被禁用，原因：{{.Reason}}"

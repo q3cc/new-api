@@ -54,6 +54,21 @@ export function getActivityFormSchema(t: TFunction) {
         .max(128, t('Activity title must be at most 128 characters')),
       description: z.string(),
       rules: z.string(),
+      winner_notice: z
+        .string()
+        .max(1000, t('The winner notice must be at most 1000 characters')),
+      winner_fields: z
+        .array(
+          z.object({
+            label: z
+              .string()
+              .trim()
+              .min(1, t('Enter a name'))
+              .max(64, t('The name must be at most 64 characters')),
+            required: z.boolean(),
+          })
+        )
+        .max(10),
       mode: z.enum(['wheel', 'scheduled', 'participants', 'leaderboard']),
       status: z.enum(['draft', 'active']),
       start_time: z.date().optional(),
@@ -101,6 +116,18 @@ export function getActivityFormSchema(t: TFunction) {
       if (values.rules.length > LOTTERY_MAX_RULES_LENGTH) {
         issue(['rules'], t('Activity rules must be at most 10000 characters'))
       }
+      values.winner_fields.forEach((field, index) => {
+        const label = field.label.trim()
+        const first = values.winner_fields.findIndex(
+          (other) => other.label.trim() === label
+        )
+        if (label && first !== index) {
+          issue(
+            ['winner_fields', index, 'label'],
+            t('This name is already used')
+          )
+        }
+      })
       if (values.mode === 'leaderboard') {
         if (!values.end_time) {
           issue(['end_time'], t('Leaderboards need an end time'))
@@ -204,6 +231,8 @@ export const ACTIVITY_FORM_DEFAULT_VALUES: ActivityFormValues = {
   title: '',
   description: '',
   rules: '',
+  winner_notice: '',
+  winner_fields: [],
   mode: 'wheel',
   status: 'active',
   start_time: undefined,
@@ -251,6 +280,14 @@ export function activityFormToPayload(
     title: values.title.trim(),
     description: values.description,
     rules: values.rules.trim(),
+    winner_notice: values.winner_notice.trim(),
+    // Only manually delivered prizes need anything from their winners.
+    winner_fields: values.prizes.some((prize) => prize.type === 'manual')
+      ? values.winner_fields.map((field) => ({
+          label: field.label.trim(),
+          required: field.required,
+        }))
+      : [],
     mode: values.mode,
     status: values.status,
     start_time: toSeconds(values.start_time),
@@ -295,6 +332,8 @@ export function activityToFormValues(
     title: activity.title,
     description: activity.description,
     rules: activity.rules ?? '',
+    winner_notice: activity.winner_notice ?? '',
+    winner_fields: activity.winner_fields ?? [],
     mode: activity.mode,
     status: activity.status === 'draft' ? 'draft' : 'active',
     start_time: toDate(activity.start_time),

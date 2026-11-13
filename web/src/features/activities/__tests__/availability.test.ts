@@ -53,6 +53,8 @@ function activity(
     leaderboard_style: '',
     wheel_total_limit: 0,
     wheel_daily_limit: 0,
+    winner_notice: '',
+    winner_fields: [],
     entry_count: 0,
     drawn_at: 0,
     created_at: 0,

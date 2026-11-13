@@ -232,6 +232,7 @@ func SetApiRouter(router *gin.Engine) {
 			lotteryRoute.POST("/activities/:id/join", middleware.CriticalRateLimit(), middleware.TurnstileCheck(system_setting.HumanVerificationSceneLottery), controller.JoinLotteryActivity)
 			lotteryRoute.POST("/activities/:id/spin", middleware.CriticalRateLimit(), middleware.TurnstileCheck(system_setting.HumanVerificationSceneLottery), controller.SpinLotteryWheel)
 			lotteryRoute.GET("/wins/self", controller.GetSelfLotteryWins)
+			lotteryRoute.PUT("/wins/:id/info", middleware.CriticalRateLimit(), controller.SubmitLotteryWinnerInfo)
 		}
 		lotteryAdminRoute := apiRouter.Group("/lottery/admin")
 		lotteryAdminRoute.Use(middleware.AdminAuth())

@@ -34,6 +34,7 @@ const activity = {
   rank_metric: 'recharge',
   rank_min_value: 0,
   leaderboard_style: 'horse',
+  winner_fields: [],
   prizes: [],
 } as unknown as LotteryActivity
 
@@ -54,6 +55,8 @@ function entry(
     delivery_status: 'none',
     delivery_note: '',
     delivered_at: 0,
+    winner_info: [],
+    winner_info_at: 0,
     created_at: 0,
     rank,
     score: 50 - rank,

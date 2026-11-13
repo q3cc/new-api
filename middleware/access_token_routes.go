@@ -166,6 +166,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/lottery/activities/:id/join":                          accessTokenScopeRule("wallet:write"),
 	"POST /api/lottery/activities/:id/spin":                          accessTokenScopeRule("wallet:write"),
 	"GET /api/lottery/wins/self":                                     accessTokenScopeRule("wallet:read"),
+	"PUT /api/lottery/wins/:id/info":                                 accessTokenScopeRule("wallet:write"),
 	"GET /api/lottery/admin/activities":                              accessTokenScopeRule("billing:read"),
 	"POST /api/lottery/admin/activities":                             accessTokenScopeRule("billing:write"),
 	"PUT /api/lottery/admin/activities/:id":                          accessTokenScopeRule("billing:write"),

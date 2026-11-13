@@ -13,9 +13,9 @@ import (
 
 func setupLotteryFixture(t *testing.T) {
 	t.Helper()
-	require.NoError(t, DB.AutoMigrate(&LotteryActivity{}, &LotteryPrize{}, &LotteryEntry{}))
+	require.NoError(t, DB.AutoMigrate(&LotteryActivity{}, &LotteryPrize{}, &LotteryEntry{}, &UserMessage{}))
 	clear := func() {
-		for _, table := range []any{&LotteryActivity{}, &LotteryPrize{}, &LotteryEntry{}, &TopUp{}, &UserSubscription{}, &SubscriptionPlan{}, &User{}, &Log{}} {
+		for _, table := range []any{&LotteryActivity{}, &LotteryPrize{}, &LotteryEntry{}, &UserMessage{}, &TopUp{}, &UserSubscription{}, &SubscriptionPlan{}, &User{}, &Log{}} {
 			// A fresh session per table: a reused one keeps the first table.
 			require.NoError(t, DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(table).Error)
 		}
@@ -604,4 +604,96 @@ func TestLeaderboardLocksRanksAndAwardsQualifiedEntries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, wins, 1)
 	assert.Equal(t, LotteryDeliveryDelivered, wins[0].DeliveryStatus)
+}
+
+func TestDrawnLotteryMessagesWinnersAndCollectsTheirInformation(t *testing.T) {
+	setupLotteryFixture(t)
+	winnerId := createLotteryUser(t, "lottery_info_winner")
+	otherId := createLotteryUser(t, "lottery_info_other")
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", winnerId).Update("email", "winner@example.com").Error)
+	activity := &LotteryActivity{Title: "Gift", Mode: LotteryModeParticipants, Status: LotteryStatusActive, TargetParticipants: 1,
+		WinnerNotice: " Shipped within a week ",
+		WinnerFields: LotteryJSONList[LotteryWinnerField]{{Label: " Address ", Required: true}, {Label: "Remark"}},
+		Prizes:       []LotteryPrize{{Name: "Mug", Type: LotteryPrizeManual, Quantity: 1}}}
+	require.NoError(t, CreateLotteryActivity(activity))
+	require.NoError(t, JoinLotteryActivity(activity.Id, winnerId))
+
+	var messages []UserMessage
+	require.NoError(t, DB.Find(&messages).Error)
+	require.Len(t, messages, 1)
+	assert.Equal(t, winnerId, messages[0].UserId)
+	assert.Equal(t, UserMessageLotteryWinTitle, messages[0].Title)
+	assert.Equal(t, UserMessageLotteryWinInfoContent, messages[0].Content)
+	assert.Equal(t, MessageParams{"prize": "Mug", "activity": "Gift"}, messages[0].Params)
+
+	notices, err := TakeDueLotteryWinNotices(10)
+	require.NoError(t, err)
+	require.Len(t, notices, 1)
+	assert.Equal(t, "winner@example.com", notices[0].Email)
+	assert.Equal(t, "Mug", notices[0].PrizeName)
+	assert.Equal(t, "Shipped within a week", notices[0].WinnerNotice)
+	assert.Equal(t, LotteryJSONList[LotteryWinnerField]{{Label: "Address", Required: true}, {Label: "Remark"}}, notices[0].WinnerFields)
+	again, err := TakeDueLotteryWinNotices(10)
+	require.NoError(t, err)
+	assert.Empty(t, again, "a win is mailed once")
+
+	wins, err := ListUserLotteryWins(winnerId, 10)
+	require.NoError(t, err)
+	require.Len(t, wins, 1)
+	assert.Len(t, wins[0].WinnerFields, 2)
+	assert.Empty(t, wins[0].WinnerInfo)
+	entryId := wins[0].Id
+
+	assert.Error(t, SubmitLotteryWinnerInfo(entryId, otherId, []string{"1 Road", ""}), "only the winner fills it in")
+	assert.Error(t, SubmitLotteryWinnerInfo(entryId, winnerId, []string{" ", "x"}), "a required field cannot be blank")
+	assert.Error(t, SubmitLotteryWinnerInfo(entryId, winnerId, []string{"1 Road"}), "one value per field")
+	assert.Error(t, SubmitLotteryWinnerInfo(entryId, winnerId, []string{strings.Repeat("长", 256), ""}))
+	require.NoError(t, SubmitLotteryWinnerInfo(entryId, winnerId, []string{" 1 Road ", ""}))
+	require.NoError(t, SubmitLotteryWinnerInfo(entryId, winnerId, []string{"2 Road", "ring twice"}), "it can be corrected before delivery")
+
+	entries, _, err := ListLotteryEntries(activity.Id, true, false, &common.PageInfo{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, LotteryJSONList[LotteryWinnerAnswer]{{Label: "Address", Value: "2 Road"}, {Label: "Remark", Value: "ring twice"}}, entries[0].WinnerInfo)
+	assert.Positive(t, entries[0].WinnerInfoAt)
+
+	require.NoError(t, MarkLotteryEntryDelivered(entryId, "sent"))
+	assert.Error(t, SubmitLotteryWinnerInfo(entryId, winnerId, []string{"3 Road", ""}), "a delivered prize keeps what it was sent with")
+
+	for _, fields := range []LotteryJSONList[LotteryWinnerField]{
+		{{Label: " "}},
+		{{Label: "Same"}, {Label: "Same"}},
+		{{Label: strings.Repeat("名", 65)}},
+		make(LotteryJSONList[LotteryWinnerField], 11),
+	} {
+		invalid := LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive, WinnerFields: fields,
+			Prizes: []LotteryPrize{{Name: "Mug", Type: LotteryPrizeManual}}}
+		assert.Error(t, invalid.Validate())
+	}
+
+	// A prize the system delivers asks its winner for nothing, even in an
+	// activity that asks the winners of its manual prizes.
+	autoWinnerId := createLotteryUser(t, "lottery_info_auto")
+	mixed := &LotteryActivity{Title: "Mixed", Mode: LotteryModeParticipants, Status: LotteryStatusActive, TargetParticipants: 1,
+		WinnerFields: LotteryJSONList[LotteryWinnerField]{{Label: "Address", Required: true}},
+		Prizes:       []LotteryPrize{{Name: "Credit", Type: LotteryPrizeQuota, Quota: 100, Quantity: 1}, {Name: "Mug", Type: LotteryPrizeManual, Quantity: 1}}}
+	require.NoError(t, CreateLotteryActivity(mixed))
+	require.NoError(t, JoinLotteryActivity(mixed.Id, autoWinnerId))
+	var message UserMessage
+	require.NoError(t, DB.Where("user_id = ?", autoWinnerId).First(&message).Error)
+	assert.Equal(t, UserMessageLotteryWinContent, message.Content)
+	autoNotices, err := TakeDueLotteryWinNotices(10)
+	require.NoError(t, err)
+	require.Len(t, autoNotices, 1)
+	assert.Empty(t, autoNotices[0].WinnerFields)
+	autoWins, err := ListUserLotteryWins(autoWinnerId, 10)
+	require.NoError(t, err)
+	require.Len(t, autoWins, 1)
+	assert.Error(t, SubmitLotteryWinnerInfo(autoWins[0].Id, autoWinnerId, []string{"1 Road"}))
+
+	onlyAuto := LotteryActivity{Title: "W", Mode: LotteryModeWheel, Status: LotteryStatusActive,
+		WinnerFields: LotteryJSONList[LotteryWinnerField]{{Label: "Address"}},
+		Prizes:       []LotteryPrize{{Name: "Credit", Type: LotteryPrizeQuota, Quota: 100}}}
+	require.NoError(t, onlyAuto.Validate())
+	assert.Empty(t, onlyAuto.WinnerFields, "an activity without a manual prize asks for nothing")
 }

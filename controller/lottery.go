@@ -117,6 +117,26 @@ func GetSelfLotteryWins(c *gin.Context) {
 	common.ApiSuccess(c, wins)
 }
 
+// SubmitLotteryWinnerInfo saves what the winner filled in for a prize.
+func SubmitLotteryWinnerInfo(c *gin.Context) {
+	entryId, ok := positiveIdParam(c, "id")
+	if !ok {
+		return
+	}
+	var req struct {
+		Values []string `json:"values"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := model.SubmitLotteryWinnerInfo(entryId, c.GetInt("id"), req.Values); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccessT(c, "Information saved", nil)
+}
+
 // ---- Admin APIs ----
 
 func AdminListLotteryActivities(c *gin.Context) {

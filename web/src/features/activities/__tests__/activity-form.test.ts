@@ -316,3 +316,45 @@ describe('activity rules', () => {
     expect(payload.rules).toBe('## Prizes')
   })
 })
+
+describe('winner information', () => {
+  it('rejects two pieces of information with the same name', () => {
+    expect(
+      issueMessages(
+        values({
+          winner_fields: [
+            { label: 'Address', required: true },
+            { label: ' Address ', required: false },
+          ],
+        })
+      )
+    ).toEqual(['This name is already used'])
+  })
+
+  it('sends the notice and the names without surrounding spaces', () => {
+    const payload = activityFormToPayload(
+      values({
+        winner_notice: ' Shipped within a week ',
+        winner_fields: [{ label: ' Address ', required: true }],
+        prizes: [
+          {
+            ...ACTIVITY_FORM_DEFAULT_VALUES.prizes[0],
+            name: 'Mug',
+            type: 'manual',
+          },
+        ],
+      })
+    )
+    expect(payload.winner_notice).toBe('Shipped within a week')
+    expect(payload.winner_fields).toEqual([
+      { label: 'Address', required: true },
+    ])
+  })
+
+  it('asks for nothing when no prize is delivered manually', () => {
+    const payload = activityFormToPayload(
+      values({ winner_fields: [{ label: 'Address', required: true }] })
+    )
+    expect(payload.winner_fields).toEqual([])
+  })
+})

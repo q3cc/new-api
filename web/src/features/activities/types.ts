@@ -57,6 +57,18 @@ export type LotteryPrize = {
   sort_order: number
 }
 
+/** One piece of information an activity asks its winners for. */
+export type LotteryWinnerField = {
+  label: string
+  required: boolean
+}
+
+/** What a winner filled in for one field. */
+export type LotteryWinnerAnswer = {
+  label: string
+  value: string
+}
+
 export type LotteryActivity = {
   id: number
   title: string
@@ -84,6 +96,10 @@ export type LotteryActivity = {
   leaderboard_style: LotteryLeaderboardStyle | ''
   wheel_total_limit: number
   wheel_daily_limit: number
+  /** Tells winners how the prize reaches them; empty when there is none. */
+  winner_notice: string
+  /** Information winners fill in to receive their prize. */
+  winner_fields: LotteryWinnerField[]
   entry_count: number
   drawn_at: number
   created_at: number
@@ -102,6 +118,8 @@ export type LotteryEntry = {
   delivery_status: LotteryDeliveryStatus
   delivery_note: string
   delivered_at: number
+  winner_info: LotteryWinnerAnswer[]
+  winner_info_at: number
   created_at: number
   /** Locked leaderboard rank and score. */
   rank: number
@@ -158,6 +176,8 @@ export type LotteryActivityView = LotteryActivity & {
 
 export type LotteryWin = LotteryEntry & {
   activity_title: string
+  winner_notice: string
+  winner_fields: LotteryWinnerField[]
 }
 
 export type LotteryAdminEntry = LotteryEntry & {
@@ -200,6 +220,8 @@ export type LotteryActivityPayload = Pick<
   | 'leaderboard_style'
   | 'wheel_total_limit'
   | 'wheel_daily_limit'
+  | 'winner_notice'
+  | 'winner_fields'
 > & {
   prizes: LotteryPrizePayload[]
 }

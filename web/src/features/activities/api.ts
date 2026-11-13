@@ -101,6 +101,14 @@ export async function getSelfWins(): Promise<ApiResponse<LotteryWin[]>> {
   return res.data
 }
 
+export async function submitWinnerInfo(
+  id: number,
+  values: string[]
+): Promise<ApiResponse> {
+  const res = await api.put(`/api/lottery/wins/${id}/info`, { values })
+  return res.data
+}
+
 export async function getAdminActivities(): Promise<
   ApiResponse<LotteryActivity[]>
 > {

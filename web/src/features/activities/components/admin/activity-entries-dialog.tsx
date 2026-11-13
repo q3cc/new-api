@@ -144,6 +144,19 @@ export function ActivityEntriesDialog(props: ActivityEntriesDialogProps) {
               {t(entry.delivery_note)}
             </span>
           ) : null}
+          {entry.winner_info.map((answer) => (
+            <span key={answer.label} className='text-xs break-words'>
+              <span className='text-muted-foreground'>{answer.label}: </span>
+              {answer.value || '-'}
+            </span>
+          ))}
+          {entry.prize_type === 'manual' &&
+          entry.winner_info.length === 0 &&
+          (props.activity?.winner_fields.length ?? 0) > 0 ? (
+            <span className='text-muted-foreground text-xs'>
+              {t('Winner information not filled in yet')}
+            </span>
+          ) : null}
         </div>
       )
     },

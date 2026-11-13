@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { Trophy } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { TimestampCell } from '@/components/activity-time-cell'
@@ -27,14 +28,17 @@ import {
 } from '@/components/data-table'
 import { EmptyState } from '@/components/empty-state'
 import { StatusBadge } from '@/components/status-badge'
+import { Button } from '@/components/ui/button'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { activitiesQueryKeys, getSelfWins } from '../api'
 import { LOTTERY_DELIVERY_STATUSES, LOTTERY_PRIZE_TYPES } from '../constants'
 import type { LotteryWin } from '../types'
+import { WinnerInfoDialog } from './winner-info-dialog'
 
 export function MyPrizes() {
   const { t } = useTranslation()
+  const [editing, setEditing] = useState<LotteryWin | null>(null)
   const { data, isPending } = useQuery({
     queryKey: activitiesQueryKeys.wins(),
     queryFn: async () => requireServerSuccess(await getSelfWins()).data ?? [],
@@ -87,6 +91,28 @@ export function MyPrizes() {
       },
     },
     {
+      id: 'info',
+      header: t('Information'),
+      cell: (win) => {
+        // Only a manually delivered prize needs anything from its winner.
+        if (win.prize_type !== 'manual' || win.winner_fields.length === 0) {
+          return '-'
+        }
+        if (win.delivery_status === 'delivered') return t('Filled in')
+        return (
+          <Button
+            variant={win.winner_info.length > 0 ? 'outline' : 'default'}
+            size='sm'
+            onClick={() => setEditing(win)}
+          >
+            {win.winner_info.length > 0
+              ? t('Edit information')
+              : t('Fill in information')}
+          </Button>
+        )
+      },
+    },
+    {
       id: 'time',
       header: t('Won at'),
       cell: (win) => (
@@ -100,10 +126,13 @@ export function MyPrizes() {
   ]
 
   return (
-    <StaticDataTable
-      columns={columns}
-      data={data}
-      getRowKey={(win) => win.id}
-    />
+    <>
+      <StaticDataTable
+        columns={columns}
+        data={data}
+        getRowKey={(win) => win.id}
+      />
+      <WinnerInfoDialog win={editing} onClose={() => setEditing(null)} />
+    </>
   )
 }

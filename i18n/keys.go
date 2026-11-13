@@ -99,6 +99,12 @@ const (
 	MsgNotifyQuotaLowBark              = "notify.quota_low_bark"
 	MsgNotifyQuotaLowGotify            = "notify.quota_low_gotify"
 	MsgNotifyQuotaLowEmail             = "notify.quota_low_email"
+	MsgLotteryWinEmailSubject          = "lottery.win_email_subject"
+	MsgLotteryWinEmail                 = "lottery.win_email"
+	MsgLotteryWinEmailFields           = "lottery.win_email_fields"
+	MsgLotteryWinEmailFieldSeparator   = "lottery.win_email_field_separator"
+	MsgLotteryWinEmailFill             = "lottery.win_email_fill"
+	MsgLotteryWinEmailView             = "lottery.win_email_view"
 )
 
 // Channel notices sent to administrators who receive them and to model update

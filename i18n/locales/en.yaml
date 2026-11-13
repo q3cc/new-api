@@ -78,6 +78,14 @@ notify.quota_low_bark: "{{.Prompt}}, remaining quota: {{.Quota}}. Please top up 
 notify.quota_low_gotify: "{{.Prompt}}. Your remaining quota is {{.Quota}}. Please top up soon."
 notify.quota_low_email: "{{.Prompt}}. Your remaining quota is {{.Quota}}. Top up soon to keep using the service.<br/>Top-up link: <a href='{{.Link}}'>{{.Link}}</a>"
 
+# Email sent to the winners of a drawn activity
+lottery.win_email_subject: "{{.SystemName}}: you won a prize"
+lottery.win_email: "Congratulations! You won <b>{{.Prize}}</b> in the activity <b>{{.Activity}}</b>."
+lottery.win_email_fields: "To receive it, please fill in: {{.Fields}}. You find the prize under My prizes in Activities."
+lottery.win_email_fill: "Fill in information"
+lottery.win_email_view: "View my prizes"
+lottery.win_email_field_separator: ", "
+
 # Channel notices sent to administrators who receive them and to model update watchers
 channel.notify_disabled_subject: "Channel \"{{.Name}}\" (#{{.Id}}) has been disabled"
 channel.notify_disabled_content: "Channel \"{{.Name}}\" (#{{.Id}}) has been disabled. Reason: {{.Reason}}"
