@@ -180,7 +180,7 @@ function OptionCombobox(props: LegacyComboboxProps) {
               <span className='min-w-0 break-words'>
                 {option.label}
                 {option.description && (
-                  <span className='text-muted-foreground block break-all text-xs'>
+                  <span className='text-muted-foreground block text-xs break-all'>
                     {option.description}
                   </span>
                 )}
@@ -287,6 +287,9 @@ function ComboboxContent({
     'side' | 'align' | 'sideOffset' | 'alignOffset' | 'anchor'
   >) {
   const container = usePortalContainer()
+  // The popup is as wide as its anchor but never narrower than its options
+  // need to stay on one line; the positioner then shifts or flips it to keep
+  // it inside the viewport when the anchor sits at an edge.
   return (
     <ComboboxPrimitive.Portal container={container}>
       <ComboboxPrimitive.Positioner
@@ -301,7 +304,7 @@ function ComboboxContent({
           data-slot='combobox-content'
           data-chips={!!anchor}
           className={cn(
-            'group/combobox-content bg-popover text-popover-foreground ring-foreground/10 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 *:data-[slot=input-group]:border-input/30 *:data-[slot=input-group]:bg-input/30 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 relative max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-[calc(var(--anchor-width)+--spacing(7))] origin-(--transform-origin) overflow-hidden rounded-lg shadow-md ring-1 duration-100 data-[chips=true]:min-w-(--anchor-width) *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-8 *:data-[slot=input-group]:shadow-none',
+            'group/combobox-content bg-popover text-popover-foreground ring-foreground/10 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 *:data-[slot=input-group]:border-input/30 *:data-[slot=input-group]:bg-input/30 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 relative max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-[max(calc(var(--anchor-width)+--spacing(7)),--spacing(44))] origin-(--transform-origin) overflow-hidden rounded-lg shadow-md ring-1 duration-100 data-[chips=true]:min-w-[max(var(--anchor-width),--spacing(44))] *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-8 *:data-[slot=input-group]:shadow-none',
             className
           )}
           {...props}
