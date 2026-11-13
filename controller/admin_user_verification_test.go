@@ -376,6 +376,35 @@ func TestAdminUserVerificationPolicy(t *testing.T) {
 			assert.NotContains(t, string(auditJSON), secret)
 		}
 	})
+	t.Run("a user:write token deletes on its grant without a proof", func(t *testing.T) {
+		operator, _, target := setupAdminUserTest(t)
+		require.NoError(t, model.DB.AutoMigrate(&model.ExternalIdentityClaim{}, &model.Token{}))
+		raw, _ := createScopedAccessToken(t, operator.Id, 0, "user:write")
+		response := accessTokenRequest(newAccessTokenTestRouter(), http.MethodDelete, fmt.Sprintf("/api/user/%d", target.Id), raw, "", "")
+		body := decodeSecurityEnrollmentResponse(t, response)
+		require.True(t, body.Success, body.Message)
+		_, err := model.GetUserById(target.Id, true)
+		assert.Error(t, err)
+		var audit model.AuditLog
+		require.NoError(t, model.LOG_DB.Where("action = ?", "user.delete").Last(&audit).Error)
+		assert.Equal(t, "access_token", audit.AuthMethod)
+		require.NotNil(t, audit.Other.Op)
+		params, err := common.Marshal(audit.Other.Op.Params)
+		require.NoError(t, err)
+		assert.Contains(t, string(params), `"verification_method":"access_token"`)
+	})
+	t.Run("a token without user:write, or for account security, still needs a proof", func(t *testing.T) {
+		operator, _, target := setupAdminUserTest(t)
+		for _, scopes := range [][]string{{"user:read"}, {"account_security:write"}} {
+			_, token := createScopedAccessToken(t, operator.Id, 0, scopes...)
+			identity := service.AuthIdentity{UserID: operator.Id, SessionID: model.AccessTokenSessionID(token.Id), UserAuthVersion: 1, SessionVersion: model.AccessTokenSessionVersion}
+			assert.Nil(t, service.AccessTokenOperationGrant(identity, service.VerificationScopeAdminUserDelete), scopes)
+			assert.Nil(t, service.AccessTokenOperationGrant(identity, service.VerificationScopeTwoFADisable), scopes)
+			assert.Nil(t, service.AccessTokenOperationGrant(identity, service.VerificationScopeAccessTokenGenerate), scopes)
+		}
+		_, err := model.GetUserById(target.Id, false)
+		assert.NoError(t, err)
+	})
 	t.Run("a user:read token cannot obtain a proof", func(t *testing.T) {
 		operator, _, target := setupAdminUserTest(t)
 		raw, _ := createScopedAccessToken(t, operator.Id, 0, "user:read")

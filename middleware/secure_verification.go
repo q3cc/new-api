@@ -36,12 +36,16 @@ func SecureVerificationRequired() gin.HandlerFunc {
 
 // RequireSecurityProof validates a proof against the authenticated dashboard
 // session or scoped access token and writes the shared proof error contract on
-// failure.
+// failure. An access token whose grant covers an administrative operation
+// needs no proof for it.
 func RequireSecurityProof(c *gin.Context, operation service.VerificationOperation) *model.AuthFlowAuthorization {
 	identity, ok := GetStepUpIdentity(c)
 	if !ok {
 		securityProofError(c, "SECURITY_PROOF_INVALID", "Security verification is no longer valid. Please verify again.")
 		return nil
+	}
+	if authorization := service.AccessTokenOperationGrant(identity, operation.Scope); authorization != nil {
+		return authorization
 	}
 	raw := strings.TrimSpace(c.GetHeader("X-Security-Proof"))
 	if raw == "" {

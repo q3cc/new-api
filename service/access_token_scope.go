@@ -272,3 +272,31 @@ func requireAccessTokenVerificationScope(identity AuthIdentity, verificationScop
 	}
 	return nil
 }
+
+// AccessTokenOperationGrant authorizes an administrative operation for a PAT
+// on its grant alone, and returns nil when the request needs a proof instead.
+// A token is a credential for programs, which cannot answer a password or
+// second-factor prompt, so for channel key disclosure and administrative user
+// operations the scope its owner granted stands in for the proof. Operations
+// on the owner's own account security still need a proof, and the ones a token
+// may never perform stay forbidden.
+func AccessTokenOperationGrant(identity AuthIdentity, verificationScope string) *model.AuthFlowAuthorization {
+	if _, ok := model.ParseAccessTokenSessionID(identity.SessionID); !ok {
+		return nil
+	}
+	adminUserScope := strings.HasPrefix(verificationScope, verificationScopeAdminUserPrefix)
+	if verificationScope != VerificationScopeChannelKeyRead && !adminUserScope {
+		return nil
+	}
+	state, err := model.GetUserVerificationState(identity.UserID)
+	if err != nil || state.Status != common.UserStatusEnabled || state.AuthVersion != identity.UserAuthVersion {
+		return nil
+	}
+	if state.Role < common.RoleAdminUser || !adminUserScope && state.Role != common.RoleRootUser {
+		return nil
+	}
+	if requireAccessTokenVerificationScope(identity, verificationScope) != nil {
+		return nil
+	}
+	return &model.AuthFlowAuthorization{AuthSessionIdentity: identity, Scope: verificationScope, Method: "access_token"}
+}
