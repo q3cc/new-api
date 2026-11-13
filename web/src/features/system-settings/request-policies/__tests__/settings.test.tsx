@@ -267,43 +267,93 @@ describe('request policy settings', () => {
     expect(keywords).toHaveValue('unsaved')
   })
 
-  it('saving changed upstream error rules writes only the rule option', async () => {
+  it('saving upstream error rules writes one line per keyword and merges rules with the same message', async () => {
     await renderPolicies('/system-settings/request-policies/errors')
-    const rules = await screen.findByRole('textbox', {
-      name: 'Error message rewrite rules',
+    const message = await screen.findByRole('textbox', {
+      name: 'Message shown instead 1',
     })
-    expect(rules).toHaveValue(
-      defaultRequestPolicySettings.UpstreamErrorRewriteRules
+    expect(screen.getByText('content policy')).toBeVisible()
+    fireEvent.change(message, { target: { value: 'blocked' } })
+    await userEvent.type(
+      screen.getByRole('textbox', {
+        name: 'Keywords in the upstream error 1',
+      }),
+      'text1,text2{Enter}'
     )
-    fireEvent.change(rules, {
-      target: { value: 'content policy => blocked\n\nquota => try later' },
-    })
+    await userEvent.click(screen.getByRole('button', { name: 'Add rule' }))
+    await userEvent.type(
+      screen.getByRole('textbox', {
+        name: 'Keywords in the upstream error 2',
+      }),
+      'quota{Enter}'
+    )
+    fireEvent.change(
+      screen.getByRole('textbox', { name: 'Message shown instead 2' }),
+      { target: { value: 'try later => tomorrow' } }
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Add rule' }))
+    await userEvent.type(
+      screen.getByRole('textbox', {
+        name: 'Keywords in the upstream error 3',
+      }),
+      'text3{Enter}'
+    )
+    fireEvent.change(
+      screen.getByRole('textbox', { name: 'Message shown instead 3' }),
+      { target: { value: 'blocked' } }
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Move up 2' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
     await waitFor(() =>
       expect(api.patch).toHaveBeenCalledExactlyOnceWith(
         '/api/option/request_policy',
         {
           options: {
-            UpstreamErrorRewriteRules:
-              'content policy => blocked\n\nquota => try later',
+            UpstreamErrorRewriteRules: [
+              'quota => try later => tomorrow',
+              'content policy => blocked',
+              'text1 => blocked',
+              'text2 => blocked',
+              'text3 => blocked',
+            ].join('\n'),
           },
         }
       )
     )
   })
 
-  it('an upstream error rule without a message shows validation and does not write options', async () => {
+  it('removing every upstream error rule saves an empty rule option', async () => {
+    await renderPolicies('/system-settings/request-policies/errors')
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Remove 1' })
+    )
+    expect(
+      screen.getByText('No rules. Upstream errors are shown unchanged.')
+    ).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledExactlyOnceWith(
+        '/api/option/request_policy',
+        { options: { UpstreamErrorRewriteRules: '' } }
+      )
+    )
+  })
+
+  it('an upstream error rule without a message or with a separator in a keyword shows validation and does not write options', async () => {
     await renderPolicies('/system-settings/request-policies/errors')
     fireEvent.change(
-      await screen.findByRole('textbox', {
-        name: 'Error message rewrite rules',
+      await screen.findByRole('textbox', { name: 'Message shown instead 1' }),
+      { target: { value: ' ' } }
+    )
+    await userEvent.type(
+      screen.getByRole('textbox', {
+        name: 'Keywords in the upstream error 1',
       }),
-      { target: { value: 'content policy =>' } }
+      'a => b{Enter}'
     )
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
-    expect(
-      await screen.findByText('Each line must be written as keyword => message')
-    ).toBeVisible()
+    expect(await screen.findByText('Enter a message')).toBeVisible()
+    expect(screen.getByText('A keyword cannot contain =>')).toBeVisible()
     expect(api.patch).not.toHaveBeenCalled()
   })
 

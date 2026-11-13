@@ -30,6 +30,8 @@ interface TagInputProps {
   placeholder?: string
   className?: string
   disabled?: boolean
+  /** Accessible name of the text input, for a field without a visible label. */
+  inputLabel?: string
 }
 
 export function TagInput({
@@ -38,16 +40,22 @@ export function TagInput({
   placeholder,
   className,
   disabled = false,
+  inputLabel,
 }: TagInputProps) {
   const { t } = useTranslation()
   const placeholderText = placeholder ?? t('Add tags...')
   const [inputValue, setInputValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const addTag = (tag: string) => {
-    const trimmed = tag.trim()
-    if (trimmed && !value.includes(trimmed)) {
-      onChange([...value, trimmed])
+  // Typing a comma ends a tag, so pasted text with commas is several tags too.
+  const addTag = (text: string) => {
+    const added = text
+      .split(/[,，]/)
+      .map((tag) => tag.trim())
+      .filter((tag, index, tags) => tag && tags.indexOf(tag) === index)
+      .filter((tag) => !value.includes(tag))
+    if (added.length > 0) {
+      onChange([...value, ...added])
       setInputValue('')
     }
   }
@@ -61,7 +69,7 @@ export function TagInput({
       e.preventDefault()
       addTag(inputValue)
     } else if (e.key === 'Backspace' && !inputValue && value.length > 0) {
-      removeTag(value[value.length - 1])
+      onChange(value.slice(0, -1))
     }
   }
 
@@ -108,6 +116,7 @@ export function TagInput({
         onBlur={handleBlur}
         placeholder={value.length === 0 ? placeholderText : ''}
         disabled={disabled}
+        aria-label={inputLabel}
         className='placeholder:text-muted-foreground min-w-[120px] flex-1 border-0 bg-transparent shadow-none outline-none focus-visible:ring-0'
       />
     </div>
