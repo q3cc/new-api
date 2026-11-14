@@ -233,6 +233,35 @@ it('restores the default parameters from the panel', async () => {
     expect(server.records.get(1)?.document.config.temperature).toBe(0.7)
   )
   expect(server.records.get(1)?.document.parameterEnabled.seed).toBe(false)
+  expect(server.records.get(1)?.document.config.stream).toBe(true)
+  expect(screen.getByRole('switch', { name: 'Streaming' })).toBeChecked()
+})
+
+it('sends the reply as one response after streaming is switched off in the panel', async () => {
+  const first = server.records.get(1)
+  assert(first)
+  first.document.config = { ...first.document.config, stream: true }
+  renderPlayground()
+  await screen.findByDisplayValue('draft Alpha')
+  fireEvent.click(screen.getByRole('button', { name: 'Parameters' }))
+  const streaming = await screen.findByRole('switch', { name: 'Streaming' })
+  expect(streaming).toBeChecked()
+
+  fireEvent.click(streaming)
+
+  await waitFor(() => expect(streaming).not.toBeChecked())
+  await waitFor(() =>
+    expect(server.records.get(1)?.document.config.stream).toBe(false)
+  )
+  fireEvent.change(screen.getByPlaceholderText('Ask anything'), {
+    target: { value: 'no stream please' },
+  })
+  fireEvent.click(screen.getAllByRole('button', { name: /^Send/ })[0])
+  await waitFor(() => expect(server.completions).toHaveLength(1))
+  act(() => server.completions[0].finish())
+  expect(
+    await screen.findByText('Reply to no stream please')
+  ).toBeInTheDocument()
 })
 
 it('keeps the conversation editable after a save failure and sends once saving works again', async () => {

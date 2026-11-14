@@ -27,7 +27,7 @@ import {
   translateServerText,
 } from '@/lib/server-error-message'
 
-import { DEFAULT_PARAMETER_ENABLED } from '../constants'
+import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from '../constants'
 import { CONVERSATION_SIZE_LIMIT_MESSAGE } from '../conversations-api'
 import {
   useChatHandler,
@@ -486,7 +486,11 @@ function ConversationView(props: ViewProps) {
               ...row,
               document: {
                 ...row.document,
-                config: { ...row.document.config, ...defaultParameterConfig() },
+                config: {
+                  ...row.document.config,
+                  ...defaultParameterConfig(),
+                  stream: DEFAULT_CONFIG.stream,
+                },
                 parameterEnabled: { ...DEFAULT_PARAMETER_ENABLED },
               },
             }))
