@@ -38,6 +38,7 @@ export function GiftQuotaPopover(props: GiftQuotaPopoverProps) {
   const { t } = useTranslation()
   const sourceLabels: Record<GiftQuotaSource, string> = {
     registration: t('Sign-up bonus'),
+    topup: t('Top-up bonus'),
     affiliate: t('Invitation rewards'),
     lottery: t('Lottery prizes'),
     checkin: t('Check-in rewards'),

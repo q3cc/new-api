@@ -34,7 +34,8 @@ const summary: GiftQuotaSummary = {
   total: 1_500_000,
   items: [
     { source: 'registration', quota: 250_000 },
-    { source: 'lottery', quota: 1_250_000 },
+    { source: 'topup', quota: 500_000 },
+    { source: 'lottery', quota: 750_000 },
   ],
 }
 
@@ -82,7 +83,8 @@ test('opening the gift credit lists each source and the total', async () => {
   const title = await screen.findByText('About gift credit')
   const details = title.parentElement
   expect(details).toHaveTextContent('Sign-up bonus$0.5')
-  expect(details).toHaveTextContent('Lottery prizes$2.5')
+  expect(details).toHaveTextContent('Top-up bonus$1')
+  expect(details).toHaveTextContent('Lottery prizes$1.5')
   expect(details).toHaveTextContent('Total gift credit received$3')
   expect(details).not.toHaveTextContent('Check-in rewards')
 })

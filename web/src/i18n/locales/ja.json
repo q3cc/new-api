@@ -8572,6 +8572,7 @@
     "Gift credit comes from sign-up bonuses, invitation rewards, lottery prizes, check-ins and other platform giveaways. It is spent together with your balance. It can only be used on this platform and cannot be withdrawn or transferred. When you request a refund, the gift credit you have received is deducted first; see the user agreement for details.": "ギフト額は登録ボーナス、招待報酬、抽選、チェックインなどのプラットフォーム特典によるものです。残高と区別なく一緒に使われます。本プラットフォーム内でのみ利用でき、出金や譲渡はできません。返金を申請する場合、受け取ったギフト額が先に差し引かれます。詳しくは利用規約をご確認ください。",
     "Count as gift credit": "ギフト額に計上",
     "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "追加した額度は利用者の累計ギフト額に計上され、返金申請時に差し引かれます。支払い済みの手動チャージではチェックしないでください。",
-    "Gift {{amount}}": "ギフト {{amount}}"
+    "Gift {{amount}}": "ギフト {{amount}}",
+    "Top-up bonus": "チャージ特典"
   }
 }

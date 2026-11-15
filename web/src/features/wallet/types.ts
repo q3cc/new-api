@@ -114,6 +114,7 @@ export type AffiliateRebatesResponse = ApiResponse<AffiliateRebatesData>
 
 export type GiftQuotaSource =
   | 'registration'
+  | 'topup'
   | 'affiliate'
   | 'lottery'
   | 'checkin'

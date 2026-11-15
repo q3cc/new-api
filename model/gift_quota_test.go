@@ -108,6 +108,7 @@ func TestGiftQuotaSummaryDatabaseMatrix(t *testing.T) {
 
 			require.NoError(t, db.Create(&legacyGiftRedemption{Key: "legacy-used", RedemptionType: RedemptionTypeBalance, Status: common.RedemptionCodeStatusUsed, Name: "legacy", Quota: 8000, UsedUserId: owner.Id, RedeemedTime: 1}).Error)
 			require.NoError(t, db.Create(&TrialCreditGrant{UserId: owner.Id, GrantKey: "affiliate:1", Quota: 100, Remaining: 100, Source: "affiliate"}).Error)
+			require.NoError(t, db.Create(&GiftQuotaRecord{UserId: owner.Id, Source: GiftSourceTopUp, Quota: 40, RefKey: "topup:order-1"}).Error)
 
 			quotaPrize := LotteryPrize{ActivityId: 1, Name: "3 credits", Type: LotteryPrizeQuota, Quota: 300}
 			planPrize := LotteryPrize{ActivityId: 1, Name: "Day pass", Type: LotteryPrizeSubscription, PlanId: 1}
@@ -149,13 +150,14 @@ func TestGiftQuotaSummaryDatabaseMatrix(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, []GiftQuotaItem{
 				{Source: GiftSourceRegistration, Quota: 250},
+				{Source: GiftSourceTopUp, Quota: 40},
 				{Source: GiftSourceAffiliate, Quota: 600},
 				{Source: GiftSourceLottery, Quota: 300},
 				{Source: GiftSourceCheckin, Quota: 50},
 				{Source: GiftSourceRedemption, Quota: 425},
 				{Source: GiftSourceAdmin, Quota: 70},
 			}, summary.Items)
-			assert.EqualValues(t, 1695, summary.Total)
+			assert.EqualValues(t, 1735, summary.Total)
 
 			newcomer := User{Username: "gift-none", AffCode: "gift-none", Group: "default"}
 			require.NoError(t, db.Create(&newcomer).Error)

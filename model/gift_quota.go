@@ -9,15 +9,19 @@ import (
 // running total, and refunds deduct it from the refundable balance.
 const (
 	GiftSourceRegistration = "registration"
-	GiftSourceAffiliate    = "affiliate"
-	GiftSourceLottery      = "lottery"
-	GiftSourceCheckin      = "checkin"
-	GiftSourceRedemption   = "redemption"
-	GiftSourceAdmin        = "admin"
+	// GiftSourceTopUp is extra credit a top-up promotion added on top of
+	// what the user paid. Group top-up discounts are not gifts.
+	GiftSourceTopUp      = "topup"
+	GiftSourceAffiliate  = "affiliate"
+	GiftSourceLottery    = "lottery"
+	GiftSourceCheckin    = "checkin"
+	GiftSourceRedemption = "redemption"
+	GiftSourceAdmin      = "admin"
 )
 
 // GiftQuotaRecord stores the gift credits that leave no record of their own:
-// registration rewards and admin gifts. Lottery prizes, check-ins, gift
+// registration rewards, admin gifts and top-up promotion bonuses (entered by
+// operators for each promotion). Lottery prizes, check-ins, gift
 // redemption codes and transferred invitation rewards are summed from their
 // own tables, so their history needs no copy here.
 type GiftQuotaRecord struct {
@@ -111,7 +115,7 @@ func GetUserGiftQuotaSummary(userId int) (*GiftQuotaSummary, error) {
 	bySource[GiftSourceRedemption] = redemption
 
 	summary := &GiftQuotaSummary{Items: []GiftQuotaItem{}}
-	for _, source := range []string{GiftSourceRegistration, GiftSourceAffiliate, GiftSourceLottery, GiftSourceCheckin, GiftSourceRedemption, GiftSourceAdmin} {
+	for _, source := range []string{GiftSourceRegistration, GiftSourceTopUp, GiftSourceAffiliate, GiftSourceLottery, GiftSourceCheckin, GiftSourceRedemption, GiftSourceAdmin} {
 		quota := bySource[source]
 		if quota <= 0 {
 			continue
