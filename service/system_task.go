@@ -151,6 +151,7 @@ func StartSystemTaskRunner() {
 					runSystemTaskScheduler()
 				}
 				runSystemTaskClaimPass(runnerID)
+				finishAppliedSyncTasks()
 			}
 
 			if !runBackgroundRound(runPass) {

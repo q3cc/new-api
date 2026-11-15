@@ -535,6 +535,9 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'task_plugin.marketplace_sources_update':
     'Updated task plugin marketplace sources',
   'task_plugin.version_delete': 'Deleted a task plugin version',
+  // Request processing plugins
+  'request_plugin.instances_update': 'Updated request processing plugins',
+  'request_plugin.dryrun': 'Ran a request processing plugin dry run',
   // Channel
   'channel.create': 'Created channel {{name}} (type {{type}}, count {{count}})',
   'channel.update': 'Updated channel {{name}} (ID: {{id}})',

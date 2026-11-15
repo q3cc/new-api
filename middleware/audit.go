@@ -99,6 +99,10 @@ var auditRouteActions = map[string]string{
 	"PUT /api/plugin/task/marketplace/sources":       "task_plugin.marketplace_sources_update",
 	"DELETE /api/plugin/task/:key/versions/:version": "task_plugin.version_delete",
 
+	// 请求处理插件（root）
+	"PUT /api/request_plugin/instances": "request_plugin.instances_update",
+	"POST /api/request_plugin/dry_run":  "request_plugin.dryrun",
+
 	// 兑换码
 	"PUT /api/redemption/":           "redemption.update",
 	"POST /api/redemption/batch":     "redemption.delete_batch",

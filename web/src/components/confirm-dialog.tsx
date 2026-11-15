@@ -48,6 +48,7 @@ type ConfirmDialogProps = {
   confirmDelay?: number
   className?: string
   children?: React.ReactNode
+  finalFocus?: React.ComponentProps<typeof AlertDialogContent>['finalFocus']
 }
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
@@ -64,6 +65,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     disabled = false,
     confirmDelay = 0,
     handleConfirm,
+    finalFocus,
     ...actions
   } = props
   const countdown = useCountdown({ initialSeconds: confirmDelay })
@@ -78,7 +80,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const label = confirmText ?? t('Continue')
   return (
     <AlertDialog {...actions}>
-      <AlertDialogContent className={cn(className)}>
+      <AlertDialogContent className={cn(className)} finalFocus={finalFocus}>
         <AlertDialogHeader className='text-start'>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription render={<div />}>

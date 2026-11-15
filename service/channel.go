@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bytedance/gopkg/util/gopool"
 
@@ -18,13 +19,13 @@ func formatNotifyType(channelId int, status int) string {
 	return fmt.Sprintf("%s_%d_%d", dto.NotifyTypeChannelUpdate, channelId, status)
 }
 
-func shouldCloseActiveWebSocketsAfterDisable(channelId int) bool {
+func shouldCloseActiveWebSocketsAfterDisable(channelId int) (bool, *model.Channel) {
 	channel, err := model.GetChannelById(channelId, true)
 	if err != nil {
 		common.SysLog(common.LogText("failed to check channel status before closing active websockets: channel_id=%d, error=%v", channelId, err))
-		return true
+		return true, nil
 	}
-	return channel.Status != common.ChannelStatusEnabled
+	return channel.Status != common.ChannelStatusEnabled, channel
 }
 
 // disable & notify
@@ -39,7 +40,8 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 
 	success := model.UpdateChannelStatus(channelError.ChannelId, channelError.UsingKey, common.ChannelStatusAutoDisabled, reason)
 	if success {
-		if shouldCloseActiveWebSocketsAfterDisable(channelError.ChannelId) {
+		closeWebSockets, channel := shouldCloseActiveWebSocketsAfterDisable(channelError.ChannelId)
+		if closeWebSockets {
 			CloseActiveWebSocketsForChannel(channelError.ChannelId, ChannelDisabledCloseReason)
 		}
 		// Notifications must not delay failover after the status is persisted.
@@ -49,6 +51,9 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 				return i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params), i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
 			})
 		})
+		if common.IsMasterNode && channel != nil {
+			scheduledPlugins.disabled(channel, channelError.UsingKey, time.Now())
+		}
 	}
 }
 
