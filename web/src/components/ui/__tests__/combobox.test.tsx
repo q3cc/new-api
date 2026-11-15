@@ -314,3 +314,89 @@ describe('custom text entry inside dialogs', () => {
     expect(screen.getByRole('dialog', { name: 'Payment method' })).toBeVisible()
   })
 })
+
+describe('custom text entry beside other fields', () => {
+  function FreeTextForm(props: {
+    onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>
+  }) {
+    const [value, setValue] = useState('')
+    return (
+      <>
+        <Combobox
+          options={options}
+          value={value}
+          onValueChange={(next) => setValue(next ?? '')}
+          onKeyDown={props.onKeyDown}
+          allowCustomValue
+          aria-label='Provider key'
+          className='h-8 text-sm'
+        />
+        <button type='button'>Run</button>
+      </>
+    )
+  }
+
+  it('closes the suggestions once the typed text needs none, so the other fields stay reachable', async () => {
+    render(<FreeTextForm />)
+    const user = userEvent.setup()
+    const input = screen.getByRole('combobox', { name: 'Provider key' })
+    expect(input).toHaveClass('h-8', 'text-sm')
+
+    await user.type(input, 'gem')
+    expect(await screen.findByRole('option', { name: 'Google' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Run' })).toBeNull()
+
+    await user.type(input, 'ini')
+    expect(input).toHaveValue('gemini')
+    expect(input).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Run' })).toBeVisible()
+
+    await user.clear(input)
+    await user.type(input, 'custom-key')
+    expect(input).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Run' })).toBeVisible()
+  })
+
+  it('ends the entry on Escape without closing the dialog around it', async () => {
+    const onOpenChange = vi.fn()
+    render(
+      <Dialog open onOpenChange={onOpenChange} title='Provider settings'>
+        <FreeTextForm />
+      </Dialog>
+    )
+    const user = userEvent.setup()
+    const input = screen.getByRole('combobox', { name: 'Provider key' })
+    await user.type(input, 'custom-key')
+    expect(input).toHaveAttribute('aria-expanded', 'false')
+
+    await user.keyboard('{Escape}')
+    expect(input).toHaveValue('custom-key')
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole('dialog', { name: 'Provider settings' })
+    ).toBeVisible()
+  })
+
+  it('keeps Enter on a highlighted option from the caller and passes it on once the field is cleared', async () => {
+    const onKeyDown = vi.fn()
+    render(<FreeTextForm onKeyDown={onKeyDown} />)
+    const user = userEvent.setup()
+    const input = screen.getByRole('combobox', { name: 'Provider key' })
+
+    await user.click(input)
+    await screen.findByRole('option', { name: 'OpenAI' })
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect(input).toHaveValue('openai')
+    expect(input).toHaveAttribute('aria-expanded', 'false')
+    expect(onKeyDown).not.toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'Enter' })
+    )
+
+    await user.clear(input)
+    await user.keyboard('{Enter}')
+    expect(input).toHaveValue('')
+    expect(onKeyDown).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'Enter' })
+    )
+  })
+})

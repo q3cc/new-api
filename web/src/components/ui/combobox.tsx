@@ -88,13 +88,31 @@ function OptionCombobox(props: LegacyComboboxProps) {
   const displayedValue = props.allowCustomValue
     ? (props.value ?? '')
     : (selected?.label ?? props.value ?? '')
+  const matches = (option: ComboboxInputOption, query: string) => {
+    const term = query.trim().toLowerCase()
+    return (
+      option.label.toLowerCase().includes(term) ||
+      option.value.toLowerCase().includes(term)
+    )
+  }
+  // While the popup is open, Base UI hides the rest of the page from
+  // assistive technology. Free text keeps the popup only while a suggestion
+  // still offers something other than the text already typed, so the other
+  // fields stay reachable once the value is written out.
+  const offersSuggestions =
+    !props.allowCustomValue ||
+    !searchChanged ||
+    props.options.some(
+      (option) => matches(option, search) && option.value !== search.trim()
+    )
+  const popupOpen = open && !props.disabled && offersSuggestions
   return (
     <ComboboxPrimitive.Root
       items={props.options}
       value={selected ?? null}
       name={props.name}
       disabled={props.disabled}
-      open={open && !props.disabled}
+      open={popupOpen}
       inputValue={open ? search : displayedValue}
       onInputValueChange={(value, details) => {
         if (details.reason === 'input-change') {
@@ -116,11 +134,7 @@ function OptionCombobox(props: LegacyComboboxProps) {
       onItemHighlighted={(option) => setHighlighted(option !== undefined)}
       filter={(option, query) => {
         if (props.allowCustomValue && !searchChanged) return true
-        const term = query.trim().toLowerCase()
-        return (
-          option.label.toLowerCase().includes(term) ||
-          option.value.toLowerCase().includes(term)
-        )
+        return matches(option, query)
       }}
       isItemEqualToValue={(item, value) => item.value === value.value}
     >
@@ -129,18 +143,37 @@ function OptionCombobox(props: LegacyComboboxProps) {
           ref={props.ref}
           id={props.id}
           disabled={props.disabled}
-          onBlur={props.onBlur}
+          onBlur={(event) => {
+            // Base UI only reports a close for a popup it shows.
+            if (props.allowCustomValue && !popupOpen) setOpen(false)
+            props.onBlur?.(event)
+          }}
           onKeyDown={(event) => {
             if (
               props.allowCustomValue &&
               open &&
-              event.key === 'Enter' &&
-              !highlighted
+              !popupOpen &&
+              event.key === 'Escape'
             ) {
+              // Base UI only handles Escape for a popup it shows; ending the
+              // entry must not also close the enclosing dialog or drawer.
               event.preventDefault()
-              props.onValueChange?.(search.trim())
+              event.stopPropagation()
               setOpen(false)
               return
+            }
+            if (props.allowCustomValue && open && event.key === 'Enter') {
+              // Base UI chooses the highlighted option; the same key must
+              // not also reach the caller, such as a search on Enter.
+              if (popupOpen && highlighted) return
+              const typed = search.trim()
+              setOpen(false)
+              if (typed) {
+                event.preventDefault()
+                props.onValueChange?.(typed)
+                return
+              }
+              if (!props.onKeyDown) event.preventDefault()
             }
             props.onKeyDown?.(event)
           }}
@@ -157,6 +190,9 @@ function OptionCombobox(props: LegacyComboboxProps) {
           }
           triggerAriaLabel={props['aria-label'] ?? t('Open')}
           className='h-full min-h-8 w-full'
+          // Free-text fields were styled through the input itself, as with
+          // compact filter fields; the field keeps the class for its layout.
+          inputClassName={props.allowCustomValue ? props.className : undefined}
         >
           {props.showSelectedIcon && !open && selected?.icon && (
             <InputGroupAddon align='inline-start' aria-hidden='true'>
@@ -242,16 +278,20 @@ function ComboboxInput({
   showTrigger = true,
   showClear = false,
   triggerAriaLabel,
+  inputClassName,
   ...props
 }: ComboboxPrimitive.Input.Props & {
   showTrigger?: boolean
   showClear?: boolean
   triggerAriaLabel?: string
+  inputClassName?: string
 }) {
   return (
     <InputGroup className={cn('w-auto', className)}>
       <ComboboxPrimitive.Input
-        render={<InputGroupInput disabled={disabled} />}
+        render={
+          <InputGroupInput disabled={disabled} className={inputClassName} />
+        }
         {...props}
       />
       <InputGroupAddon align='inline-end'>
