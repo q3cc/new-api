@@ -169,6 +169,17 @@ func testPlaygroundArchive(t *testing.T) {
 		assert.Equal(t, 1, archiveAll())
 	})
 
+	t.Run("a document that would not restore is left uncompressed", func(t *testing.T) {
+		broken := create("archive-broken-0001")
+		makeCold(broken.Id)
+		require.NoError(t, DB.Model(&PlaygroundConversation{}).Where("id = ?", broken.Id).Update("content", "not json").Error)
+		assert.Zero(t, archiveAll())
+		row := stored(broken.Id)
+		assert.Zero(t, row.ArchivedAt)
+		assert.Equal(t, "not json", string(row.Content))
+		require.NoError(t, DeletePlaygroundConversation(owner, broken.Id))
+	})
+
 	t.Run("a damaged archive is reported instead of returned", func(t *testing.T) {
 		damaged := create("archive-damage-0001")
 		require.NoError(t, DB.Model(&PlaygroundConversation{}).Where("id = ?", damaged.Id).

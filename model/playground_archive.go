@@ -198,6 +198,14 @@ const playgroundColdCondition = "archived_at = 0 AND update_time < ? AND open_ti
 // earlier, unless the conversation has been saved or opened since.
 func archivePlaygroundConversation(row PlaygroundConversation, cutoff, now int64) (bool, error) {
 	packed := playgroundArchiveEncoder.EncodeAll([]byte(row.Content), nil)
+	// The uncompressed document is dropped below, so the copy must restore
+	// to exactly it. A document that would not, such as one that is not
+	// valid JSON, stays as it is.
+	check := PlaygroundConversation{ArchivedAt: now, ArchivedContent: packed}
+	if restored, err := check.document(); err != nil || string(restored) != string(row.Content) {
+		common.SysLog(common.LogText("playground conversation %d was left uncompressed: its archive copy does not restore to the original", row.Id))
+		return false, nil
+	}
 	result := playgroundDB().Model(&PlaygroundConversation{}).
 		Where("id = ? AND revision = ? AND "+playgroundColdCondition, row.Id, row.Revision, cutoff, cutoff).
 		Updates(map[string]any{

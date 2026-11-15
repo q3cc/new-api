@@ -85,7 +85,7 @@ it('shows how far an archived conversation has been restored, then opens it', as
     screen.getByText('Restoring a conversation not opened for a while...')
   ).toBeVisible()
   expect(bar).toHaveAttribute('aria-valuenow', '0')
-  expect(request.held.config?.adapter).toBe('fetch')
+  expect(request.held.config?.adapter).toEqual(['fetch', 'xhr'])
 
   await request.report(500)
   expect(bar).toHaveAttribute('aria-valuenow', '50')

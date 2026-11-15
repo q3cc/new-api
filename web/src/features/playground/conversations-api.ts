@@ -245,8 +245,9 @@ export async function getConversation(
     // The response is gzip-encoded without a length, so XMLHttpRequest
     // cannot tell how far it is. The fetch adapter counts the decoded bytes
     // as they arrive, which the document size in the list puts in proportion.
+    // Where fetch cannot stream, XMLHttpRequest still loads the conversation.
     ...(onProgress && {
-      adapter: 'fetch',
+      adapter: ['fetch', 'xhr'],
       onDownloadProgress: (event) => onProgress(event.loaded),
     }),
   })
