@@ -333,15 +333,30 @@ function formatCurrencyValue(
       }).format(adjustedValue)
     }
 
-    const formatted = new Intl.NumberFormat(options.locale, {
+    const currencyOptions: Intl.NumberFormatOptions = {
       style: 'currency',
       currency: meta.currencyCode,
-      currencyDisplay: 'narrowSymbol',
       notation: options.compact ? 'compact' : 'standard',
       minimumFractionDigits: 0,
       maximumFractionDigits: options.compact ? 1 : digits,
-    }).format(adjustedValue)
-    return formatted
+    }
+    let formatter: Intl.NumberFormat
+    try {
+      formatter = new Intl.NumberFormat(options.locale, {
+        ...currencyOptions,
+        currencyDisplay: 'narrowSymbol',
+      })
+    } catch (error) {
+      // Safari before 14.1 and Chrome before 77 reject 'narrowSymbol' with a
+      // RangeError; show the locale's regular symbol there instead of failing
+      // the whole page.
+      if (!(error instanceof RangeError)) throw error
+      formatter = new Intl.NumberFormat(options.locale, {
+        ...currencyOptions,
+        currencyDisplay: 'symbol',
+      })
+    }
+    return formatter.format(adjustedValue)
   }
 
   const decimal = new Intl.NumberFormat(options.locale, {
