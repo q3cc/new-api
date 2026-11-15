@@ -885,5 +885,10 @@
   "playground upload cleanup failed: %v": "操练场上传分片清理失败: %v",
   "playground upload cleanup removed %d expired chunks": "操练场上传分片清理已删除 %d 个过期分片",
   "MySQL max_allowed_packet is %d bytes, below the %d bytes a playground conversation may need; raise it in the MySQL server configuration": "MySQL 的 max_allowed_packet 为 %d 字节，低于操练场会话可能需要的 %d 字节；请在 MySQL 服务端配置中调高",
-  "plugin scheduled failed: plugin=%s channel_id=%d key_index=%d category=%s": "插件定时任务失败：plugin=%s channel_id=%d key_index=%d category=%s"
+  "plugin scheduled failed: plugin=%s channel_id=%d key_index=%d category=%s": "插件定时任务失败：plugin=%s channel_id=%d key_index=%d category=%s",
+  "failed to restore archived playground conversation %d: %v": "恢复已归档的操练场会话 %d 失败: %v",
+  "failed to record the opening of playground conversation %d: %v": "记录操练场会话 %d 的打开时间失败: %v",
+  "archived playground conversation %d cannot be decompressed": "已归档的操练场会话 %d 无法解压",
+  "playground archive failed after %d conversations: %v": "操练场会话归档在处理 %d 个会话后失败: %v",
+  "playground archive compressed %d conversations": "操练场会话归档已压缩 %d 个会话"
 }

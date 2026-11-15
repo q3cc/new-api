@@ -71,8 +71,17 @@ type PlaygroundConversation struct {
 	LastOperation string         `json:"-" gorm:"size:64;not null"`
 	LastHash      string         `json:"-" gorm:"size:64;not null"`
 	CreateTime    int64          `json:"create_time" gorm:"not null"`
-	UpdateTime    int64          `json:"update_time" gorm:"not null;index:idx_playground_owner_time,priority:2"`
+	UpdateTime    int64          `json:"update_time" gorm:"not null;index:idx_playground_owner_time,priority:2;index:idx_playground_archive,priority:2"`
 	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
+	// OpenTime is when the conversation was last opened; 0 until then.
+	OpenTime int64 `json:"-" gorm:"not null;default:0"`
+	// ContentBytes is the size of the uncompressed document, which an
+	// archived conversation no longer shows in Content.
+	ContentBytes int64 `json:"content_bytes" gorm:"not null;default:0"`
+	// ArchivedAt is when the document moved into ArchivedContent, compressed;
+	// 0 while it is stored in Content.
+	ArchivedAt      int64    `json:"archived_at" gorm:"not null;default:0;index:idx_playground_archive,priority:1"`
+	ArchivedContent LongBlob `json:"-"`
 }
 
 type PlaygroundImport struct {
@@ -222,12 +231,25 @@ func playgroundWriteHash(write PlaygroundWrite) string {
 	return hex.EncodeToString(value[:])
 }
 
+// GetPlaygroundConversation opens a conversation: it records the opening and
+// stores an archived document uncompressed again.
 func GetPlaygroundConversation(userId int, id int64) (*PlaygroundConversationDetail, error) {
 	var row PlaygroundConversation
 	if err := playgroundDB().Where("user_id = ? AND id = ?", userId, id).First(&row).Error; err != nil {
 		return nil, err
 	}
-	return &PlaygroundConversationDetail{PlaygroundConversation: row, Document: json.RawMessage(row.Content)}, nil
+	document, err := row.document()
+	if err != nil {
+		common.SysLog(common.LogText("archived playground conversation %d cannot be decompressed", row.Id))
+		return nil, err
+	}
+	now := time.Now().UnixMilli()
+	if row.ArchivedAt != 0 {
+		restorePlaygroundConversation(&row, document, now)
+	} else {
+		touchPlaygroundConversation(&row, now)
+	}
+	return &PlaygroundConversationDetail{PlaygroundConversation: row, Document: document}, nil
 }
 
 func ListPlaygroundConversations(userId int, keyword string, page *common.PageInfo) ([]PlaygroundConversation, int64, error) {
@@ -246,7 +268,7 @@ func ListPlaygroundConversations(userId int, keyword string, page *common.PageIn
 	}
 	// Out-of-range paging falls back to the first page of a bounded size.
 	size := max(1, min(page.GetPageSize(), 100))
-	err := query.Select("id", "title", "revision", "create_time", "update_time").Order("update_time DESC, id DESC").Offset(max(page.GetPage()-1, 0) * size).Limit(size).Find(&rows).Error
+	err := query.Select("id", "title", "revision", "create_time", "update_time", "content_bytes", "archived_at").Order("update_time DESC, id DESC").Offset(max(page.GetPage()-1, 0) * size).Limit(size).Find(&rows).Error
 	return rows, count, err
 }
 
@@ -269,7 +291,7 @@ func CreatePlaygroundConversation(userId int, write PlaygroundWrite) (*Playgroun
 	}
 	hash := playgroundWriteHash(write)
 	now := time.Now().UnixMilli()
-	row := PlaygroundConversation{UserId: userId, CreationId: write.OperationId, CreationHash: hash, Title: write.Title, Revision: 1, Content: LongText(write.Document), LastOperation: write.OperationId, LastHash: hash, CreateTime: now, UpdateTime: now}
+	row := PlaygroundConversation{UserId: userId, CreationId: write.OperationId, CreationHash: hash, Title: write.Title, Revision: 1, Content: LongText(write.Document), ContentBytes: int64(len(write.Document)), LastOperation: write.OperationId, LastHash: hash, CreateTime: now, UpdateTime: now}
 	err := playgroundDB().Transaction(func(tx *gorm.DB) error {
 		// A replay of a known creation must succeed even when the user is at
 		// the limit, so the room check only guards an actual insert.
@@ -296,14 +318,19 @@ func CreatePlaygroundConversation(userId int, write PlaygroundWrite) (*Playgroun
 	if row.CreationHash != hash || row.Revision != 1 {
 		return nil, ErrPlaygroundConflict
 	}
-	return &PlaygroundConversationDetail{PlaygroundConversation: row, Document: json.RawMessage(row.Content)}, nil
+	// A replay may find the conversation archived since it was created.
+	document, err := row.document()
+	if err != nil {
+		return nil, err
+	}
+	return &PlaygroundConversationDetail{PlaygroundConversation: row, Document: document}, nil
 }
 
 // playgroundSavedRow answers a write without reading the document back: the
 // caller already holds the document it sent, so only the metadata is read.
 func playgroundSavedRow(userId int, id int64, document json.RawMessage) (*PlaygroundConversationDetail, error) {
 	var row PlaygroundConversation
-	if err := playgroundDB().Select("id", "user_id", "title", "revision", "last_operation", "last_hash", "create_time", "update_time").
+	if err := playgroundDB().Select("id", "user_id", "title", "revision", "last_operation", "last_hash", "create_time", "update_time", "content_bytes", "archived_at").
 		Where("user_id = ? AND id = ?", userId, id).First(&row).Error; err != nil {
 		return nil, err
 	}
@@ -316,10 +343,9 @@ func SavePlaygroundConversation(userId int, id int64, write PlaygroundWrite) (*P
 	}
 	hash := playgroundWriteHash(write)
 	now := time.Now().UnixMilli()
-	result := playgroundDB().Model(&PlaygroundConversation{}).Where("user_id = ? AND id = ? AND revision = ? AND last_operation <> ?", userId, id, write.Revision, write.OperationId).Updates(map[string]any{
-		"title": write.Title, "content": LongText(write.Document), "revision": write.Revision + 1,
-		"last_operation": write.OperationId, "last_hash": hash, "update_time": now,
-	})
+	columns := playgroundPlainColumns(write.Document)
+	columns["title"], columns["revision"], columns["last_operation"], columns["last_hash"], columns["update_time"] = write.Title, write.Revision+1, write.OperationId, hash, now
+	result := playgroundDB().Model(&PlaygroundConversation{}).Where("user_id = ? AND id = ? AND revision = ? AND last_operation <> ?", userId, id, write.Revision, write.OperationId).Updates(columns)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -330,7 +356,7 @@ func SavePlaygroundConversation(userId int, id int64, write PlaygroundWrite) (*P
 		if err := playgroundDB().Select("id", "user_id", "create_time").Where("user_id = ? AND id = ?", userId, id).First(&row).Error; err != nil {
 			return nil, err
 		}
-		row.Title, row.Revision, row.LastOperation, row.LastHash, row.UpdateTime = write.Title, write.Revision+1, write.OperationId, hash, now
+		row.Title, row.Revision, row.LastOperation, row.LastHash, row.UpdateTime, row.ContentBytes = write.Title, write.Revision+1, write.OperationId, hash, now, int64(len(write.Document))
 		return &PlaygroundConversationDetail{PlaygroundConversation: row, Document: write.Document}, nil
 	}
 	// Nothing changed: the same operation was applied before, the revision is
@@ -384,15 +410,19 @@ func PatchPlaygroundConversation(userId int, id int64, patch PlaygroundPatch) (*
 		if err := lockForUpdate(tx).Where("user_id = ? AND id = ?", userId, id).First(&current).Error; err != nil {
 			return err
 		}
+		document, err := current.document()
+		if err != nil {
+			return err
+		}
 		if current.LastOperation == patch.OperationId {
-			saved = &PlaygroundConversationDetail{PlaygroundConversation: current, Document: json.RawMessage(current.Content)}
+			saved = &PlaygroundConversationDetail{PlaygroundConversation: current, Document: document}
 			return nil
 		}
 		if current.Revision != patch.Revision {
 			return ErrPlaygroundConflict
 		}
 		fields := map[string]json.RawMessage{}
-		if err := common.UnmarshalJsonStr(string(current.Content), &fields); err != nil {
+		if err := common.Unmarshal(document, &fields); err != nil {
 			return ErrPlaygroundInvalid
 		}
 		for key, value := range patch.Patch {
@@ -426,10 +456,9 @@ func PatchPlaygroundConversation(userId int, id int64, patch PlaygroundPatch) (*
 		}
 		hash := playgroundWriteHash(write)
 		now := time.Now().UnixMilli()
-		result := tx.Model(&PlaygroundConversation{}).Where("id = ? AND revision = ?", current.Id, current.Revision).Updates(map[string]any{
-			"title": write.Title, "content": LongText(merged), "revision": current.Revision + 1,
-			"last_operation": write.OperationId, "last_hash": hash, "update_time": now,
-		})
+		columns := playgroundPlainColumns(merged)
+		columns["title"], columns["revision"], columns["last_operation"], columns["last_hash"], columns["update_time"] = write.Title, current.Revision+1, write.OperationId, hash, now
+		result := tx.Model(&PlaygroundConversation{}).Where("id = ? AND revision = ?", current.Id, current.Revision).Updates(columns)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -437,6 +466,7 @@ func PatchPlaygroundConversation(userId int, id int64, patch PlaygroundPatch) (*
 			return ErrPlaygroundConflict
 		}
 		current.Title, current.Content, current.Revision, current.LastOperation, current.LastHash, current.UpdateTime = write.Title, LongText(merged), current.Revision+1, write.OperationId, hash, now
+		current.ContentBytes, current.ArchivedAt, current.ArchivedContent = int64(len(merged)), 0, nil
 		saved = &PlaygroundConversationDetail{PlaygroundConversation: current, Document: merged}
 		return nil
 	})
@@ -447,9 +477,9 @@ func PatchPlaygroundConversation(userId int, id int64, patch PlaygroundPatch) (*
 }
 
 func DeletePlaygroundConversation(userId int, id int64) error {
-	result := playgroundDB().Model(&PlaygroundConversation{}).Where("user_id = ? AND id = ?", userId, id).Updates(map[string]any{
-		"content": "{}", "title": "", "last_hash": "", "deleted_at": time.Now(), "revision": gorm.Expr("revision + 1"),
-	})
+	columns := playgroundPlainColumns([]byte("{}"))
+	columns["title"], columns["last_hash"], columns["deleted_at"], columns["revision"] = "", "", time.Now(), gorm.Expr("revision + 1")
+	result := playgroundDB().Model(&PlaygroundConversation{}).Where("user_id = ? AND id = ?", userId, id).Updates(columns)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -532,7 +562,7 @@ func ImportPlaygroundConversation(userId int, source PlaygroundLegacySource) (*P
 			}
 			now := time.Now().UnixMilli()
 			hash := playgroundWriteHash(write)
-			row := PlaygroundConversation{UserId: userId, CreationId: "import:" + fingerprint[:56], CreationHash: hash, Title: write.Title, Revision: 1, Content: LongText(content), LastOperation: fingerprint, LastHash: hash, CreateTime: now, UpdateTime: now}
+			row := PlaygroundConversation{UserId: userId, CreationId: "import:" + fingerprint[:56], CreationHash: hash, Title: write.Title, Revision: 1, Content: LongText(content), ContentBytes: int64(len(content)), LastOperation: fingerprint, LastHash: hash, CreateTime: now, UpdateTime: now}
 			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}
@@ -542,7 +572,7 @@ func ImportPlaygroundConversation(userId int, source PlaygroundLegacySource) (*P
 			}
 		}
 		var row PlaygroundConversation
-		if err := tx.Unscoped().Where("user_id = ? AND id = ?", userId, receipt.ConversationId).First(&row).Error; err != nil {
+		if err := tx.Unscoped().Select("id", "deleted_at").Where("user_id = ? AND id = ?", userId, receipt.ConversationId).First(&row).Error; err != nil {
 			return err
 		}
 		result = PlaygroundImportResult{ConversationId: row.Id, Deleted: row.DeletedAt.Valid}

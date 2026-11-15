@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
@@ -128,6 +130,22 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 	fetched := accessTokenRequest(r, http.MethodGet, path, userJWT, "", "")
 	assert.Contains(t, fetched.Body.String(), "private-body-sentinel")
 	assert.Contains(t, fetched.Body.String(), `"draft":"patched"`)
+	// Archived after a week unopened, the conversation still opens in full
+	// for its owner, and the list tells the client it was archived.
+	require.NoError(t, model.DB.Model(&model.PlaygroundConversation{}).Where("id = ?", result.Data.Id).
+		Updates(map[string]any{"update_time": time.Now().Add(-8 * 24 * time.Hour).UnixMilli(), "open_time": 0}).Error)
+	archivedCount, err := model.ArchiveColdPlaygroundConversations(time.Now(), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, archivedCount)
+	archivedList := accessTokenRequest(r, http.MethodGet, "/api/playground/conversations", userJWT, "", "")
+	require.Equal(t, http.StatusOK, archivedList.Code)
+	assert.NotContains(t, archivedList.Body.String(), `"archived_at":0`)
+	assert.Contains(t, archivedList.Body.String(), fmt.Sprintf(`"content_bytes":%d`, len(fetchedDocument(t, fetched.Body.Bytes()))))
+	reopened := accessTokenRequest(r, http.MethodGet, path, userJWT, "", "")
+	require.Equal(t, http.StatusOK, reopened.Code)
+	assert.JSONEq(t, string(fetchedDocument(t, fetched.Body.Bytes())), string(fetchedDocument(t, reopened.Body.Bytes())))
+	assert.Contains(t, reopened.Body.String(), `"archived_at":0`)
+	assert.NotContains(t, reopened.Body.String(), "archived_content")
 	assert.Equal(t, http.StatusConflict, accessTokenRequest(r, http.MethodPatch, path, userJWT, "", strings.Replace(patchBody, "playground-auth-patch", "playground-auth-patch-stale", 1)).Code)
 	assert.Equal(t, http.StatusBadRequest, accessTokenRequest(r, http.MethodPatch, path, userJWT, "", fmt.Sprintf(`{"operation_id":"playground-auth-patch-messages","revision":%d,"patch":{"messages":[]}}`, result.Data.Revision+2)).Code)
 	assert.Equal(t, http.StatusOK, accessTokenRequest(r, http.MethodGet, "/api/playground/conversations?page_size=-1", userJWT, "", "").Code)
@@ -179,4 +197,16 @@ func TestPlaygroundConversationAuthorization(t *testing.T) {
 	assert.NotContains(t, requestLogs.String(), "private-query-sentinel")
 	assert.NotContains(t, requestLogs.String(), "private-body-sentinel")
 	assert.NotContains(t, requestLogs.String(), userJWT)
+}
+
+// fetchedDocument reads the document out of a conversation response.
+func fetchedDocument(t *testing.T, body []byte) []byte {
+	t.Helper()
+	var response struct {
+		Data struct {
+			Document json.RawMessage `json:"document"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(body, &response))
+	return response.Data.Document
 }

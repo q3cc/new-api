@@ -64,6 +64,13 @@ export type ConversationSummary = {
   revision: number
   create_time: number
   update_time: number
+  /** Size of the stored document in bytes; 0 when the server has not recorded it. */
+  content_bytes?: number
+  /**
+   * When the server compressed the document of a conversation unopened for a
+   * while; 0 while it is stored uncompressed. Opening it restores it.
+   */
+  archived_at?: number
 }
 export type SavedConversation = ConversationSummary & {
   document: ConversationDocument
@@ -224,9 +231,24 @@ export async function listConversations(
   })
   return requireServerSuccess(res.data).data
 }
-export async function getConversation(id: number, signal?: AbortSignal) {
+/**
+ * Fetches a conversation; onProgress receives the bytes of the response read
+ * so far.
+ */
+export async function getConversation(
+  id: number,
+  signal?: AbortSignal,
+  onProgress?: (loaded: number) => void
+) {
   const res = await api.get<Envelope<SavedConversation>>(`${path}/${id}`, {
     signal,
+    // The response is gzip-encoded without a length, so XMLHttpRequest
+    // cannot tell how far it is. The fetch adapter counts the decoded bytes
+    // as they arrive, which the document size in the list puts in proportion.
+    ...(onProgress && {
+      adapter: 'fetch',
+      onDownloadProgress: (event) => onProgress(event.loaded),
+    }),
   })
   return parseConversation(requireServerSuccess(res.data).data)
 }

@@ -16,18 +16,40 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { getServerErrorStatus } from '@/lib/server-error-message'
 
-import { emptyConversationDocument } from '../conversations-api'
+import {
+  emptyConversationDocument,
+  type ConversationSummary,
+} from '../conversations-api'
 import {
   interruptedDocument,
   type ConversationWorkspace,
+  type OpenHint,
 } from '../lib/conversation-workspace'
 import { useWorkspaceSelector } from './use-workspace'
+
+/** What any loaded page of the conversation list says about a conversation. */
+function listedOpenHint(
+  queryClient: QueryClient,
+  owner: number,
+  id: number
+): OpenHint {
+  const listed = queryClient
+    .getQueriesData<{ items: ConversationSummary[] }>({
+      queryKey: ['playground-conversations', owner],
+    })
+    .flatMap(([, data]) => data?.items ?? [])
+    .find((item) => item.id === id)
+  return {
+    bytes: listed?.content_bytes,
+    archived: Boolean(listed?.archived_at),
+  }
+}
 
 type Options = {
   workspace: ConversationWorkspace
@@ -111,7 +133,7 @@ export function useActiveConversation(options: Options) {
     setOpening(true)
     setOpenError(undefined)
     void workspace
-      .open(id)
+      .open(id, false, listedOpenHint(queryClient, owner, id))
       .then((key) => {
         if (cancelled || !key) return
         setActiveKey(key)

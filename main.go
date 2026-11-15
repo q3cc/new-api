@@ -188,6 +188,9 @@ func main() {
 	// Playground upload cleanup (hourly, removes chunks nobody resumed in 7 days)
 	service.StartPlaygroundUploadCleanupTask()
 
+	// Playground archive (hourly, compresses conversations unopened for 7 days)
+	service.StartPlaygroundArchiveTask()
+
 	// Look for new releases on GitHub so administrators can upgrade online.
 	systemupgrade.StartCheckTask()
 

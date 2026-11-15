@@ -53,6 +53,7 @@ import {
   ConversationTitleNotice,
 } from './components/conversation-header'
 import { ConversationList } from './components/conversation-list'
+import { ConversationOpenProgress } from './components/conversation-open-progress'
 import { ConversationSession } from './components/conversation-session'
 import { DELETE_CONFIRM_DELAY_SECONDS } from './constants'
 import {
@@ -92,6 +93,9 @@ function updateListedConversation(
               title: row.title,
               revision: row.revision,
               update_time: row.update_time,
+              content_bytes: row.content_bytes ?? item.content_bytes,
+              // Saving or opening a conversation stores it uncompressed.
+              archived_at: 0,
             }
           : item
       ),
@@ -120,6 +124,10 @@ function PlaygroundWorkspace(props: { owner: number }) {
   const migrationProgress = useWorkspaceSelector(
     workspace,
     (snapshot) => snapshot.migrationProgress
+  )
+  const openProgress = useWorkspaceSelector(
+    workspace,
+    (snapshot) => snapshot.openProgress
   )
   const cacheError = useWorkspaceSelector(
     workspace,
@@ -337,7 +345,10 @@ function PlaygroundWorkspace(props: { owner: number }) {
             )}
           </p>
         )}
-        {(!ready || opening) && <LoadingState />}
+        {(!ready || (opening && !openProgress)) && <LoadingState />}
+        {ready && opening && openProgress && (
+          <ConversationOpenProgress progress={openProgress} />
+        )}
         {openedMissing && (
           <EmptyState
             icon={MessageSquareOffIcon}

@@ -41,7 +41,9 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 				if dsn == "" {
 					t.Skip("TEST_PLAYGROUND_POSTGRES_DSN is not configured")
 				}
-				driver = postgres.Open(dsn)
+				// Production talks to PostgreSQL over the simple protocol, which
+				// sends []byte as bytea; test the same way.
+				driver = postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true})
 			}
 			db, err := gorm.Open(driver, &gorm.Config{})
 			require.NoError(t, err)
@@ -75,9 +77,28 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 						}{UserId: 903, Model: "gpt-4o", Automatic: true, Revision: 3, LastOperation: "legacy-preference-01"}
 						require.NoError(t, db.Table("playground_preferences").AutoMigrate(&legacyPreference))
 						require.NoError(t, db.Table("playground_preferences").Create(&legacyPreference).Error)
-						require.NoError(t, db.AutoMigrate(&PlaygroundConversation{}, &PlaygroundImport{}))
-						_, err := CreatePlaygroundConversation(903, playgroundTestWrite(t, "migration-survivor-01", "existing conversation"))
-						require.NoError(t, err)
+						// The conversation table as the previous release created it,
+						// before the archive columns, with a conversation unopened for
+						// longer than the archive period.
+						legacyConversation := struct {
+							Id            int64
+							UserId        int            `gorm:"not null;uniqueIndex:uk_playground_create,priority:1;index:idx_playground_owner_time,priority:1"`
+							CreationId    string         `gorm:"size:64;not null;uniqueIndex:uk_playground_create,priority:2"`
+							CreationHash  string         `gorm:"size:64;not null"`
+							Title         string         `gorm:"size:200;not null"`
+							Revision      int64          `gorm:"not null"`
+							Content       LongText       `gorm:"not null"`
+							LastOperation string         `gorm:"size:64;not null"`
+							LastHash      string         `gorm:"size:64;not null"`
+							CreateTime    int64          `gorm:"not null"`
+							UpdateTime    int64          `gorm:"not null;index:idx_playground_owner_time,priority:2"`
+							DeletedAt     gorm.DeletedAt `gorm:"index"`
+						}{UserId: 903, CreationId: "migration-survivor-01", CreationHash: "legacy", Title: "migration-survivor-01", Revision: 4, LastOperation: "legacy-save-04", LastHash: "legacy",
+							CreateTime: time.Now().Add(-30 * 24 * time.Hour).UnixMilli(), UpdateTime: time.Now().Add(-10 * 24 * time.Hour).UnixMilli()}
+						legacyConversation.Content = LongText(playgroundTestWrite(t, "migration-survivor-01", "existing conversation").Document)
+						require.NoError(t, db.Table("playground_conversations").AutoMigrate(&legacyConversation))
+						require.NoError(t, db.Table("playground_conversations").Create(&legacyConversation).Error)
+						require.NoError(t, db.AutoMigrate(&PlaygroundImport{}))
 						require.NoError(t, db.AutoMigrate(&Option{}))
 						require.NoError(t, db.Create(&Option{Key: "PlaygroundMigrationSentinel", Value: "unchanged"}).Error)
 					}
@@ -96,6 +117,24 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 						var preserved PlaygroundConversation
 						require.NoError(t, db.Where("user_id = ?", 903).First(&preserved).Error)
 						assert.Contains(t, string(preserved.Content), "existing conversation")
+						assert.EqualValues(t, 4, preserved.Revision)
+						assert.Zero(t, preserved.OpenTime)
+						assert.Zero(t, preserved.ContentBytes)
+						assert.Zero(t, preserved.ArchivedAt)
+						assert.Nil(t, preserved.ArchivedContent)
+						for _, index := range []string{"idx_playground_archive", "idx_playground_owner_time", "uk_playground_create"} {
+							assert.True(t, db.Migrator().HasIndex(&PlaygroundConversation{}, index), index)
+						}
+						// A conversation from before the upgrade, never opened since,
+						// is archived by its update time and restored unchanged.
+						archived, err := ArchiveColdPlaygroundConversations(time.Now(), 10)
+						require.NoError(t, err)
+						assert.Equal(t, 1, archived)
+						restored, err := GetPlaygroundConversation(903, preserved.Id)
+						require.NoError(t, err)
+						assert.JSONEq(t, string(preserved.Content), string(restored.Document))
+						assert.EqualValues(t, 4, restored.Revision)
+						assert.Zero(t, restored.ArchivedAt)
 						var option Option
 						require.NoError(t, db.Where("value = ?", "unchanged").First(&option).Error)
 						assert.Equal(t, "PlaygroundMigrationSentinel", option.Key)
@@ -107,6 +146,7 @@ func TestPlaygroundDatabaseMatrix(t *testing.T) {
 					t.Run("compression_preferences_and_document", testPlaygroundCompression)
 					t.Run("per_user_limits", testPlaygroundLimits)
 					t.Run("metadata_patch", testPlaygroundPatch)
+					t.Run("archive_and_restore", testPlaygroundArchive)
 				})
 			}
 		})

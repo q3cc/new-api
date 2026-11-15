@@ -39,7 +39,11 @@ import {
 } from '../conversations-api'
 import { CompressionCoordinator } from './compression-coordinator'
 import { validCompression } from './context-compression'
-import type { ConversationEntry, WorkspaceSnapshot } from './conversation-entry'
+import type {
+  ConversationEntry,
+  OpenHint,
+  WorkspaceSnapshot,
+} from './conversation-entry'
 import {
   conversationTitleSource,
   generateConversationTitle,
@@ -52,7 +56,12 @@ import {
   readLegacySource,
 } from './storage/pending-conversations'
 
-export type { ConversationEntry, WorkspaceSnapshot } from './conversation-entry'
+export type {
+  ConversationEntry,
+  OpenHint,
+  OpenProgress,
+  WorkspaceSnapshot,
+} from './conversation-entry'
 
 /**
  * What a failed save needs before it can succeed. A conflict or a deletion
@@ -275,10 +284,14 @@ export class ConversationWorkspace {
     if (source) clearImportedSource(this.owner, source)
     this.publish({ migrationError: undefined, migrationProgress: undefined })
   }
-  open(id: number, reload = false): Promise<string | undefined> {
+  open(
+    id: number,
+    reload = false,
+    hint: OpenHint = {}
+  ): Promise<string | undefined> {
     const opening = this.opening.get(id)
     if (opening) return opening
-    const task = this.loadConversation(id, reload).finally(() =>
+    const task = this.loadConversation(id, reload, hint).finally(() =>
       this.opening.delete(id)
     )
     this.opening.set(id, task)
@@ -286,7 +299,8 @@ export class ConversationWorkspace {
   }
   private async loadConversation(
     id: number,
-    reload: boolean
+    reload: boolean,
+    hint: OpenHint
   ): Promise<string | undefined> {
     if (!this.isActive()) return
     const existing = Object.values(this.snapshot.entries).find(
@@ -298,8 +312,21 @@ export class ConversationWorkspace {
       this.stopHandlers.get(existing.key)?.()
     }
     if (reload) await this.taskQueue.catch(() => {})
-    const row = await getConversation(id, this.controller.signal)
+    const archived = Boolean(hint.archived)
+    const total = hint.bytes || undefined
+    this.publish({ openProgress: { id, loaded: 0, total, archived } })
+    const row = await getConversation(id, this.controller.signal, (loaded) => {
+      if (this.isActive() && this.snapshot.openProgress?.id === id) {
+        this.publish({ openProgress: { id, loaded, total, archived } })
+      }
+    }).finally(() => {
+      if (this.isActive() && this.snapshot.openProgress?.id === id) {
+        this.publish({ openProgress: undefined })
+      }
+    })
     if (!this.isActive()) return
+    // Opening restored the archived conversation; the list shows it so.
+    if (archived) this.onSaved(row)
     const key = existing?.key ?? crypto.randomUUID()
     if (!(await this.pendingCache.claim(key))) return
     const entry: ConversationEntry = {

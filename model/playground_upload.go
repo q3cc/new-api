@@ -60,7 +60,7 @@ func playgroundUploadReceipt(userId int, fingerprint string, size int) (*Playgro
 	}
 	// Preserve deletion semantics when retrying an already completed upload.
 	var conversation PlaygroundConversation
-	if err := playgroundDB().Unscoped().Where("user_id = ? AND id = ?", userId, result.ConversationId).First(&conversation).Error; err != nil {
+	if err := playgroundDB().Unscoped().Select("id", "deleted_at").Where("user_id = ? AND id = ?", userId, result.ConversationId).First(&conversation).Error; err != nil {
 		return nil, err
 	}
 	result.Deleted = conversation.DeletedAt.Valid

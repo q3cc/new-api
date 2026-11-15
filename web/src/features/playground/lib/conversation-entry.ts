@@ -47,10 +47,27 @@ export type ConversationEntry = {
    */
   saved?: SavedConversation
 }
+/** What the conversation list knows about a conversation before opening it. */
+export type OpenHint = {
+  /** Size of the stored document in bytes, when known. */
+  bytes?: number
+  /** The server stores it compressed and decompresses it to open it. */
+  archived?: boolean
+}
+/** How far a conversation being opened has been downloaded. */
+export type OpenProgress = {
+  id: number
+  /** Bytes of the response read so far. */
+  loaded: number
+  /** Expected size in bytes; unknown when the list did not say. */
+  total?: number
+  archived: boolean
+}
 export type WorkspaceSnapshot = {
   entries: Record<string, ConversationEntry>
   migrationError?: unknown
   migrationProgress?: ImportProgress
+  openProgress?: OpenProgress
   cacheError?: unknown
   ready: boolean
 }

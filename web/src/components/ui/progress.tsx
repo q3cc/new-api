@@ -63,7 +63,11 @@ function ProgressIndicator({
   return (
     <ProgressPrimitive.Indicator
       data-slot='progress-indicator'
-      className={cn('bg-primary h-full transition-all', className)}
+      className={cn(
+        // Without a value the indicator has no width; pulse across the track.
+        'bg-primary data-indeterminate:animate-pulse h-full transition-all data-indeterminate:w-full',
+        className
+      )}
       {...props}
     />
   )
