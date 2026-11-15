@@ -88,12 +88,20 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	// error log get the administrator's message.
 	RewriteUpstreamError(c, err)
 
-	RecordRelayErrorLog(c, channelError.ChannelId, err, relayInfo)
+	recordRelayErrorLog(c, channelError.ChannelId, err, relayInfo, common.GetContextKeyString(c, constant.ContextKeyUpstreamErrorOriginal))
 }
 
 // RecordRelayErrorLog writes the error log of a failed relay request when
 // error logs are on. channelId is 0 for a request that reached no channel.
 func RecordRelayErrorLog(c *gin.Context, channelId int, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {
+	recordRelayErrorLog(c, channelId, err, relayInfo, "")
+}
+
+// recordRelayErrorLog also takes the provider's text of an error a rewrite
+// rule replaced, for the administrator. Only the caller that rewrote this
+// error passes it: the request context may still hold the text of an earlier
+// attempt, which must not appear under a later, unrelated error.
+func recordRelayErrorLog(c *gin.Context, channelId int, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo, upstreamOriginal string) {
 	if !constant.ErrorLogEnabled || !types.IsRecordErrorLog(err) {
 		return
 	}
@@ -110,8 +118,8 @@ func RecordRelayErrorLog(c *gin.Context, channelId int, err *types.NewAPIError, 
 	other.SetPublic("error_code", err.GetErrorCode())
 	other.SetPublic("status_code", err.StatusCode)
 	AppendRelayLogAdminInfo(c, relayInfo, other)
-	if original := common.GetContextKeyString(c, constant.ContextKeyUpstreamErrorOriginal); original != "" {
-		other.SetAdmin("upstream_error", common.MaskSensitiveInfo(original, common.UpstreamAddresses(c)...))
+	if upstreamOriginal != "" {
+		other.SetAdmin("upstream_error", common.MaskSensitiveInfo(upstreamOriginal, common.UpstreamAddresses(c)...))
 	}
 	appendRequestPluginRecord(relayInfo, other)
 	AppendResponseModelLogInfo(relayInfo, other)
