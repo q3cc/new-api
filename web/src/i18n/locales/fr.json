@@ -8557,6 +8557,21 @@
     "Filter groups by tag": "Filtrer les groupes par étiquette",
     "Mixed": "Mixte",
     "Auto ({{tag}})": "Auto ({{tag}})",
-    "Group tag": "Étiquette du groupe"
+    "Group tag": "Étiquette du groupe",
+    "Gift code": "Code cadeau",
+    "Quota from this code counts toward the redeemer's gift credit. Leave it off for codes sold to users.": "Le crédit de ce code est compté dans le crédit offert de l'utilisateur. Laissez désactivé pour les codes vendus.",
+    "Sign-up bonus": "Bonus d'inscription",
+    "Invitation rewards": "Récompenses de parrainage",
+    "Lottery prizes": "Lots de tirage",
+    "Check-in rewards": "Récompenses de connexion",
+    "Gift redemption codes": "Codes cadeaux",
+    "Platform gifts": "Cadeaux de la plateforme",
+    "Gift credit received: {{amount}}": "Crédit offert reçu : {{amount}}",
+    "About gift credit": "À propos du crédit offert",
+    "Total gift credit received": "Total du crédit offert reçu",
+    "Gift credit comes from sign-up bonuses, invitation rewards, lottery prizes, check-ins and other platform giveaways. It is spent together with your balance. It can only be used on this platform and cannot be withdrawn or transferred. When you request a refund, the gift credit you have received is deducted first; see the user agreement for details.": "Le crédit offert provient des bonus d'inscription, des récompenses de parrainage, des tirages, des connexions quotidiennes et d'autres cadeaux de la plateforme. Il est dépensé avec votre solde. Il ne peut être utilisé que sur cette plateforme et ne peut être ni retiré ni transféré. En cas de demande de remboursement, le crédit offert reçu est déduit en premier ; voir le contrat d'utilisation pour plus de détails.",
+    "Count as gift credit": "Compter comme crédit offert",
+    "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "Le montant est ajouté au crédit offert de l'utilisateur, déduit en cas de demande de remboursement. Laissez décoché pour les recharges manuelles payées.",
+    "Gift {{amount}}": "Offert {{amount}}"
   }
 }

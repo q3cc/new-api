@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -36,6 +37,7 @@ import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
+import { walletQueryKeys } from './api'
 import { DEFAULT_DISCOUNT_RATE, PAYMENT_TYPES } from './constants'
 import {
   useTopupInfo,
@@ -45,6 +47,7 @@ import {
   useCreemPayment,
   useWaffoPayment,
   useWaffoPancakePayment,
+  useGiftQuota,
 } from './hooks'
 import {
   getDefaultPaymentType,
@@ -71,6 +74,8 @@ export function Wallet(props: WalletProps) {
   const { t } = useTranslation()
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const giftQuota = useGiftQuota()
   const [topupAmount, setTopupAmount] = useState(0)
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
@@ -132,13 +137,15 @@ export function Wallet(props: WalletProps) {
       if (response.success && response.data) {
         setUser(response.data as UserWalletData)
       }
+      // Redeeming a code or moving invitation rewards in can add gift credit.
+      void queryClient.invalidateQueries({ queryKey: walletQueryKeys.giftQuota })
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to fetch user data:', error)
     } finally {
       setUserLoading(false)
     }
-  }, [])
+  }, [queryClient])
 
   useEffect(() => {
     fetchUser()
@@ -309,7 +316,11 @@ export function Wallet(props: WalletProps) {
         <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
-            <WalletStatsCard user={user} loading={userLoading} />
+            <WalletStatsCard
+              user={user}
+              loading={userLoading}
+              giftQuota={giftQuota.data}
+            />
             <TrialBalanceCard />
 
             <div

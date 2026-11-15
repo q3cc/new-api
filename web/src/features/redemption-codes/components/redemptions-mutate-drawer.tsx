@@ -29,6 +29,7 @@ import {
   sideDrawerFooterClassName,
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
+  sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
@@ -53,6 +54,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { getAdminPlans } from '@/features/subscriptions/api'
 import {
   formatDuration,
@@ -484,6 +486,33 @@ export function RedemptionsMutateDrawer({
                                 })}
                           </FormDescription>
                           <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {redemptionType === 'balance' && (
+                    <FormField
+                      control={form.control}
+                      name='gift'
+                      render={({ field }) => (
+                        <FormItem className={sideDrawerSwitchItemClassName()}>
+                          <div className='flex flex-col gap-0.5'>
+                            <FormLabel className='text-base'>
+                              {t('Gift code')}
+                            </FormLabel>
+                            <FormDescription>
+                              {t(
+                                "Quota from this code counts toward the redeemer's gift credit. Leave it off for codes sold to users."
+                              )}
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
                         </FormItem>
                       )}
                     />

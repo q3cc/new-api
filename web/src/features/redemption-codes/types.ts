@@ -29,6 +29,7 @@ export const redemptionSchema = z.object({
   key: z.string(),
   status: z.number(), // 1: enabled, 2: disabled, 3: used
   quota: z.number(),
+  gift: z.boolean().optional(),
   redemption_type: z.enum(['balance', 'subscription']).optional(),
   plan_id: z.number().optional(),
   plan_title: z.string().optional(),
@@ -77,6 +78,7 @@ export interface RedemptionFormData {
   id?: number
   name: string
   quota: number
+  gift?: boolean
   redemption_type?: 'balance' | 'subscription'
   plan_id?: number
   expired_time: number

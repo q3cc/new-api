@@ -60,6 +60,7 @@ func TestMain(m *testing.M) {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&UserAccessToken{},
+		&GiftQuotaRecord{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}

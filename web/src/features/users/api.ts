@@ -22,6 +22,7 @@ import type { PermissionCatalog } from '@/lib/admin-permissions'
 import { api } from '@/lib/api'
 import type { CustomOAuthBinding } from '@/lib/oauth'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import type { GiftQuotaResponse } from '@/features/wallet/types'
 
 import type {
   User,
@@ -202,6 +203,14 @@ export async function adjustUserQuota(
   payload: ManageUserQuotaPayload
 ): Promise<ApiResponse<Partial<User>>> {
   const res = await api.post('/api/user/manage', payload)
+  return res.data
+}
+
+/**
+ * Get a user's cumulative gift credit by source (admin)
+ */
+export async function getUserGiftQuota(id: number): Promise<GiftQuotaResponse> {
+  const res = await api.get(`/api/user/${id}/gift-quota`)
   return res.data
 }
 

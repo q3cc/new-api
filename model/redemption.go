@@ -28,21 +28,24 @@ type RedemptionResult struct {
 }
 
 type Redemption struct {
-	RedemptionType string         `json:"redemption_type" gorm:"type:varchar(32);not null;default:'balance'"`
-	PlanId         int            `json:"plan_id" gorm:"index;default:0"`
-	PlanTitle      string         `json:"plan_title" gorm:"-"`
-	Id             int            `json:"id"`
-	UserId         int            `json:"user_id"`
-	Key            string         `json:"key" gorm:"type:char(32);uniqueIndex"`
-	Status         int            `json:"status" gorm:"default:1"`
-	Name           string         `json:"name" gorm:"index"`
-	Quota          int            `json:"quota" gorm:"default:0"`
-	CreatedTime    int64          `json:"created_time" gorm:"bigint"`
-	RedeemedTime   int64          `json:"redeemed_time" gorm:"bigint"`
-	Count          int            `json:"count" gorm:"-:all"` // only for api request
-	UsedUserId     int            `json:"used_user_id"`
-	DeletedAt      gorm.DeletedAt `gorm:"index"`
-	ExpiredTime    int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
+	RedemptionType string `json:"redemption_type" gorm:"type:varchar(32);not null;default:'balance'"`
+	PlanId         int    `json:"plan_id" gorm:"index;default:0"`
+	PlanTitle      string `json:"plan_title" gorm:"-"`
+	Id             int    `json:"id"`
+	UserId         int    `json:"user_id"`
+	Key            string `json:"key" gorm:"type:char(32);uniqueIndex"`
+	Status         int    `json:"status" gorm:"default:1"`
+	Name           string `json:"name" gorm:"index"`
+	Quota          int    `json:"quota" gorm:"default:0"`
+	// Gift marks a balance code the platform gave away rather than sold; its
+	// quota counts toward the redeemer's gift total.
+	Gift         bool           `json:"gift"`
+	CreatedTime  int64          `json:"created_time" gorm:"bigint"`
+	RedeemedTime int64          `json:"redeemed_time" gorm:"bigint"`
+	Count        int            `json:"count" gorm:"-:all"` // only for api request
+	UsedUserId   int            `json:"used_user_id"`
+	DeletedAt    gorm.DeletedAt `gorm:"index"`
+	ExpiredTime  int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
 }
 
 func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total int64, err error) {
@@ -341,7 +344,7 @@ func (redemption *Redemption) Update(statusOnly bool) error {
 			if err := redemption.ValidateBenefit(tx); err != nil {
 				return err
 			}
-			updates = map[string]any{"name": redemption.Name, "quota": redemption.Quota, "plan_id": redemption.PlanId, "expired_time": redemption.ExpiredTime}
+			updates = map[string]any{"name": redemption.Name, "quota": redemption.Quota, "plan_id": redemption.PlanId, "expired_time": redemption.ExpiredTime, "gift": redemption.Gift}
 		}
 		result := tx.Model(&Redemption{}).Where("id = ? AND status = ? AND used_user_id = 0 AND redeemed_time = 0", current.Id, current.Status).Updates(updates)
 		if result.Error != nil {

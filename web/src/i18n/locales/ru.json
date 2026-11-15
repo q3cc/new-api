@@ -8557,6 +8557,21 @@
     "Filter groups by tag": "Фильтровать группы по тегу",
     "Mixed": "Смешанные",
     "Auto ({{tag}})": "Авто ({{tag}})",
-    "Group tag": "Тег группы"
+    "Group tag": "Тег группы",
+    "Gift code": "Подарочный код",
+    "Quota from this code counts toward the redeemer's gift credit. Leave it off for codes sold to users.": "Сумма по этому коду учитывается в подарочном балансе пользователя. Не включайте для проданных кодов.",
+    "Sign-up bonus": "Бонус за регистрацию",
+    "Invitation rewards": "Награды за приглашения",
+    "Lottery prizes": "Призы розыгрышей",
+    "Check-in rewards": "Награды за отметки",
+    "Gift redemption codes": "Подарочные коды",
+    "Platform gifts": "Подарки платформы",
+    "Gift credit received: {{amount}}": "Получено подарочного баланса: {{amount}}",
+    "About gift credit": "О подарочном балансе",
+    "Total gift credit received": "Всего получено подарочного баланса",
+    "Gift credit comes from sign-up bonuses, invitation rewards, lottery prizes, check-ins and other platform giveaways. It is spent together with your balance. It can only be used on this platform and cannot be withdrawn or transferred. When you request a refund, the gift credit you have received is deducted first; see the user agreement for details.": "Подарочный баланс начисляется за регистрацию, приглашения, розыгрыши, ежедневные отметки и другие акции платформы. Он расходуется вместе с основным балансом. Его можно использовать только на этой платформе, вывести или передать нельзя. При запросе возврата полученный подарочный баланс вычитается в первую очередь; подробности в пользовательском соглашении.",
+    "Count as gift credit": "Учитывать как подарочный баланс",
+    "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "Сумма добавляется к подарочному балансу пользователя и вычитается при запросе возврата. Не отмечайте для оплаченных ручных пополнений.",
+    "Gift {{amount}}": "Подарок {{amount}}"
   }
 }

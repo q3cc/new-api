@@ -32,6 +32,7 @@ import type {
   AffiliateCodeResponse,
   AffiliateTransferResponse,
   AffiliateRebatesResponse,
+  GiftQuotaResponse,
   BillingHistoryResponse,
   CompleteOrderRequest,
   CreemPaymentRequest,
@@ -228,6 +229,15 @@ export async function getAffiliateCode(): Promise<AffiliateCodeResponse> {
 export const walletQueryKeys = {
   affiliateRebates: (page: number, pageSize: number) =>
     ['wallet', 'affiliate-rebates', page, pageSize] as const,
+  giftQuota: ['wallet', 'gift-quota'] as const,
+}
+
+/**
+ * Get the caller's cumulative gift credit by source
+ */
+export async function getGiftQuota(): Promise<GiftQuotaResponse> {
+  const res = await api.get('/api/user/self/gift-quota')
+  return res.data
 }
 
 /**

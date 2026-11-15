@@ -8557,6 +8557,21 @@
     "Filter groups by tag": "按标签筛选分组",
     "Mixed": "综合",
     "Auto ({{tag}})": "自动（{{tag}}）",
-    "Group tag": "分组标签"
+    "Group tag": "分组标签",
+    "Gift code": "赠送兑换码",
+    "Quota from this code counts toward the redeemer's gift credit. Leave it off for codes sold to users.": "兑换后的额度计入用户累计赠金。卖给用户的兑换码不要打开。",
+    "Sign-up bonus": "注册赠送",
+    "Invitation rewards": "邀请奖励",
+    "Lottery prizes": "抽奖奖励",
+    "Check-in rewards": "签到奖励",
+    "Gift redemption codes": "兑换码赠送",
+    "Platform gifts": "平台赠送",
+    "Gift credit received: {{amount}}": "累计获得赠金：{{amount}}",
+    "About gift credit": "赠金说明",
+    "Total gift credit received": "累计获得赠金",
+    "Gift credit comes from sign-up bonuses, invitation rewards, lottery prizes, check-ins and other platform giveaways. It is spent together with your balance. It can only be used on this platform and cannot be withdrawn or transferred. When you request a refund, the gift credit you have received is deducted first; see the user agreement for details.": "赠金来自注册赠送、邀请奖励、抽奖、签到等平台活动，与余额一起使用，消费时不区分。赠金仅限平台内消费，不可提现、不可转赠。申请退款时，已获得的赠金会先从可退余额中扣除，具体以用户协议为准。",
+    "Count as gift credit": "计入赠金",
+    "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "加的额度计入用户累计赠金，用户申请退款时会扣除。手动充值（用户付了钱）不要勾选。",
+    "Gift {{amount}}": "赠金 {{amount}}"
   }
 }

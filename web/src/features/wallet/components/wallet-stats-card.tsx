@@ -17,17 +17,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Activity, BarChart3, WalletCards } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatQuota } from '@/lib/format'
 
-import type { UserWalletData } from '../types'
+import type { GiftQuotaSummary, UserWalletData } from '../types'
+import { GiftQuotaPopover } from './gift-quota-popover'
 
 interface WalletStatsCardProps {
   user: UserWalletData | null
   loading?: boolean
+  giftQuota?: GiftQuotaSummary
 }
 
 export function WalletStatsCard(props: WalletStatsCardProps) {
@@ -52,6 +55,7 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
     description: string
     icon: typeof WalletCards
     tone: IconBadgeTone
+    footer?: ReactNode
   }[] = [
     {
       label: t('Current Balance'),
@@ -59,6 +63,9 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
       description: t('Remaining quota'),
       icon: WalletCards,
       tone: 'success',
+      footer: props.giftQuota && (
+        <GiftQuotaPopover summary={props.giftQuota} className='mt-1' />
+      ),
     },
     {
       label: t('Total Usage'),
@@ -92,9 +99,11 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
           <div className='text-foreground mt-1.5 font-mono text-sm font-bold tracking-tight break-all tabular-nums sm:mt-2.5 sm:text-2xl'>
             {item.value}
           </div>
-          <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
-            {item.description}
-          </div>
+          {item.footer ?? (
+            <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
+              {item.description}
+            </div>
+          )}
         </div>
       ))}
     </div>

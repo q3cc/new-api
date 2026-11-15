@@ -22,7 +22,9 @@ type UserQuotaAdjustment struct {
 	After    int
 }
 
-func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuotaAdjustment, error) {
+// AdjustUserQuota applies a manual balance change. With gift set, an added
+// amount also counts toward the user's gift total; other modes ignore it.
+func AdjustUserQuota(userID, operatorRole int, mode string, value int, gift bool) (*UserQuotaAdjustment, error) {
 	if userID <= 0 || (mode != "add" && mode != "subtract" && mode != "override") {
 		return nil, ErrInvalidUserQuotaAdjustment
 	}
@@ -68,6 +70,9 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 			}
 		}
 		adjustment = UserQuotaAdjustment{UserID: user.Id, Username: user.Username, Before: user.Quota, After: after}
+		if gift && mode == "add" {
+			return recordGiftQuotaTx(tx, user.Id, GiftSourceAdmin, value, "admin:"+common.GetUUID())
+		}
 		return nil
 	})
 	if err != nil {

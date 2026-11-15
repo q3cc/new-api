@@ -111,6 +111,21 @@ export interface AffiliateRebatesData {
   }
 }
 export type AffiliateRebatesResponse = ApiResponse<AffiliateRebatesData>
+
+export type GiftQuotaSource =
+  | 'registration'
+  | 'affiliate'
+  | 'lottery'
+  | 'checkin'
+  | 'redemption'
+  | 'admin'
+
+/** Free credit the platform has put into a wallet, by where it came from */
+export interface GiftQuotaSummary {
+  total: number
+  items: { source: GiftQuotaSource; quota: number }[]
+}
+export type GiftQuotaResponse = ApiResponse<GiftQuotaSummary>
 export type CreemPaymentResponse = ApiResponse<{ checkout_url: string }>
 export type WaffoPaymentResponse = ApiResponse<
   { payment_url?: string } | string

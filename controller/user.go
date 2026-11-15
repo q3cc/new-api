@@ -1213,6 +1213,8 @@ type ManageRequest struct {
 	Action string `json:"action"`
 	Value  int    `json:"value"`
 	Mode   string `json:"mode"`
+	// Gift counts an added amount toward the user's gift total.
+	Gift bool `json:"gift"`
 }
 
 // ManageUser Only admin user can do this

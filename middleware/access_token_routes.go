@@ -59,7 +59,9 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/trial-credit/types":                                            accessTokenScopeRule("user:read"),
 	"GET /api/trial-credit/config":                                           accessTokenScopeRule("option:read"),
 	"PUT /api/trial-credit/config":                                           accessTokenScopeRule("option:write"),
+	"GET /api/user/self/gift-quota":                                          accessTokenScopeRule("wallet:read"),
 	"GET /api/user/self/trial-credit":                                        accessTokenScopeRule("wallet:read"),
+	"GET /api/user/:id/gift-quota":                                           accessTokenScopeRule("user:read"),
 	"POST /api/user/:id/trial-credit":                                        accessTokenScopeRule("user:write"),
 
 	// router/api-router.go: top level

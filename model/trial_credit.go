@@ -654,17 +654,25 @@ func (user *User) createWithRegistrationRewards(tx *gorm.DB, inviterId int) erro
 	if err := tx.Create(user).Error; err != nil {
 		return err
 	}
+	rewards := []struct {
+		source string
+		quota  int
+	}{{"signup", signup}, {"invitee", invitee}}
 	if !trial {
+		// The rewards went into the wallet, so they count as gift quota.
+		for _, reward := range rewards {
+			key := fmt.Sprintf("%s:%d", reward.source, user.Id)
+			if err := recordGiftQuotaTx(tx, user.Id, GiftSourceRegistration, reward.quota, key); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	expires := int64(0)
 	if cfg.AffiliateDays > 0 {
 		expires = time.Now().Unix() + int64(cfg.AffiliateDays)*86400
 	}
-	for _, reward := range []struct {
-		source string
-		quota  int
-	}{{"signup", signup}, {"invitee", invitee}} {
+	for _, reward := range rewards {
 		if reward.quota <= 0 {
 			continue
 		}

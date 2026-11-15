@@ -74,8 +74,8 @@ func TestTrialCreditAccounting(t *testing.T) {
 				_ = sqlDB.Close()
 			})
 			// Dedicated throwaway databases only. Exercise the legacy tables before additive migration.
-			require.NoError(t, db.Migrator().DropTable(&TrialCreditAllocation{}, &TrialCreditReservation{}, &TrialCreditGrant{}, &Option{}, &User{}))
-			require.NoError(t, db.AutoMigrate(&User{}, &Option{}))
+			require.NoError(t, db.Migrator().DropTable(&TrialCreditAllocation{}, &TrialCreditReservation{}, &TrialCreditGrant{}, &Option{}, &User{}, &GiftQuotaRecord{}))
+			require.NoError(t, db.AutoMigrate(&User{}, &Option{}, &GiftQuotaRecord{}))
 			user := User{Username: "trial-owner", Quota: 10000, AffCode: "trial-owner", Group: "default"}
 			require.NoError(t, db.Create(&user).Error)
 			require.NoError(t, MigrateTrialCredit())
@@ -540,6 +540,9 @@ func TestTrialCreditAccounting(t *testing.T) {
 				assert.Equal(t, 150, cash.Quota)
 				require.NoError(t, db.Model(&TrialCreditGrant{}).Where("user_id = ?", cash.Id).Count(&count).Error)
 				assert.Zero(t, count)
+				var gifted int64
+				require.NoError(t, db.Model(&GiftQuotaRecord{}).Where("user_id = ?", cash.Id).Select("COALESCE(SUM(quota), 0)").Scan(&gifted).Error)
+				assert.EqualValues(t, 150, gifted, "wallet registration rewards count as gift credit")
 			})
 			t.Run("multiple kinds can be configured independently", func(t *testing.T) {
 				var cfg TrialCreditConfig

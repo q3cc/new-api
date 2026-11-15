@@ -187,6 +187,8 @@ export interface ManageUserQuotaPayload {
   action: 'add_quota'
   mode: QuotaAdjustMode
   value: number
+  /** Count an added amount toward the user's gift credit */
+  gift?: boolean
 }
 
 // ============================================================================

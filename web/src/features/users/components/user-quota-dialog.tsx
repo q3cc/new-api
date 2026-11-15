@@ -16,20 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { GiftQuotaPopover } from '@/features/wallet/components/gift-quota-popover'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
-import { adjustUserQuota } from '../api'
+import { adjustUserQuota, getUserGiftQuota } from '../api'
 import type { QuotaAdjustMode } from '../types'
 
 interface UserQuotaDialogProps {
@@ -44,7 +48,16 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
   const { t } = useTranslation()
   const [mode, setMode] = useState<QuotaAdjustMode>('add')
   const [amount, setAmount] = useState('')
+  const [gift, setGift] = useState(false)
   const [loading, setLoading] = useState(false)
+  const giftCheckboxId = useId()
+  const giftQuota = useQuery({
+    queryKey: ['users', 'gift-quota', props.userId],
+    queryFn: async () =>
+      requireServerSuccess(await getUserGiftQuota(props.userId)).data,
+    enabled: props.open && props.userId > 0,
+    meta: { errorToast: false },
+  })
 
   const { meta: currencyMeta } = getCurrencyDisplay()
   const currencyLabel = getCurrencyLabel()
@@ -83,11 +96,14 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
         action: 'add_quota',
         mode,
         value: mode === 'override' ? value : Math.abs(value),
+        gift: mode === 'add' && gift,
       })
       if (result.success) {
         toast.success(t('Quota adjusted successfully'))
         setAmount('')
         setMode('add')
+        setGift(false)
+        void giftQuota.refetch()
         props.onOpenChange(false)
         props.onSuccess()
       } else {
@@ -103,6 +119,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
   const handleCancel = () => {
     setAmount('')
     setMode('add')
+    setGift(false)
     props.onOpenChange(false)
   }
 
@@ -130,7 +147,12 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
       }
     >
       <div className='space-y-4'>
-        <div className='text-muted-foreground text-sm'>{getPreviewText()}</div>
+        <div className='space-y-1.5'>
+          <div className='text-muted-foreground text-sm'>
+            {getPreviewText()}
+          </div>
+          {giftQuota.data && <GiftQuotaPopover summary={giftQuota.data} />}
+        </div>
 
         <div className='space-y-2'>
           <Label>{t('Mode')}</Label>
@@ -174,6 +196,28 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
             }}
           />
         </div>
+
+        {mode === 'add' && (
+          <div className='flex items-start gap-2'>
+            <Checkbox
+              id={giftCheckboxId}
+              className='mt-0.5'
+              checked={gift}
+              onCheckedChange={(checked) => setGift(checked === true)}
+            />
+            <Label
+              htmlFor={giftCheckboxId}
+              className='flex-col items-start gap-0.5 leading-normal'
+            >
+              {t('Count as gift credit')}
+              <span className='text-muted-foreground text-xs font-normal'>
+                {t(
+                  "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups."
+                )}
+              </span>
+            </Label>
+          </div>
+        )}
       </div>
     </Dialog>
   )

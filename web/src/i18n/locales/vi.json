@@ -8557,6 +8557,21 @@
     "Filter groups by tag": "Lọc nhóm theo thẻ",
     "Mixed": "Tổng hợp",
     "Auto ({{tag}})": "Tự động ({{tag}})",
-    "Group tag": "Thẻ nhóm"
+    "Group tag": "Thẻ nhóm",
+    "Gift code": "Mã quà tặng",
+    "Quota from this code counts toward the redeemer's gift credit. Leave it off for codes sold to users.": "Hạn mức từ mã này được tính vào tín dụng tặng của người dùng. Hãy tắt với mã đã bán.",
+    "Sign-up bonus": "Thưởng đăng ký",
+    "Invitation rewards": "Thưởng mời bạn",
+    "Lottery prizes": "Giải thưởng quay số",
+    "Check-in rewards": "Thưởng điểm danh",
+    "Gift redemption codes": "Mã đổi quà tặng",
+    "Platform gifts": "Quà tặng từ nền tảng",
+    "Gift credit received: {{amount}}": "Tín dụng tặng đã nhận: {{amount}}",
+    "About gift credit": "Về tín dụng tặng",
+    "Total gift credit received": "Tổng tín dụng tặng đã nhận",
+    "Gift credit comes from sign-up bonuses, invitation rewards, lottery prizes, check-ins and other platform giveaways. It is spent together with your balance. It can only be used on this platform and cannot be withdrawn or transferred. When you request a refund, the gift credit you have received is deducted first; see the user agreement for details.": "Tín dụng tặng đến từ thưởng đăng ký, thưởng mời bạn, quay số, điểm danh và các chương trình tặng khác của nền tảng. Nó được dùng chung với số dư. Chỉ dùng được trên nền tảng này, không thể rút hoặc chuyển nhượng. Khi yêu cầu hoàn tiền, tín dụng tặng đã nhận sẽ được trừ trước; xem thỏa thuận người dùng để biết chi tiết.",
+    "Count as gift credit": "Tính là tín dụng tặng",
+    "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "Số tiền được cộng vào tín dụng tặng của người dùng và sẽ bị trừ khi họ yêu cầu hoàn tiền. Không chọn cho các lần nạp thủ công đã thanh toán.",
+    "Gift {{amount}}": "Tặng {{amount}}"
   }
 }

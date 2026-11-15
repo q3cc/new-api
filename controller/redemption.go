@@ -103,6 +103,7 @@ func AddRedemption(c *gin.Context) {
 			Key:            key,
 			CreatedTime:    common.GetTimestamp(),
 			Quota:          redemption.Quota,
+			Gift:           redemption.Gift,
 			ExpiredTime:    redemption.ExpiredTime,
 		}
 		err = cleanRedemption.Insert()
@@ -124,6 +125,7 @@ func AddRedemption(c *gin.Context) {
 		"plan_id":         redemption.PlanId,
 		"count":           redemption.Count,
 		"quota":           logger.FormatQuota(redemption.Quota),
+		"gift":            redemption.Gift,
 	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -175,6 +177,7 @@ func UpdateRedemption(c *gin.Context) {
 		}
 		cleanRedemption.Name, cleanRedemption.Quota = redemption.Name, redemption.Quota
 		cleanRedemption.PlanId, cleanRedemption.ExpiredTime = redemption.PlanId, redemption.ExpiredTime
+		cleanRedemption.Gift = redemption.Gift
 	} else {
 		cleanRedemption.Status = redemption.Status
 	}
@@ -188,7 +191,7 @@ func UpdateRedemption(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAudit(c, "redemption.update", map[string]any{"id": redemption.Id, "redemption_type": cleanRedemption.RedemptionType, "plan_id": cleanRedemption.PlanId})
+	recordManageAudit(c, "redemption.update", map[string]any{"id": redemption.Id, "redemption_type": cleanRedemption.RedemptionType, "plan_id": cleanRedemption.PlanId, "gift": cleanRedemption.Gift})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
