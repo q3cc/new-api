@@ -8573,6 +8573,7 @@
     "Count as gift credit": "Учитывать как подарочный баланс",
     "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "Сумма добавляется к подарочному балансу пользователя и вычитается при запросе возврата. Не отмечайте для оплаченных ручных пополнений.",
     "Gift {{amount}}": "Подарок {{amount}}",
-    "Top-up bonus": "Бонус за пополнение"
+    "Top-up bonus": "Бонус за пополнение",
+    "Press Enter to confirm, Ctrl + Enter for a new line": "Enter — подтвердить, Ctrl + Enter — новая строка"
   }
 }

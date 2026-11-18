@@ -8573,6 +8573,7 @@
     "Count as gift credit": "Compter comme crédit offert",
     "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "Le montant est ajouté au crédit offert de l'utilisateur, déduit en cas de demande de remboursement. Laissez décoché pour les recharges manuelles payées.",
     "Gift {{amount}}": "Offert {{amount}}",
-    "Top-up bonus": "Bonus de recharge"
+    "Top-up bonus": "Bonus de recharge",
+    "Press Enter to confirm, Ctrl + Enter for a new line": "Entrée pour confirmer, Ctrl + Entrée pour aller à la ligne"
   }
 }

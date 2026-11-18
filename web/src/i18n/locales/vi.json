@@ -8573,6 +8573,7 @@
     "Count as gift credit": "Tính là tín dụng tặng",
     "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "Số tiền được cộng vào tín dụng tặng của người dùng và sẽ bị trừ khi họ yêu cầu hoàn tiền. Không chọn cho các lần nạp thủ công đã thanh toán.",
     "Gift {{amount}}": "Tặng {{amount}}",
-    "Top-up bonus": "Thưởng nạp tiền"
+    "Top-up bonus": "Thưởng nạp tiền",
+    "Press Enter to confirm, Ctrl + Enter for a new line": "Nhấn Enter để xác nhận, Ctrl + Enter để xuống dòng"
   }
 }

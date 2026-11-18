@@ -8573,6 +8573,7 @@
     "Count as gift credit": "ギフト額に計上",
     "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "追加した額度は利用者の累計ギフト額に計上され、返金申請時に差し引かれます。支払い済みの手動チャージではチェックしないでください。",
     "Gift {{amount}}": "ギフト {{amount}}",
-    "Top-up bonus": "チャージ特典"
+    "Top-up bonus": "チャージ特典",
+    "Press Enter to confirm, Ctrl + Enter for a new line": "Enter で確定、Ctrl + Enter で改行"
   }
 }

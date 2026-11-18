@@ -8573,6 +8573,7 @@
     "Count as gift credit": "计入赠金",
     "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "加的额度计入用户累计赠金，用户申请退款时会扣除。手动充值（用户付了钱）不要勾选。",
     "Gift {{amount}}": "赠金 {{amount}}",
-    "Top-up bonus": "充值赠送"
+    "Top-up bonus": "充值赠送",
+    "Press Enter to confirm, Ctrl + Enter for a new line": "回车直接确认，Ctrl + 回车换行"
   }
 }

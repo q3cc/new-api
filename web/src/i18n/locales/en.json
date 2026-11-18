@@ -8573,6 +8573,7 @@
     "Count as gift credit": "Count as gift credit",
     "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.",
     "Gift {{amount}}": "Gift {{amount}}",
-    "Top-up bonus": "Top-up bonus"
+    "Top-up bonus": "Top-up bonus",
+    "Press Enter to confirm, Ctrl + Enter for a new line": "Press Enter to confirm, Ctrl + Enter for a new line"
   }
 }

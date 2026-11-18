@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useId, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -62,6 +63,7 @@ export function NoteActionDialog(props: NoteActionDialogProps) {
 function NoteActionDialogContent(props: NoteActionDialogProps) {
   const { t } = useTranslation()
   const noteId = useId()
+  const hintId = useId()
   const queryClient = useQueryClient()
   const [note, setNote] = useState('')
   const mutation = useMutation({
@@ -74,6 +76,9 @@ function NoteActionDialogContent(props: NoteActionDialogProps) {
     },
   })
   const action = props.action
+  const confirm = () => {
+    if (action && !mutation.isPending) mutation.mutate(action)
+  }
   return (
     <ConfirmDialog
       open={!!action}
@@ -85,9 +90,7 @@ function NoteActionDialogContent(props: NoteActionDialogProps) {
       confirmText={action?.confirmText}
       destructive={action?.destructive}
       isLoading={mutation.isPending}
-      handleConfirm={() => {
-        if (action && !mutation.isPending) mutation.mutate(action)
-      }}
+      handleConfirm={confirm}
     >
       {action?.subject}
       <div className='grid gap-2'>
@@ -96,8 +99,29 @@ function NoteActionDialogContent(props: NoteActionDialogProps) {
           id={noteId}
           value={note}
           maxLength={NOTE_MAX_LENGTH}
+          aria-describedby={hintId}
           onChange={(event) => setNote(event.target.value)}
+          // Enter confirms; Ctrl+Enter (and the native Shift+Enter) starts a
+          // new line. Enter that ends an IME composition only commits the text.
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.shiftKey) return
+            if (event.nativeEvent.isComposing) return
+            event.preventDefault()
+            if (!event.ctrlKey) {
+              confirm()
+              return
+            }
+            const input = event.currentTarget
+            const start = input.selectionStart
+            const next = `${note.slice(0, start)}\n${note.slice(input.selectionEnd)}`
+            if (next.length > NOTE_MAX_LENGTH) return
+            flushSync(() => setNote(next))
+            input.setSelectionRange(start + 1, start + 1)
+          }}
         />
+        <p id={hintId} className='text-muted-foreground text-xs'>
+          {t('Press Enter to confirm, Ctrl + Enter for a new line')}
+        </p>
       </div>
       {mutation.isError && (
         <p role='alert' className='text-destructive text-sm'>

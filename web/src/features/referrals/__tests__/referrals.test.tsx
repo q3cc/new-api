@@ -17,7 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -333,6 +339,56 @@ it('a new action starts with an empty note', async () => {
       name: 'Note (optional)',
     })
   ).toHaveValue('')
+})
+
+it('Ctrl+Enter breaks the note at the caret and Enter confirms it', async () => {
+  const user = userEvent.setup()
+  render(<ReferralsHarness initial={{ tab: 'rebates' }} />)
+  await screen.findByText('trade-review')
+  await user.click(screen.getAllByRole('button', { name: 'Reject' })[0])
+  const dialog = await screen.findByRole('alertdialog')
+  const note = within(dialog).getByRole('textbox', { name: 'Note (optional)' })
+  expect(note).toHaveAccessibleDescription(
+    'Press Enter to confirm, Ctrl + Enter for a new line'
+  )
+  await user.type(note, 'same householdIP')
+  await user.type(note, '{ArrowLeft}{ArrowLeft}{Control>}{Enter}{/Control}', {
+    skipClick: true,
+  })
+  expect(note).toHaveValue('same household\nIP')
+  expect(api.post).not.toHaveBeenCalled()
+  await user.type(note, '{Enter}', { skipClick: true })
+  await waitFor(() =>
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  )
+  expect(api.post).toHaveBeenLastCalledWith('/api/affiliate/rebates/5/reject', {
+    note: 'same household\nIP',
+  })
+})
+
+it('Shift+Enter keeps the native new line and does not confirm', async () => {
+  const user = userEvent.setup()
+  render(<ReferralsHarness initial={{ tab: 'rebates' }} />)
+  await screen.findByText('trade-review')
+  await user.click(screen.getAllByRole('button', { name: 'Reject' })[0])
+  const dialog = await screen.findByRole('alertdialog')
+  const note = within(dialog).getByRole('textbox', { name: 'Note (optional)' })
+  await user.type(note, 'first{Shift>}{Enter}{/Shift}second')
+  expect(note).toHaveValue('first\nsecond')
+  expect(api.post).not.toHaveBeenCalled()
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+})
+
+it('Enter that ends an IME composition does not confirm', async () => {
+  const user = userEvent.setup()
+  render(<ReferralsHarness initial={{ tab: 'rebates' }} />)
+  await screen.findByText('trade-review')
+  await user.click(screen.getAllByRole('button', { name: 'Reject' })[0])
+  const dialog = await screen.findByRole('alertdialog')
+  const note = within(dialog).getByRole('textbox', { name: 'Note (optional)' })
+  fireEvent.keyDown(note, { key: 'Enter', isComposing: true })
+  expect(api.post).not.toHaveBeenCalled()
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument()
 })
 
 it.each([1, 10, 100])(
