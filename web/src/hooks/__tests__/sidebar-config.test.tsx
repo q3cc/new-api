@@ -108,6 +108,7 @@ describe('security sidebar visibility', () => {
       'Activities',
       'Wallet',
       'Promotion Center',
+      'My Tickets',
       'Profile',
       'Security & Access',
     ])
