@@ -188,6 +188,9 @@ func main() {
 	// Playground upload cleanup (hourly, removes chunks nobody resumed in 7 days)
 	service.StartPlaygroundUploadCleanupTask()
 
+	// Ticket auto close (hourly, closes tickets whose reply waited 7 days for the user)
+	service.StartTicketAutoCloseTask()
+
 	// Playground archive (hourly, compresses conversations unopened for 7 days)
 	service.StartPlaygroundArchiveTask()
 

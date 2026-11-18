@@ -393,6 +393,9 @@ func migrateDB() error {
 		&AffiliateInviteLog{},
 		&UserMessage{},
 		&GiftQuotaRecord{},
+		&Ticket{},
+		&TicketMessage{},
+		&TicketAttachment{},
 	)
 	if err != nil {
 		return err

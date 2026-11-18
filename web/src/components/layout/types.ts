@@ -119,6 +119,10 @@ export type SidebarViewParent = {
 export type SidebarBadges = {
   /** Task models whose price needs attention, on the entries leading to model pricing */
   modelPricing?: string
+  /** The user's tickets with a support reply they have not opened */
+  tickets?: string
+  /** Tickets waiting for support, for administrators */
+  ticketQueue?: string
 }
 
 /**

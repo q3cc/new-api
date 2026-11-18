@@ -76,7 +76,10 @@ export async function getOrderFilters(signal?: AbortSignal) {
   )
   return requireServerSuccess(response.data).data
 }
-export async function getOrderDetail(order: AdminOrder, signal?: AbortSignal) {
+export async function getOrderDetail(
+  order: Pick<AdminOrder, 'order_type' | 'trade_no'>,
+  signal?: AbortSignal
+) {
   const response = await api.get<Envelope<OrderDetail>>(
     '/api/user/topup/detail',
     {

@@ -38,10 +38,11 @@ import { getServerErrorMessage } from '@/lib/server-error-message'
 import { getOrderDetail, type AdminOrder } from '../api'
 
 export function OrderDetailDialog(props: {
-  order: AdminOrder
+  order: Pick<AdminOrder, 'order_type' | 'trade_no'>
   onClose: () => void
-  onComplete: (order: AdminOrder) => void
-  completing: boolean
+  /** Offers completing a pending or expired order; omit for a read-only view. */
+  onComplete?: (order: AdminOrder) => void
+  completing?: boolean
 }) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
@@ -109,10 +110,11 @@ export function OrderDetailDialog(props: {
       title={t('Order details')}
       contentClassName='sm:max-w-2xl'
       footer={
-        order?.status === 'pending' || order?.status === 'expired' ? (
+        props.onComplete &&
+        (order?.status === 'pending' || order?.status === 'expired') ? (
           <Button
             disabled={props.completing}
-            onClick={() => props.onComplete(order)}
+            onClick={() => props.onComplete?.(order)}
           >
             {t('Complete Order')}
           </Button>

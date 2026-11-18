@@ -124,6 +124,8 @@ export interface UserSettings {
   upstream_model_update_notify_enabled?: boolean
   /** Receive channel notifications (admin only); absent means on for root only */
   channel_notify_enabled?: boolean
+  /** Receive ticket notifications (admin only); absent means on for root only */
+  ticket_notify_enabled?: boolean
   /** Preferred interface/API response language */
   language?: string
 }
@@ -168,6 +170,7 @@ export interface UpdateUserSettingsRequest {
   record_ip_log?: boolean
   upstream_model_update_notify_enabled?: boolean
   channel_notify_enabled?: boolean
+  ticket_notify_enabled?: boolean
 }
 
 /**

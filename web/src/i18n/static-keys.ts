@@ -919,4 +919,12 @@ export const STATIC_I18N_KEYS = [
   'Channel priority is outside the sortable range',
   // Group tag labels (see @/lib/group-tag); provider names stay untranslated.
   'Mixed',
+  // Ticket statuses and categories (see @/features/tickets/constants).
+  'Awaiting support',
+  'Replied',
+  'Closed',
+  'Top-up & billing',
+  'API & models',
+  'Account & security',
+  'Other',
 ] as const

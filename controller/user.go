@@ -1459,6 +1459,7 @@ type UpdateUserSettingRequest struct {
 	GotifyPriority                   int     `json:"gotify_priority,omitempty"`
 	UpstreamModelUpdateNotifyEnabled *bool   `json:"upstream_model_update_notify_enabled,omitempty"`
 	ChannelNotifyEnabled             *bool   `json:"channel_notify_enabled,omitempty"`
+	TicketNotifyEnabled              *bool   `json:"ticket_notify_enabled,omitempty"`
 	AcceptUnsetModelRatioModel       bool    `json:"accept_unset_model_ratio_model"`
 	RecordIpLog                      bool    `json:"record_ip_log"`
 }
@@ -1566,6 +1567,9 @@ func UpdateUserSetting(c *gin.Context) {
 		}
 		if req.ChannelNotifyEnabled != nil {
 			settings.ChannelNotifyEnabled = req.ChannelNotifyEnabled
+		}
+		if req.TicketNotifyEnabled != nil {
+			settings.TicketNotifyEnabled = req.TicketNotifyEnabled
 		}
 	}
 

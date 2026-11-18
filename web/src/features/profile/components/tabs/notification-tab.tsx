@@ -124,10 +124,12 @@ export function NotificationTab({
 
   const notifyType = settings.notify_type
   // Switches the user never chose: reminders stay on, and root alone gets
-  // channel notifications.
+  // channel and ticket notifications.
   const quotaWarningEnabled = settings.quota_warning_enabled ?? true
   const channelNotifyEnabled =
     settings.channel_notify_enabled ?? role >= ROLE.SUPER_ADMIN
+  const ticketNotifyEnabled =
+    settings.ticket_notify_enabled ?? role >= ROLE.SUPER_ADMIN
   const tokensOnly = getCurrencyDisplay().meta.kind === 'tokens'
 
   return (
@@ -382,6 +384,17 @@ export function NotificationTab({
                     checked={channelNotifyEnabled}
                     onCheckedChange={(checked) =>
                       updateField('channel_notify_enabled', checked)
+                    }
+                  />
+                  <SettingsSwitchField
+                    controlId='ticketNotify'
+                    label={t('Ticket notifications')}
+                    description={t(
+                      'When a user opens a ticket or replies to one'
+                    )}
+                    checked={ticketNotifyEnabled}
+                    onCheckedChange={(checked) =>
+                      updateField('ticket_notify_enabled', checked)
                     }
                   />
                   <SettingsSwitchField

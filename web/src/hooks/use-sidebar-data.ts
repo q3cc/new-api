@@ -26,8 +26,10 @@ import {
   FlaskConical,
   Gift,
   HandCoins,
+  Headset,
   Key,
   LayoutDashboard,
+  LifeBuoy,
   ListTodo,
   Megaphone,
   MessageSquare,
@@ -132,6 +134,12 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             icon: Megaphone,
           },
           {
+            title: t('My Tickets'),
+            url: '/tickets',
+            icon: LifeBuoy,
+            badge: badges.tickets,
+          },
+          {
             title: t('Profile'),
             url: '/profile',
             icon: User,
@@ -182,6 +190,13 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             title: t('Referrals'),
             url: '/referrals',
             icon: HandCoins,
+            requiredRole: ROLE.ADMIN,
+          },
+          {
+            title: t('Ticket Management'),
+            url: '/tickets/manage',
+            icon: Headset,
+            badge: badges.ticketQueue,
             requiredRole: ROLE.ADMIN,
           },
           {

@@ -629,6 +629,10 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'activity.draw': 'Drew winners or awarded prizes for an activity',
   'activity.entry_deliver': 'Delivered an activity prize',
   'activity.entry_disqualify': 'Changed eligibility of a leaderboard entry',
+  // Tickets
+  'ticket.reply': 'Replied to a ticket',
+  'ticket.close': 'Closed a ticket',
+  'ticket.reopen': 'Reopened a ticket',
   // Referral rebates
   'affiliate.invite_cancel': 'Cancelled an invitation',
   'affiliate.invite_restore': 'Restored an invitation',

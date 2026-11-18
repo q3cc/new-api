@@ -132,3 +132,14 @@ const (
 	MsgChannelUpstreamUpdateFailedChannels  = "channel.upstream_update_failed_channels"
 	MsgChannelUpstreamUpdateMoreOmitted     = "channel.upstream_update_more_omitted"
 )
+
+// Ticket notices: new tickets and user replies go to administrators who
+// receive them, support replies go to the ticket's owner
+const (
+	MsgTicketNotifyNewSubject        = "ticket.notify_new_subject"
+	MsgTicketNotifyNewContent        = "ticket.notify_new_content"
+	MsgTicketNotifyUserReplySubject  = "ticket.notify_user_reply_subject"
+	MsgTicketNotifyUserReplyContent  = "ticket.notify_user_reply_content"
+	MsgTicketNotifyStaffReplySubject = "ticket.notify_staff_reply_subject"
+	MsgTicketNotifyStaffReplyContent = "ticket.notify_staff_reply_content"
+)
