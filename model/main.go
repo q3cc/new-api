@@ -396,6 +396,7 @@ func migrateDB() error {
 		&Ticket{},
 		&TicketMessage{},
 		&TicketAttachment{},
+		&TicketCannedReply{},
 	)
 	if err != nil {
 		return err

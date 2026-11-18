@@ -633,6 +633,12 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'ticket.reply': 'Replied to a ticket',
   'ticket.close': 'Closed a ticket',
   'ticket.reopen': 'Reopened a ticket',
+  'ticket.priority_update': 'Changed a ticket priority',
+  'ticket.delete': 'Deleted a ticket',
+  'ticket.settings_update': 'Updated ticket response targets',
+  'ticket.canned_reply_create': 'Created a canned reply',
+  'ticket.canned_reply_update': 'Updated a canned reply',
+  'ticket.canned_reply_delete': 'Deleted a canned reply',
   // Referral rebates
   'affiliate.invite_cancel': 'Cancelled an invitation',
   'affiliate.invite_restore': 'Restored an invitation',

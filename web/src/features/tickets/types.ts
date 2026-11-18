@@ -21,12 +21,16 @@ export type TicketStatus = 'open' | 'replied' | 'closed'
 
 export type TicketCategory = 'billing' | 'api' | 'account' | 'other'
 
+export type TicketPriority = 'urgent' | 'high' | 'normal' | 'low'
+
 export type Ticket = {
   id: number
   user_id: number
   title: string
   category: TicketCategory
   status: TicketStatus
+  /** Empty for the ticket's owner, who does not see priorities. */
+  priority: TicketPriority | ''
   topup_trade_no: string
   request_id: string
   assignee_id: number
@@ -34,9 +38,33 @@ export type Ticket = {
   admin_unread: boolean
   created_at: number
   updated_at: number
+  /** When the ticket last started waiting for support. */
+  waiting_since: number
+  first_replied_at: number
   closed_at: number
   closed_by: '' | 'user' | 'admin' | 'system'
+  /** 1 to 5 stars once the owner rated the closed ticket, else 0. */
+  rating: number
+  rating_comment: string
+  rated_at: number
   username?: string
+  /** When an open ticket's response target runs out; support views only. */
+  response_due_at?: number
+}
+
+export type TicketCannedReply = {
+  id: number
+  title: string
+  content: string
+  updated_at: number
+}
+
+/** Response targets in hours, per priority. */
+export type TicketSettings = {
+  sla_urgent_hours: number
+  sla_high_hours: number
+  sla_normal_hours: number
+  sla_low_hours: number
 }
 
 export type TicketAttachment = {
@@ -50,6 +78,8 @@ export type TicketMessage = {
   ticket_id: number
   user_id: number
   is_staff: boolean
+  /** 'note' for a post only support sees; empty for a reply. */
+  kind: '' | 'note'
   content: string
   created_at: number
   username?: string
@@ -68,6 +98,7 @@ export type TicketPage = {
 
 export type TicketSummary = {
   open: number
+  overdue: number
   replied: number
   unread: number
 }
@@ -84,6 +115,8 @@ export type TicketDraft = {
 export type TicketReply = {
   content: string
   images: File[]
+  /** Posts a support message as a note only support sees. */
+  internal?: boolean
 }
 
 /** Which side of a ticket the console is acting for */

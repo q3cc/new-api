@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 )
@@ -29,6 +30,9 @@ const (
 	TicketMaxOpenPerUser      = 5
 	TicketMaxImagesPerMessage = 3
 	TicketMaxImageBytes       = 2 << 20
+
+	TicketRatingCommentMaxLength    = 500
+	TicketCannedReplyTitleMaxLength = 64
 
 	ticketNotifyType        = "ticket"
 	ticketAutoCloseAfter    = 7 * 24 * time.Hour
@@ -106,26 +110,44 @@ func OpenTicket(userId int, username string, draft TicketDraft) (*model.Ticket, 
 	return ticket, nil
 }
 
-// PostTicketReply adds a message to a ticket that is not closed. A staff
-// reply notifies the ticket's owner; a user reply notifies the administrators
-// who receive ticket notices. ownerId limits the ticket to that user and is 0
-// for staff.
-func PostTicketReply(ticketId int, ownerId int, authorId int, authorName string, staff bool, content string, images [][]byte) (*model.Ticket, error) {
-	content, err := normalizeTicketContent(content)
+// TicketPost is a message posted to a ticket. OwnerId limits the ticket to
+// that user and is 0 for staff; Note keeps a staff post from the user.
+type TicketPost struct {
+	TicketId   int
+	OwnerId    int
+	AuthorId   int
+	AuthorName string
+	Staff      bool
+	Note       bool
+	Content    string
+	Images     [][]byte
+}
+
+// PostTicketReply adds a message to a ticket. A staff reply notifies the
+// ticket's owner; a user reply notifies the administrators who receive ticket
+// notices; a note notifies nobody.
+func PostTicketReply(post TicketPost) (*model.Ticket, error) {
+	if post.Note && !post.Staff {
+		return nil, common.NewMessage("Invalid parameters")
+	}
+	content, err := normalizeTicketContent(post.Content)
 	if err != nil {
 		return nil, err
 	}
-	attachments, err := ticketAttachmentsFromImages(images)
+	attachments, err := ticketAttachmentsFromImages(post.Images)
 	if err != nil {
 		return nil, err
 	}
-	message := &model.TicketMessage{UserId: authorId, IsStaff: staff, Content: content}
-	ticket, err := model.ReplyTicket(ticketId, ownerId, message, attachments)
-	if err != nil {
-		return nil, err
+	message := &model.TicketMessage{UserId: post.AuthorId, IsStaff: post.Staff, Content: content}
+	if post.Note {
+		message.Kind = model.TicketMessageNote
 	}
-	params := map[string]any{"Id": ticket.Id, "Title": html.EscapeString(ticket.Title), "User": html.EscapeString(authorName)}
-	if staff {
+	ticket, err := model.ReplyTicket(post.TicketId, post.OwnerId, message, attachments)
+	if err != nil || post.Note {
+		return ticket, err
+	}
+	params := map[string]any{"Id": ticket.Id, "Title": html.EscapeString(ticket.Title), "User": html.EscapeString(post.AuthorName)}
+	if post.Staff {
 		params["Link"] = PaymentReturnURL("/tickets/" + strconv.Itoa(ticket.Id))
 		gopool.Go(func() {
 			notifyTicketOwner(ticket.UserId, params)
@@ -139,6 +161,85 @@ func PostTicketReply(ticketId int, ownerId int, authorId int, authorName string,
 		})
 	})
 	return ticket, nil
+}
+
+// TicketResponseCutoffs returns, for each priority, the time before which a
+// ticket must have started waiting for support to be past its response
+// target now.
+func TicketResponseCutoffs() map[string]int64 {
+	setting := operation_setting.GetTicketSetting()
+	now := time.Now().Unix()
+	cutoffs := make(map[string]int64, len(model.TicketPriorities))
+	for _, priority := range model.TicketPriorities {
+		cutoffs[priority] = now - int64(setting.ResponseHours(priority))*3600
+	}
+	return cutoffs
+}
+
+// TicketResponseDueAt returns when an open ticket's response target runs
+// out, or 0 for a ticket that is not waiting for support.
+func TicketResponseDueAt(ticket *model.Ticket) int64 {
+	if ticket.Status != model.TicketStatusOpen {
+		return 0
+	}
+	hours := operation_setting.GetTicketSetting().ResponseHours(ticket.Priority)
+	return ticket.WaitingSince + int64(hours)*3600
+}
+
+// SetTicketPriority changes a ticket's priority to one of the known ones.
+func SetTicketPriority(ticketId int, priority string) error {
+	if !slices.Contains(model.TicketPriorities, priority) {
+		return common.NewMessage("Invalid ticket priority")
+	}
+	return model.SetTicketPriority(ticketId, priority)
+}
+
+// RateTicket records the owner's 1 to 5 star rating of a closed ticket with
+// an optional comment.
+func RateTicket(ticketId int, ownerId int, rating int, comment string) error {
+	if rating < 1 || rating > 5 {
+		return common.NewMessage("Rating must be between 1 and 5")
+	}
+	comment = strings.TrimSpace(comment)
+	if utf8.RuneCountInString(comment) > TicketRatingCommentMaxLength {
+		return common.NewMessage("Comment must be at most {{max}} characters", map[string]any{"max": TicketRatingCommentMaxLength})
+	}
+	return model.RateTicket(ticketId, ownerId, rating, comment)
+}
+
+// SaveTicketCannedReply validates and stores a shared reply text.
+func SaveTicketCannedReply(reply *model.TicketCannedReply) error {
+	reply.Title = strings.TrimSpace(reply.Title)
+	if reply.Title == "" {
+		return common.NewMessage("Title is required")
+	}
+	if utf8.RuneCountInString(reply.Title) > TicketCannedReplyTitleMaxLength {
+		return common.NewMessage("Title must be at most {{max}} characters", map[string]any{"max": TicketCannedReplyTitleMaxLength})
+	}
+	content, err := normalizeTicketContent(reply.Content)
+	if err != nil {
+		return err
+	}
+	reply.Content = content
+	return model.SaveTicketCannedReply(reply)
+}
+
+// UpdateTicketSLA stores the response target, in hours, of every priority.
+func UpdateTicketSLA(targets operation_setting.TicketSetting) error {
+	hours := map[string]int{
+		"ticket_setting.sla_urgent_hours": targets.SLAUrgentHours,
+		"ticket_setting.sla_high_hours":   targets.SLAHighHours,
+		"ticket_setting.sla_normal_hours": targets.SLANormalHours,
+		"ticket_setting.sla_low_hours":    targets.SLALowHours,
+	}
+	values := make(map[string]string, len(hours))
+	for key, value := range hours {
+		if value < 1 || value > operation_setting.TicketSLAMaxHours {
+			return common.NewMessage("Response targets must be between 1 and {{max}} hours", map[string]any{"max": operation_setting.TicketSLAMaxHours})
+		}
+		values[key] = strconv.Itoa(value)
+	}
+	return model.UpdateOptionsBulk(values)
 }
 
 // ticketAttachmentsFromImages checks the images posted with a ticket message

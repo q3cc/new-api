@@ -146,9 +146,15 @@ var auditRouteActions = map[string]string{
 	"DELETE /api/subscription/admin/user_subscriptions/:id":          "subscription.user_subscription_delete",
 
 	// 工单
-	"POST /api/ticket/:id/reply":  "ticket.reply",
-	"POST /api/ticket/:id/close":  "ticket.close",
-	"POST /api/ticket/:id/reopen": "ticket.reopen",
+	"POST /api/ticket/:id/reply":            "ticket.reply",
+	"POST /api/ticket/:id/close":            "ticket.close",
+	"POST /api/ticket/:id/reopen":           "ticket.reopen",
+	"PUT /api/ticket/:id/priority":          "ticket.priority_update",
+	"DELETE /api/ticket/:id":                "ticket.delete",
+	"PUT /api/ticket/settings":              "ticket.settings_update",
+	"POST /api/ticket/canned-replies":       "ticket.canned_reply_create",
+	"PUT /api/ticket/canned-replies/:id":    "ticket.canned_reply_update",
+	"DELETE /api/ticket/canned-replies/:id": "ticket.canned_reply_delete",
 
 	// 活动（转盘、抽奖、排行榜）
 	"POST /api/lottery/admin/activities":             "activity.create",

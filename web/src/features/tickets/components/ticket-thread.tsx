@@ -47,12 +47,20 @@ export function TicketThread(props: {
         } else if (props.viewer === 'staff') {
           author = message.username || t('User')
         }
+        // Notes reach support only; the server never sends them to users.
+        const note = message.kind === 'note'
+        if (note) {
+          author = t('Internal note · {{name}}', {
+            name: message.username || t('Support'),
+          })
+        }
         return (
           <li
             key={message.id}
             className={cn(
               'rounded-lg border p-4',
-              message.is_staff && 'bg-muted/50'
+              message.is_staff && 'bg-muted/50',
+              note && 'border-warning/50 bg-warning/5'
             )}
           >
             <div className='mb-2 flex flex-wrap items-baseline justify-between gap-2'>

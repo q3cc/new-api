@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -32,7 +33,9 @@ type ticketSubmission struct {
 	Content      string `json:"content" form:"content"`
 	TopUpTradeNo string `json:"topup_trade_no" form:"topup_trade_no"`
 	RequestId    string `json:"request_id" form:"request_id"`
-	images       [][]byte
+	// Internal posts a support message as a note only support can see.
+	Internal bool `json:"internal" form:"internal"`
+	images   [][]byte
 }
 
 // GetSelfTickets returns a page of the user's tickets, most recently active
@@ -50,7 +53,7 @@ func GetSelfTickets(c *gin.Context) {
 		return
 	}
 	for i := range tickets {
-		tickets[i].AssigneeId = 0
+		forTicketOwner(&tickets[i])
 	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(tickets)
@@ -104,7 +107,7 @@ func GetSelfTicket(c *gin.Context) {
 		respondTicketError(c, err)
 		return
 	}
-	messages, err := model.ListTicketMessages(ticket.Id)
+	messages, err := model.ListTicketMessages(ticket.Id, false)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -121,7 +124,7 @@ func GetSelfTicket(c *gin.Context) {
 		}
 		ticket.UserUnread = false
 	}
-	ticket.AssigneeId = 0
+	forTicketOwner(ticket)
 	common.ApiSuccess(c, gin.H{"ticket": ticket, "messages": messages})
 }
 
@@ -150,11 +153,19 @@ func GetAllTickets(c *gin.Context) {
 	filter := model.TicketFilter{
 		Status:   c.Query("status"),
 		Category: c.Query("category"),
+		Priority: c.Query("priority"),
 		Keyword:  c.Query("keyword"),
 	}
 	if filter.Status != "" && !slices.Contains(ticketStatuses, filter.Status) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
+	}
+	if filter.Priority != "" && !slices.Contains(model.TicketPriorities, filter.Priority) {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if c.Query("overdue") == "true" {
+		filter.OverdueBefore = service.TicketResponseCutoffs()
 	}
 	if userId := c.Query("user_id"); userId != "" {
 		id, err := strconv.Atoi(userId)
@@ -173,6 +184,9 @@ func GetAllTickets(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	for i := range tickets {
+		tickets[i].ResponseDueAt = service.TicketResponseDueAt(&tickets[i])
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(tickets)
 	common.ApiSuccess(c, pageInfo)
@@ -180,7 +194,7 @@ func GetAllTickets(c *gin.Context) {
 
 // GetTicketSummary counts the support queue for the console badges.
 func GetTicketSummary(c *gin.Context) {
-	summary, err := model.GetTicketSummary()
+	summary, err := model.GetTicketSummary(service.TicketResponseCutoffs())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -201,11 +215,12 @@ func GetTicketDetail(c *gin.Context) {
 		respondTicketError(c, err)
 		return
 	}
-	messages, err := model.ListTicketMessages(ticket.Id)
+	messages, err := model.ListTicketMessages(ticket.Id, true)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	ticket.ResponseDueAt = service.TicketResponseDueAt(ticket)
 	if ticket.AdminUnread {
 		if err := model.MarkTicketRead(ticket.Id, true); err != nil {
 			common.ApiError(c, err)
@@ -249,16 +264,16 @@ func ReopenTicket(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
-// GetTicketAttachment serves a ticket image to the ticket's owner or to
-// whoever may read every ticket. Anyone else gets 404, so image IDs cannot be
-// probed.
+// GetTicketAttachment serves a ticket image to whoever may read every
+// ticket, and to the ticket's owner unless the image belongs to a note.
+// Anyone else gets 404, so image IDs cannot be probed.
 func GetTicketAttachment(c *gin.Context) {
 	attachmentId, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	attachment, ownerId, err := model.GetTicketAttachment(attachmentId)
+	attachment, ownerId, note, err := model.GetTicketAttachment(attachmentId)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
@@ -268,7 +283,8 @@ func GetTicketAttachment(c *gin.Context) {
 		return
 	}
 	userId := c.GetInt("id")
-	if ownerId != userId && !authz.Can(userId, c.GetInt("role"), authz.TicketRead) {
+	ownerMayRead := ownerId == userId && !note
+	if !ownerMayRead && !authz.Can(userId, c.GetInt("role"), authz.TicketRead) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
@@ -300,13 +316,24 @@ func replyTicket(c *gin.Context, staff bool) {
 		respondTicketError(c, err)
 		return
 	}
-	ticket, err := service.PostTicketReply(ticketId, ownerId, c.GetInt("id"), c.GetString("username"), staff, submission.Content, submission.images)
+	ticket, err := service.PostTicketReply(service.TicketPost{
+		TicketId:   ticketId,
+		OwnerId:    ownerId,
+		AuthorId:   c.GetInt("id"),
+		AuthorName: c.GetString("username"),
+		Staff:      staff,
+		Note:       staff && submission.Internal,
+		Content:    submission.Content,
+		Images:     submission.images,
+	})
 	if err != nil {
 		respondTicketError(c, err)
 		return
 	}
-	if !staff {
-		ticket.AssigneeId = 0
+	if staff {
+		ticket.ResponseDueAt = service.TicketResponseDueAt(ticket)
+	} else {
+		forTicketOwner(ticket)
 	}
 	common.ApiSuccess(c, ticket)
 }
@@ -362,4 +389,146 @@ func respondTicketError(c *gin.Context, err error) {
 		return
 	}
 	common.ApiError(c, err)
+}
+
+// SetTicketPriority changes how pressing a ticket is.
+func SetTicketPriority(c *gin.Context) {
+	ticketId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		respondTicketError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	var request struct {
+		Priority string `json:"priority"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.SetTicketPriority(ticketId, request.Priority); err != nil {
+		respondTicketError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+// DeleteTicket permanently removes a ticket with its messages and images.
+func DeleteTicket(c *gin.Context) {
+	ticketId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		respondTicketError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	if err := model.DeleteTicket(ticketId); err != nil {
+		respondTicketError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+// RateSelfTicket records the user's satisfaction with one of their closed
+// tickets.
+func RateSelfTicket(c *gin.Context) {
+	ticketId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		respondTicketError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	var request struct {
+		Rating  int    `json:"rating"`
+		Comment string `json:"comment"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.RateTicket(ticketId, c.GetInt("id"), request.Rating, request.Comment); err != nil {
+		respondTicketError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+// GetTicketSettings returns the response target of every priority, in hours.
+func GetTicketSettings(c *gin.Context) {
+	common.ApiSuccess(c, operation_setting.GetTicketSetting())
+}
+
+// UpdateTicketSettings changes the response targets.
+func UpdateTicketSettings(c *gin.Context) {
+	var request operation_setting.TicketSetting
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.UpdateTicketSLA(request); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, operation_setting.GetTicketSetting())
+}
+
+// GetTicketCannedReplies returns the reply texts support staff share.
+func GetTicketCannedReplies(c *gin.Context) {
+	replies, err := model.ListTicketCannedReplies()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, replies)
+}
+
+// CreateTicketCannedReply adds a shared reply text.
+func CreateTicketCannedReply(c *gin.Context) {
+	saveTicketCannedReply(c, 0)
+}
+
+// UpdateTicketCannedReply changes a shared reply text.
+func UpdateTicketCannedReply(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		respondTicketError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	saveTicketCannedReply(c, id)
+}
+
+// DeleteTicketCannedReply removes a shared reply text.
+func DeleteTicketCannedReply(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		respondTicketError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	if err := model.DeleteTicketCannedReply(id); err != nil {
+		respondTicketError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+// saveTicketCannedReply creates a shared reply text, or updates the one with
+// the given id.
+func saveTicketCannedReply(c *gin.Context, id int) {
+	var request struct {
+		Title   string `json:"title"`
+		Content string `json:"content"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	reply := &model.TicketCannedReply{Id: id, Title: request.Title, Content: request.Content, UpdatedBy: c.GetInt("id")}
+	if err := service.SaveTicketCannedReply(reply); err != nil {
+		respondTicketError(c, err)
+		return
+	}
+	common.ApiSuccess(c, reply)
+}
+
+// forTicketOwner hides what only support needs from a ticket shown to its
+// owner: who handles it and how pressing support marked it.
+func forTicketOwner(ticket *model.Ticket) {
+	ticket.AssigneeId = 0
+	ticket.Priority = ""
 }

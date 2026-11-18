@@ -20,8 +20,20 @@ import { useTranslation } from 'react-i18next'
 
 import { StatusBadge } from '@/components/status-badge'
 
-import { TICKET_STATUS_CONFIG } from '../constants'
-import type { TicketStatus } from '../types'
+import { TICKET_PRIORITY_CONFIG, TICKET_STATUS_CONFIG } from '../constants'
+import type { TicketPriority, TicketStatus } from '../types'
+
+export function TicketPriorityBadge(props: { priority: TicketPriority }) {
+  const { t } = useTranslation()
+  const config = TICKET_PRIORITY_CONFIG[props.priority]
+  return (
+    <StatusBadge
+      label={t(config.labelKey)}
+      variant={config.variant}
+      copyable={false}
+    />
+  )
+}
 
 export function TicketStatusBadge(props: { status: TicketStatus }) {
   const { t } = useTranslation()

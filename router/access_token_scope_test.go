@@ -83,14 +83,22 @@ var accessTokenExemptRoutes = []string{
 // accessTokenHelperRoutes are declared through handlePermissionRoute outside
 // channelPermissionRoutes.
 var accessTokenHelperRoutes = map[string]authz.Permission{
-	"GET /api/task_plugin_options": authz.TaskPluginBind,
-	"GET /api/audit":               authz.AuditRead,
-	"GET /api/ticket/":             authz.TicketRead,
-	"GET /api/ticket/summary":      authz.TicketRead,
-	"GET /api/ticket/:id":          authz.TicketRead,
-	"POST /api/ticket/:id/reply":   authz.TicketWrite,
-	"POST /api/ticket/:id/close":   authz.TicketWrite,
-	"POST /api/ticket/:id/reopen":  authz.TicketWrite,
+	"GET /api/task_plugin_options":          authz.TaskPluginBind,
+	"GET /api/audit":                        authz.AuditRead,
+	"GET /api/ticket/":                      authz.TicketRead,
+	"GET /api/ticket/summary":               authz.TicketRead,
+	"GET /api/ticket/:id":                   authz.TicketRead,
+	"POST /api/ticket/:id/reply":            authz.TicketWrite,
+	"POST /api/ticket/:id/close":            authz.TicketWrite,
+	"POST /api/ticket/:id/reopen":           authz.TicketWrite,
+	"PUT /api/ticket/:id/priority":          authz.TicketWrite,
+	"DELETE /api/ticket/:id":                authz.TicketDelete,
+	"GET /api/ticket/settings":              authz.TicketRead,
+	"PUT /api/ticket/settings":              authz.TicketManage,
+	"GET /api/ticket/canned-replies":        authz.TicketWrite,
+	"POST /api/ticket/canned-replies":       authz.TicketManage,
+	"PUT /api/ticket/canned-replies/:id":    authz.TicketManage,
+	"DELETE /api/ticket/canned-replies/:id": authz.TicketManage,
 }
 
 func newAccessTokenScopeTestEngine(t *testing.T) *gin.Engine {

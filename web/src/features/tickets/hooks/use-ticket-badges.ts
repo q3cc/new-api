@@ -36,6 +36,7 @@ const BADGE_REFRESH_MS = 60_000
 export function useTicketSidebarBadges(): {
   tickets?: string
   ticketQueue?: string
+  ticketQueueOverdue?: boolean
 } {
   const { i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
@@ -61,5 +62,6 @@ export function useTicketSidebarBadges(): {
   return {
     tickets: format(unread.data),
     ticketQueue: format(summary.data?.open),
+    ticketQueueOverdue: (summary.data?.overdue ?? 0) > 0,
   }
 }

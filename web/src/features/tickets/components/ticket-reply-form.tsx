@@ -16,14 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Paperclip } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowRight, MessageSquareText, Paperclip } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import {
   PromptInput,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuItem,
+  PromptInputActionMenuTrigger,
   PromptInputAttachment,
   PromptInputAttachments,
   PromptInputButton,
@@ -33,9 +37,11 @@ import {
   usePromptInputAttachments,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { handleServerError } from '@/lib/handle-server-error'
+import { cn } from '@/lib/utils'
 
-import { replyTicket, ticketKeys } from '../api'
+import { getTicketCannedReplies, replyTicket, ticketKeys } from '../api'
 import {
   TICKET_CONTENT_MAX_LENGTH,
   TICKET_IMAGE_TYPES,
@@ -47,22 +53,34 @@ import {
   ticketMessageSchema,
   validateTicketImages,
 } from '../lib/ticket-form'
-import type { TicketReply, TicketViewer } from '../types'
+import type { TicketCannedReply, TicketReply, TicketViewer } from '../types'
 
 /**
  * The chat-style composer under a ticket: the text with the attach and send
  * buttons on one line, picked or pasted screenshots above it. Enter sends,
  * Shift+Enter starts a new line. The text and images stay when sending fails.
+ * Support may switch it to an internal note and insert canned replies.
  */
 export function TicketReplyForm(props: {
   viewer: TicketViewer
   ticketId: number
+  /** A closed ticket takes notes only. */
+  notesOnly?: boolean
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const errorId = useId()
+  const staff = props.viewer === 'staff'
   const [content, setContent] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [mode, setMode] = useState<'reply' | 'note'>('reply')
+  const internal = staff && (mode === 'note' || props.notesOnly === true)
+  const cannedReplies = useQuery({
+    queryKey: ticketKeys.cannedReplies,
+    queryFn: ({ signal }) => getTicketCannedReplies(signal),
+    enabled: staff,
+    meta: { errorToast: false },
+  })
   const reply = useMutation({
     mutationFn: (message: TicketReply) =>
       replyTicket(props.viewer, props.ticketId, message),
@@ -96,11 +114,27 @@ export function TicketReplyForm(props: {
       throw new Error('invalid images')
     }
     setError(null)
-    await reply.mutateAsync({ content: parsed.data, images })
+    await reply.mutateAsync({ content: parsed.data, images, internal })
   }
 
   return (
     <div className='space-y-1.5'>
+      {staff && !props.notesOnly && (
+        <ToggleGroup
+          value={[mode]}
+          onValueChange={(values) => {
+            const next = values.find((value) => value !== mode)
+            if (next === 'reply' || next === 'note') setMode(next)
+          }}
+          aria-label={t('Message type')}
+          variant='outline'
+          size='sm'
+          spacing={1}
+        >
+          <ToggleGroupItem value='reply'>{t('Reply to user')}</ToggleGroupItem>
+          <ToggleGroupItem value='note'>{t('Internal note')}</ToggleGroupItem>
+        </ToggleGroup>
+      )}
       <PromptInput
         accept={TICKET_IMAGE_TYPES.join(',')}
         multiple
@@ -108,17 +142,24 @@ export function TicketReplyForm(props: {
         maxFileSize={TICKET_MAX_IMAGE_BYTES}
         onError={(err) => toast.error(err.message)}
         onSubmit={send}
-        groupClassName='h-auto rounded-xl'
+        groupClassName={cn(
+          'h-auto rounded-xl',
+          internal && 'border-warning/60 bg-warning/5'
+        )}
       >
         <TicketComposerAttachments />
         <div className='flex w-full items-end'>
           <PromptInputTextarea
-            aria-label={t('Reply')}
+            aria-label={internal ? t('Internal note') : t('Reply')}
             className='min-h-11 px-3.5 py-3'
             value={content}
             maxLength={TICKET_CONTENT_MAX_LENGTH}
             disabled={reply.isPending}
-            placeholder={t('Describe the problem or add details')}
+            placeholder={
+              internal
+                ? t('Only support can see this note')
+                : t('Describe the problem or add details')
+            }
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
             onChange={(event) => {
@@ -126,7 +167,16 @@ export function TicketReplyForm(props: {
               if (error) setError(null)
             }}
           />
-          <TicketComposerActions pending={reply.isPending} />
+          <TicketComposerActions
+            pending={reply.isPending}
+            cannedReplies={staff ? (cannedReplies.data ?? []) : undefined}
+            onInsert={(text) => {
+              setContent((current) =>
+                current.trim() ? `${current}\n${text}` : text
+              )
+              if (error) setError(null)
+            }}
+          />
         </div>
       </PromptInput>
       {error ? (
@@ -158,12 +208,49 @@ function TicketComposerAttachments() {
   )
 }
 
-/** The attach and send buttons at the end of the text line. */
-function TicketComposerActions(props: { pending: boolean }) {
+/**
+ * The buttons at the end of the text line: canned replies for support,
+ * attach, and send.
+ */
+function TicketComposerActions(props: {
+  pending: boolean
+  cannedReplies?: TicketCannedReply[]
+  onInsert: (text: string) => void
+}) {
   const { t } = useTranslation()
   const attachments = usePromptInputAttachments()
   return (
     <div className='flex shrink-0 items-center gap-0.5 p-1.5'>
+      {props.cannedReplies && (
+        <PromptInputActionMenu>
+          <PromptInputActionMenuTrigger
+            aria-label={t('Insert a canned reply')}
+            disabled={props.pending}
+          >
+            <MessageSquareText className='size-4' aria-hidden='true' />
+          </PromptInputActionMenuTrigger>
+          <PromptInputActionMenuContent className='max-h-72 w-72 overflow-y-auto'>
+            {props.cannedReplies.length === 0 ? (
+              <p className='text-muted-foreground px-2 py-1.5 text-sm'>
+                {t('No canned replies yet')}
+              </p>
+            ) : (
+              props.cannedReplies.map((reply) => (
+                <PromptInputActionMenuItem
+                  key={reply.id}
+                  className='flex-col items-start gap-0.5'
+                  onClick={() => props.onInsert(reply.content)}
+                >
+                  <span className='font-medium'>{reply.title}</span>
+                  <span className='text-muted-foreground line-clamp-1 text-xs'>
+                    {reply.content}
+                  </span>
+                </PromptInputActionMenuItem>
+              ))
+            )}
+          </PromptInputActionMenuContent>
+        </PromptInputActionMenu>
+      )}
       <PromptInputButton
         aria-label={t('Attach images')}
         disabled={

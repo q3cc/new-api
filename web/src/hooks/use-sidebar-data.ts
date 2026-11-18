@@ -197,6 +197,7 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             url: '/tickets/manage',
             icon: Headset,
             badge: badges.ticketQueue,
+            badgeVariant: badges.ticketQueueOverdue ? 'destructive' : undefined,
             requiredRole: ROLE.ADMIN,
           },
           {

@@ -21,13 +21,20 @@ import z from 'zod'
 import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import { TICKET_CATEGORIES, TICKET_STATUSES } from './constants'
+import {
+  TICKET_CATEGORIES,
+  TICKET_PRIORITIES,
+  TICKET_STATUSES,
+} from './constants'
 import type {
   Ticket,
+  TicketCannedReply,
   TicketDetail,
   TicketDraft,
   TicketPage,
+  TicketPriority,
   TicketReply,
+  TicketSettings,
   TicketSummary,
   TicketViewer,
 } from './types'
@@ -46,6 +53,8 @@ export type UserTicketsSearch = z.infer<typeof userTicketsSearchSchema>
 export const ticketQueueSearchSchema = z.object({
   ...pageFields,
   category: z.enum(TICKET_CATEGORIES).optional().catch(undefined),
+  priority: z.enum(TICKET_PRIORITIES).optional().catch(undefined),
+  overdue: z.boolean().optional().catch(undefined),
   keyword: z.string().max(128).optional().catch(''),
   user_id: z.number().int().min(1).optional().catch(undefined),
   mine: z.boolean().optional().catch(undefined),
@@ -64,6 +73,8 @@ export const ticketKeys = {
   detail: (viewer: TicketViewer, id: number) =>
     ['tickets', viewer, 'detail', id] as const,
   attachment: (id: number) => ['tickets', 'attachment', id] as const,
+  settings: ['tickets', 'staff', 'settings'] as const,
+  cannedReplies: ['tickets', 'staff', 'canned-replies'] as const,
 }
 
 function toFormData(fields: Record<string, string>, images: File[]) {
@@ -125,6 +136,8 @@ export async function getTicketQueue(
     params: {
       status: search.status,
       category: search.category,
+      priority: search.priority,
+      overdue: search.overdue ? 'true' : undefined,
       keyword: search.keyword || undefined,
       user_id: search.user_id,
       mine: search.mine ? 'true' : undefined,
@@ -168,7 +181,12 @@ export async function replyTicket(
 ) {
   const response = await api.post<Envelope<Ticket>>(
     `${ticketPath(viewer, id)}/reply`,
-    toFormData({ content: reply.content }, reply.images)
+    toFormData(
+      reply.internal
+        ? { content: reply.content, internal: 'true' }
+        : { content: reply.content },
+      reply.images
+    )
   )
   return requireServerSuccess(response.data).data
 }
@@ -196,4 +214,72 @@ export async function getTicketAttachment(id: number, signal?: AbortSignal) {
     skipBusinessError: true,
   })
   return response.data.type.startsWith('image/') ? response.data : null
+}
+
+export async function setTicketPriority(id: number, priority: TicketPriority) {
+  const response = await api.put<Envelope<null>>(`/api/ticket/${id}/priority`, {
+    priority,
+  })
+  return requireServerSuccess(response.data)
+}
+
+export async function deleteTicket(id: number) {
+  const response = await api.delete<Envelope<null>>(`/api/ticket/${id}`)
+  return requireServerSuccess(response.data)
+}
+
+export async function rateTicket(id: number, rating: number, comment: string) {
+  const response = await api.post<Envelope<null>>(
+    `/api/user/tickets/${id}/rate`,
+    { rating, comment }
+  )
+  return requireServerSuccess(response.data)
+}
+
+export async function getTicketSettings(signal?: AbortSignal) {
+  const response = await api.get<Envelope<TicketSettings>>(
+    '/api/ticket/settings',
+    { signal }
+  )
+  return requireServerSuccess(response.data).data
+}
+
+export async function updateTicketSettings(settings: TicketSettings) {
+  const response = await api.put<Envelope<TicketSettings>>(
+    '/api/ticket/settings',
+    settings
+  )
+  return requireServerSuccess(response.data).data
+}
+
+export async function getTicketCannedReplies(signal?: AbortSignal) {
+  const response = await api.get<Envelope<TicketCannedReply[]>>(
+    '/api/ticket/canned-replies',
+    { signal }
+  )
+  return requireServerSuccess(response.data).data
+}
+
+/** Creates a canned reply, or updates the one with the given id. */
+export async function saveTicketCannedReply(
+  reply: Pick<TicketCannedReply, 'title' | 'content'> & { id?: number }
+) {
+  const body = { title: reply.title, content: reply.content }
+  const response = reply.id
+    ? await api.put<Envelope<TicketCannedReply>>(
+        `/api/ticket/canned-replies/${reply.id}`,
+        body
+      )
+    : await api.post<Envelope<TicketCannedReply>>(
+        '/api/ticket/canned-replies',
+        body
+      )
+  return requireServerSuccess(response.data).data
+}
+
+export async function deleteTicketCannedReply(id: number) {
+  const response = await api.delete<Envelope<null>>(
+    `/api/ticket/canned-replies/${id}`
+  )
+  return requireServerSuccess(response.data)
 }

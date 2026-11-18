@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
+import { MessageSquareText, Timer } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { DataTablePage, useDataTable } from '@/components/data-table'
@@ -30,8 +32,14 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useTableUrlState, type NavigateFn } from '@/hooks/use-table-url-state'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
 import { formatTimestampToDate } from '@/lib/format'
 import { getServerErrorMessage } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   getTicketQueue,
@@ -39,11 +47,19 @@ import {
   ticketQueueSearchSchema,
   type TicketQueueSearch,
 } from './api'
-import { TicketStatusBadge } from './components/ticket-status-badge'
+import { CannedRepliesDialog } from './components/canned-replies-dialog'
+import { TicketResponseDue } from './components/ticket-response-due'
+import { TicketSlaDialog } from './components/ticket-sla-dialog'
+import {
+  TicketPriorityBadge,
+  TicketStatusBadge,
+} from './components/ticket-status-badge'
 import { TicketTitleLink } from './components/ticket-title-link'
 import {
   TICKET_CATEGORIES,
   TICKET_CATEGORY_LABEL_KEYS,
+  TICKET_PRIORITIES,
+  TICKET_PRIORITY_CONFIG,
   TICKET_STATUS_CONFIG,
   TICKET_STATUSES,
 } from './constants'
@@ -55,6 +71,13 @@ export function TicketQueuePage(props: {
   navigate: NavigateFn
 }) {
   const { t } = useTranslation()
+  const user = useAuthStore((s) => s.auth.user)
+  const canManage = hasPermission(
+    user,
+    ADMIN_PERMISSION_RESOURCES.TICKET,
+    ADMIN_PERMISSION_ACTIONS.MANAGE
+  )
+  const [dialog, setDialog] = useState<'sla' | 'canned' | null>(null)
   const { pagination, onPaginationChange, ensurePageInRange } =
     useTableUrlState({
       search: props.search,
@@ -90,6 +113,14 @@ export function TicketQueuePage(props: {
       ),
     },
     {
+      accessorKey: 'priority',
+      header: t('Priority'),
+      cell: ({ row }) =>
+        row.original.priority ? (
+          <TicketPriorityBadge priority={row.original.priority} />
+        ) : null,
+    },
+    {
       accessorKey: 'user_id',
       header: t('User'),
       cell: ({ row }) => (
@@ -110,6 +141,13 @@ export function TicketQueuePage(props: {
       accessorKey: 'status',
       header: t('Status'),
       cell: ({ row }) => <TicketStatusBadge status={row.original.status} />,
+    },
+    {
+      accessorKey: 'response_due_at',
+      header: t('Response due'),
+      cell: ({ row }) => (
+        <TicketResponseDue dueAt={row.original.response_due_at} />
+      ),
     },
     {
       accessorKey: 'updated_at',
@@ -173,6 +211,33 @@ export function TicketQueuePage(props: {
           })
         }
       />
+      <Combobox
+        aria-label={t('Priority')}
+        className='w-full sm:w-36'
+        options={[
+          { value: '', label: t('All priorities') },
+          ...TICKET_PRIORITIES.map((priority) => ({
+            value: priority,
+            label: t(TICKET_PRIORITY_CONFIG[priority].labelKey),
+          })),
+        ]}
+        value={props.search.priority ?? ''}
+        onValueChange={(value) =>
+          changeFilters({
+            priority: (value || undefined) as TicketQueueSearch['priority'],
+          })
+        }
+      />
+      <div className='flex items-center gap-2'>
+        <Switch
+          id='ticket-queue-overdue'
+          checked={props.search.overdue ?? false}
+          onCheckedChange={(checked) =>
+            changeFilters({ overdue: checked || undefined })
+          }
+        />
+        <Label htmlFor='ticket-queue-overdue'>{t('Overdue only')}</Label>
+      </div>
       <div className='flex items-center gap-2'>
         <Switch
           id='ticket-queue-mine'
@@ -202,31 +267,53 @@ export function TicketQueuePage(props: {
   )
 
   return (
-    <SectionPageLayout fixedContent>
-      <SectionPageLayout.Title>
-        {t('Ticket Management')}
-      </SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        {query.isError ? (
-          <div className='space-y-4'>
-            {toolbar}
-            <ErrorState
-              description={getServerErrorMessage(query.error)}
-              onRetry={() => void query.refetch()}
-            />
-          </div>
-        ) : (
-          <DataTablePage
-            table={table}
-            columns={columns}
-            toolbar={toolbar}
-            isLoading={query.isPending}
-            isFetching={query.isFetching}
-            emptyTitle={t('No tickets found')}
-            mobileProps={{ enableRowSelection: false }}
-          />
+    <>
+      <SectionPageLayout fixedContent>
+        <SectionPageLayout.Title>
+          {t('Ticket Management')}
+        </SectionPageLayout.Title>
+        {canManage && (
+          <SectionPageLayout.Actions>
+            <Button variant='outline' onClick={() => setDialog('canned')}>
+              <MessageSquareText className='size-4' aria-hidden='true' />
+              {t('Canned replies')}
+            </Button>
+            <Button variant='outline' onClick={() => setDialog('sla')}>
+              <Timer className='size-4' aria-hidden='true' />
+              {t('Response targets')}
+            </Button>
+          </SectionPageLayout.Actions>
         )}
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+        <SectionPageLayout.Content>
+          {query.isError ? (
+            <div className='space-y-4'>
+              {toolbar}
+              <ErrorState
+                description={getServerErrorMessage(query.error)}
+                onRetry={() => void query.refetch()}
+              />
+            </div>
+          ) : (
+            <DataTablePage
+              table={table}
+              columns={columns}
+              toolbar={toolbar}
+              isLoading={query.isPending}
+              isFetching={query.isFetching}
+              emptyTitle={t('No tickets found')}
+              mobileProps={{ enableRowSelection: false }}
+            />
+          )}
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
+      <TicketSlaDialog
+        open={dialog === 'sla'}
+        onOpenChange={(open) => setDialog(open ? 'sla' : null)}
+      />
+      <CannedRepliesDialog
+        open={dialog === 'canned'}
+        onOpenChange={(open) => setDialog(open ? 'canned' : null)}
+      />
+    </>
   )
 }

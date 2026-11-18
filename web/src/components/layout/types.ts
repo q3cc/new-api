@@ -123,6 +123,8 @@ export type SidebarBadges = {
   tickets?: string
   /** Tickets waiting for support, for administrators */
   ticketQueue?: string
+  /** Whether a ticket waiting for support is past its response target */
+  ticketQueueOverdue?: boolean
 }
 
 /**

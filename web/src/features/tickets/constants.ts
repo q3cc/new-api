@@ -18,7 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { StatusVariant } from '@/components/status-badge'
 
-import type { TicketCategory, TicketStatus } from './types'
+import type {
+  TicketCategory,
+  TicketPriority,
+  TicketSettings,
+  TicketStatus,
+} from './types'
 
 // Limits the server enforces; the form checks them first to answer sooner.
 export const TICKET_TITLE_MAX_LENGTH = 128
@@ -56,3 +61,22 @@ export const TICKET_CATEGORY_LABEL_KEYS: Record<TicketCategory, string> = {
 export const TICKET_CATEGORIES = Object.keys(
   TICKET_CATEGORY_LABEL_KEYS
 ) as TicketCategory[]
+
+/** From most to least pressing; label keys are i18n keys. */
+export const TICKET_PRIORITY_CONFIG: Record<
+  TicketPriority,
+  { labelKey: string; variant: StatusVariant; slaKey: keyof TicketSettings }
+> = {
+  urgent: { labelKey: 'Urgent', variant: 'danger', slaKey: 'sla_urgent_hours' },
+  high: { labelKey: 'High', variant: 'warning', slaKey: 'sla_high_hours' },
+  normal: { labelKey: 'Medium', variant: 'info', slaKey: 'sla_normal_hours' },
+  low: { labelKey: 'Low', variant: 'neutral', slaKey: 'sla_low_hours' },
+}
+
+export const TICKET_PRIORITIES = Object.keys(
+  TICKET_PRIORITY_CONFIG
+) as TicketPriority[]
+
+export const TICKET_RATING_COMMENT_MAX_LENGTH = 500
+export const TICKET_SLA_MAX_HOURS = 720
+export const TICKET_CANNED_TITLE_MAX_LENGTH = 64

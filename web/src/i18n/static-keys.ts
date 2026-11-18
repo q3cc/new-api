@@ -927,4 +927,11 @@ export const STATIC_I18N_KEYS = [
   'API & models',
   'Account & security',
   'Other',
+  // Ticket priorities and form messages (see @/features/tickets).
+  'Urgent',
+  'High',
+  'Medium',
+  'Low',
+  'Enter whole hours from 1 to 720',
+  'Title must be at most 64 characters',
 ] as const

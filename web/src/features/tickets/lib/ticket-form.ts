@@ -19,8 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 import z from 'zod'
 
 import {
+  TICKET_CANNED_TITLE_MAX_LENGTH,
   TICKET_CATEGORIES,
   TICKET_CONTENT_MAX_LENGTH,
+  TICKET_SLA_MAX_HOURS,
   TICKET_IMAGE_TYPES,
   TICKET_MAX_IMAGE_BYTES,
   TICKET_MAX_IMAGES,
@@ -51,6 +53,30 @@ export const createTicketSchema = z.object({
 })
 
 export type CreateTicketValues = z.infer<typeof createTicketSchema>
+
+const slaHours = z
+  .number('Enter whole hours from 1 to 720')
+  .int('Enter whole hours from 1 to 720')
+  .min(1, 'Enter whole hours from 1 to 720')
+  .max(TICKET_SLA_MAX_HOURS, 'Enter whole hours from 1 to 720')
+
+export const ticketSettingsSchema = z.object({
+  sla_urgent_hours: slaHours,
+  sla_high_hours: slaHours,
+  sla_normal_hours: slaHours,
+  sla_low_hours: slaHours,
+})
+
+export const cannedReplySchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, 'Title is required')
+    .max(TICKET_CANNED_TITLE_MAX_LENGTH, 'Title must be at most 64 characters'),
+  content: ticketMessageSchema,
+})
+
+export type CannedReplyValues = z.infer<typeof cannedReplySchema>
 
 /**
  * Checks images picked for a ticket message the way the server will, and

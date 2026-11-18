@@ -19,10 +19,22 @@ const (
 	TicketCategoryAccount = "account"
 	TicketCategoryOther   = "other"
 
+	TicketPriorityUrgent = "urgent"
+	TicketPriorityHigh   = "high"
+	TicketPriorityNormal = "normal"
+	TicketPriorityLow    = "low"
+
 	TicketClosedByUser   = "user"
 	TicketClosedByAdmin  = "admin"
 	TicketClosedBySystem = "system"
+
+	// TicketMessageNote marks a post only support can see; a reply has no
+	// kind.
+	TicketMessageNote = "note"
 )
+
+// TicketPriorities lists the priorities from most to least pressing.
+var TicketPriorities = []string{TicketPriorityUrgent, TicketPriorityHigh, TicketPriorityNormal, TicketPriorityLow}
 
 // Personal message a user receives when support answers a ticket; the console
 // translates the English keys with the params.
@@ -32,8 +44,10 @@ const (
 )
 
 var (
-	ErrTicketClosed    = common.NewMessage("This ticket is closed")
-	ErrTicketNotClosed = common.NewMessage("This ticket is not closed")
+	ErrTicketClosed      = common.NewMessage("This ticket is closed")
+	ErrTicketNotClosed   = common.NewMessage("This ticket is not closed")
+	ErrTicketRated       = common.NewMessage("This ticket has already been rated")
+	ErrTicketNotRateable = common.NewMessage("A ticket can be rated once it is closed")
 )
 
 // Ticket is a support conversation a user opened. Status says whose turn it
@@ -44,6 +58,7 @@ type Ticket struct {
 	Title        string `json:"title" gorm:"type:varchar(128);not null"`
 	Category     string `json:"category" gorm:"type:varchar(32);not null"`
 	Status       string `json:"status" gorm:"type:varchar(16);not null;index:idx_ticket_status_updated,priority:1"`
+	Priority     string `json:"priority" gorm:"type:varchar(16);not null;default:'normal'"`
 	TopUpTradeNo string `json:"topup_trade_no" gorm:"type:varchar(255);not null;default:''"`
 	RequestId    string `json:"request_id" gorm:"type:varchar(64);not null;default:''"`
 	AssigneeId   int    `json:"assignee_id" gorm:"not null;default:0;index"`
@@ -51,19 +66,31 @@ type Ticket struct {
 	AdminUnread  bool   `json:"admin_unread" gorm:"not null"`
 	// The times are written by this file, so marking a ticket read never
 	// reorders the lists sorted by UpdatedAt.
-	CreatedAt int64  `json:"created_at" gorm:"not null;autoCreateTime:false"`
-	UpdatedAt int64  `json:"updated_at" gorm:"not null;autoUpdateTime:false;index:idx_ticket_user_updated,priority:2;index:idx_ticket_status_updated,priority:2"`
-	ClosedAt  int64  `json:"closed_at" gorm:"not null;default:0"`
-	ClosedBy  string `json:"closed_by" gorm:"type:varchar(16);not null;default:''"`
-	Username  string `json:"username,omitempty" gorm:"-"`
+	CreatedAt int64 `json:"created_at" gorm:"not null;autoCreateTime:false"`
+	UpdatedAt int64 `json:"updated_at" gorm:"not null;autoUpdateTime:false;index:idx_ticket_user_updated,priority:2;index:idx_ticket_status_updated,priority:2"`
+	// WaitingSince is when the ticket last started waiting for support: its
+	// creation, the user's latest reply or its reopening. The response target
+	// counts from it.
+	WaitingSince   int64  `json:"waiting_since" gorm:"not null;default:0"`
+	FirstRepliedAt int64  `json:"first_replied_at" gorm:"not null;default:0"`
+	ClosedAt       int64  `json:"closed_at" gorm:"not null;default:0"`
+	ClosedBy       string `json:"closed_by" gorm:"type:varchar(16);not null;default:''"`
+	Rating         int    `json:"rating" gorm:"not null;default:0"`
+	RatingComment  string `json:"rating_comment" gorm:"type:varchar(500);not null;default:''"`
+	RatedAt        int64  `json:"rated_at" gorm:"not null;default:0"`
+	Username       string `json:"username,omitempty" gorm:"-"`
+	// ResponseDueAt is when an open ticket's response target runs out.
+	ResponseDueAt int64 `json:"response_due_at,omitempty" gorm:"-"`
 }
 
-// TicketMessage is one post in a ticket, by its owner or by support.
+// TicketMessage is one post in a ticket, by its owner or by support. Kind is
+// empty for a reply and TicketMessageNote for a note only support sees.
 type TicketMessage struct {
 	Id          int                `json:"id"`
 	TicketId    int                `json:"ticket_id" gorm:"not null;index"`
 	UserId      int                `json:"user_id" gorm:"not null"`
 	IsStaff     bool               `json:"is_staff" gorm:"not null"`
+	Kind        string             `json:"kind" gorm:"type:varchar(16);not null;default:''"`
 	Content     string             `json:"content" gorm:"type:text;not null"`
 	CreatedAt   int64              `json:"created_at" gorm:"not null;autoCreateTime:false"`
 	Username    string             `json:"username,omitempty" gorm:"-"`
@@ -84,18 +111,34 @@ type TicketAttachment struct {
 	CreatedAt int64    `json:"-" gorm:"not null;autoCreateTime:false"`
 }
 
+// TicketCannedReply is a reply text support staff share and insert into
+// their answers.
+type TicketCannedReply struct {
+	Id        int    `json:"id"`
+	Title     string `json:"title" gorm:"type:varchar(64);not null"`
+	Content   string `json:"content" gorm:"type:text;not null"`
+	UpdatedBy int    `json:"updated_by" gorm:"not null;default:0"`
+	CreatedAt int64  `json:"created_at" gorm:"not null;autoCreateTime:false"`
+	UpdatedAt int64  `json:"updated_at" gorm:"not null;autoUpdateTime:false"`
+}
+
 // TicketFilter narrows the support queue. Zero values do not filter.
+// OverdueBefore keeps only open tickets that have waited for support since
+// before the cutoff of their priority.
 type TicketFilter struct {
-	Status     string
-	Category   string
-	UserId     int
-	AssigneeId int
-	Keyword    string
+	Status        string
+	Category      string
+	Priority      string
+	UserId        int
+	AssigneeId    int
+	Keyword       string
+	OverdueBefore map[string]int64
 }
 
 // TicketSummary counts the support queue for the console badges.
 type TicketSummary struct {
 	Open    int64 `json:"open"`
+	Overdue int64 `json:"overdue"`
 	Replied int64 `json:"replied"`
 	Unread  int64 `json:"unread"`
 }
@@ -113,9 +156,9 @@ func CreateTicket(ticket *Ticket, message *TicketMessage, attachments []TicketAt
 		if open >= int64(maxOpen) {
 			return common.NewMessage("You can have at most {{count}} unresolved tickets", map[string]any{"count": maxOpen})
 		}
-		ticket.Status = TicketStatusOpen
+		ticket.Status, ticket.Priority = TicketStatusOpen, TicketPriorityNormal
 		ticket.AdminUnread = true
-		ticket.CreatedAt, ticket.UpdatedAt = now, now
+		ticket.CreatedAt, ticket.UpdatedAt, ticket.WaitingSince = now, now, now
 		if err := tx.Create(ticket).Error; err != nil {
 			return err
 		}
@@ -127,17 +170,20 @@ func CreateTicket(ticket *Ticket, message *TicketMessage, attachments []TicketAt
 	})
 }
 
-// ReplyTicket adds a message to a ticket that is not closed and hands the
-// turn to the other side. ownerId limits the ticket to that user; staff
-// replies pass 0. The first staff member to reply becomes the assignee.
+// ReplyTicket adds a message to a ticket. A reply needs the ticket not to be
+// closed and hands the turn to the other side; the first staff member to
+// reply becomes the assignee. A note is kept for support only and changes
+// nothing else, so it may go on a closed ticket too. ownerId limits the
+// ticket to that user; staff pass 0.
 func ReplyTicket(ticketId int, ownerId int, message *TicketMessage, attachments []TicketAttachment) (*Ticket, error) {
 	var ticket Ticket
 	now := common.GetTimestamp()
+	note := message.Kind == TicketMessageNote
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockForUpdate(ticketScope(tx, ticketId, ownerId)).First(&ticket).Error; err != nil {
 			return err
 		}
-		if ticket.Status == TicketStatusClosed {
+		if ticket.Status == TicketStatusClosed && !note {
 			return ErrTicketClosed
 		}
 		message.TicketId, message.CreatedAt = ticket.Id, now
@@ -147,14 +193,21 @@ func ReplyTicket(ticketId int, ownerId int, message *TicketMessage, attachments 
 		if err := createTicketAttachmentsTx(tx, ticket.Id, message, attachments); err != nil {
 			return err
 		}
+		if note {
+			return nil
+		}
 		updates := map[string]any{"updated_at": now}
 		if message.IsStaff {
 			updates["status"], updates["user_unread"], updates["admin_unread"] = TicketStatusReplied, true, false
 			if ticket.AssigneeId == 0 {
 				updates["assignee_id"] = message.UserId
 			}
+			if ticket.FirstRepliedAt == 0 {
+				updates["first_replied_at"] = now
+			}
 		} else {
 			updates["status"], updates["user_unread"], updates["admin_unread"] = TicketStatusOpen, false, true
+			updates["waiting_since"] = now
 		}
 		if err := tx.Model(&Ticket{}).Where("id = ?", ticket.Id).UpdateColumns(updates).Error; err != nil {
 			return err
@@ -193,7 +246,8 @@ func CloseTicket(ticketId int, ownerId int, closedBy string) error {
 	})
 }
 
-// ReopenTicket puts a closed ticket back in the support queue.
+// ReopenTicket puts a closed ticket back in the support queue; its response
+// target counts again from now.
 func ReopenTicket(ticketId int) error {
 	now := common.GetTimestamp()
 	return DB.Transaction(func(tx *gorm.DB) error {
@@ -205,8 +259,57 @@ func ReopenTicket(ticketId int) error {
 			return ErrTicketNotClosed
 		}
 		return tx.Model(&Ticket{}).Where("id = ?", ticket.Id).UpdateColumns(map[string]any{
-			"status": TicketStatusOpen, "closed_at": 0, "closed_by": "", "updated_at": now,
+			"status": TicketStatusOpen, "closed_at": 0, "closed_by": "", "updated_at": now, "waiting_since": now,
 		}).Error
+	})
+}
+
+// SetTicketPriority changes how pressing a ticket is, which also changes its
+// response target.
+func SetTicketPriority(ticketId int, priority string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var ticket Ticket
+		if err := lockForUpdate(tx.Select("id").Where("id = ?", ticketId)).First(&ticket).Error; err != nil {
+			return err
+		}
+		return tx.Model(&Ticket{}).Where("id = ?", ticket.Id).UpdateColumn("priority", priority).Error
+	})
+}
+
+// RateTicket records the owner's satisfaction with a closed ticket, once.
+func RateTicket(ticketId int, ownerId int, rating int, comment string) error {
+	now := common.GetTimestamp()
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var ticket Ticket
+		if err := lockForUpdate(ticketScope(tx, ticketId, ownerId)).First(&ticket).Error; err != nil {
+			return err
+		}
+		if ticket.Status != TicketStatusClosed {
+			return ErrTicketNotRateable
+		}
+		if ticket.RatedAt != 0 {
+			return ErrTicketRated
+		}
+		return tx.Model(&Ticket{}).Where("id = ?", ticket.Id).UpdateColumns(map[string]any{
+			"rating": rating, "rating_comment": comment, "rated_at": now,
+		}).Error
+	})
+}
+
+// DeleteTicket removes a ticket with all its messages and images.
+func DeleteTicket(ticketId int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var ticket Ticket
+		if err := lockForUpdate(tx.Select("id").Where("id = ?", ticketId)).First(&ticket).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("ticket_id = ?", ticket.Id).Delete(&TicketAttachment{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("ticket_id = ?", ticket.Id).Delete(&TicketMessage{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", ticket.Id).Delete(&Ticket{}).Error
 	})
 }
 
@@ -275,11 +378,17 @@ func ListTickets(filter TicketFilter, pageInfo *common.PageInfo) ([]Ticket, int6
 	if filter.Category != "" {
 		query = query.Where("category = ?", filter.Category)
 	}
+	if filter.Priority != "" {
+		query = query.Where("priority = ?", filter.Priority)
+	}
 	if filter.UserId > 0 {
 		query = query.Where("user_id = ?", filter.UserId)
 	}
 	if filter.AssigneeId > 0 {
 		query = query.Where("assignee_id = ?", filter.AssigneeId)
+	}
+	if filter.OverdueBefore != nil {
+		query = query.Where(ticketOverdueCondition(filter.OverdueBefore))
 	}
 	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
 		if id, err := strconv.Atoi(keyword); err == nil {
@@ -311,11 +420,15 @@ func ListTickets(filter TicketFilter, pageInfo *common.PageInfo) ([]Ticket, int6
 	return tickets, total, nil
 }
 
-// GetTicketSummary counts the tickets waiting for support, those waiting for
-// users, and those with an unread user post.
-func GetTicketSummary() (*TicketSummary, error) {
+// GetTicketSummary counts the tickets waiting for support, those of them
+// past their response target, those waiting for users, and those with an
+// unread user post.
+func GetTicketSummary(overdueBefore map[string]int64) (*TicketSummary, error) {
 	summary := &TicketSummary{}
 	if err := DB.Model(&Ticket{}).Where("status = ?", TicketStatusOpen).Count(&summary.Open).Error; err != nil {
+		return nil, err
+	}
+	if err := DB.Model(&Ticket{}).Where(ticketOverdueCondition(overdueBefore)).Count(&summary.Overdue).Error; err != nil {
 		return nil, err
 	}
 	if err := DB.Model(&Ticket{}).Where("status = ?", TicketStatusReplied).Count(&summary.Replied).Error; err != nil {
@@ -328,10 +441,15 @@ func GetTicketSummary() (*TicketSummary, error) {
 }
 
 // ListTicketMessages returns a ticket's messages, oldest first, with their
-// images' metadata and each author's name.
-func ListTicketMessages(ticketId int) ([]TicketMessage, error) {
+// images' metadata and each author's name. Notes are left out unless
+// withNotes.
+func ListTicketMessages(ticketId int, withNotes bool) ([]TicketMessage, error) {
+	query := DB.Where("ticket_id = ?", ticketId)
+	if !withNotes {
+		query = query.Where("kind <> ?", TicketMessageNote)
+	}
 	var messages []TicketMessage
-	if err := DB.Where("ticket_id = ?", ticketId).Order("id ASC").Find(&messages).Error; err != nil {
+	if err := query.Order("id ASC").Find(&messages).Error; err != nil {
 		return nil, err
 	}
 	var attachments []TicketAttachment
@@ -361,18 +479,65 @@ func ListTicketMessages(ticketId int) ([]TicketMessage, error) {
 	return messages, nil
 }
 
-// GetTicketAttachment returns an image with its bytes and the owner of its
-// ticket, who may always read it.
-func GetTicketAttachment(attachmentId int) (*TicketAttachment, int, error) {
+// GetTicketAttachment returns an image with its bytes, the owner of its
+// ticket, and whether it belongs to a note. The owner may read it unless it
+// does.
+func GetTicketAttachment(attachmentId int) (*TicketAttachment, int, bool, error) {
 	var attachment TicketAttachment
 	if err := DB.Where("id = ?", attachmentId).First(&attachment).Error; err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 	var ticket Ticket
 	if err := DB.Select("id", "user_id").Where("id = ?", attachment.TicketId).First(&ticket).Error; err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
-	return &attachment, ticket.UserId, nil
+	var message TicketMessage
+	if err := DB.Select("id", "kind").Where("id = ?", attachment.MessageId).First(&message).Error; err != nil {
+		return nil, 0, false, err
+	}
+	return &attachment, ticket.UserId, message.Kind == TicketMessageNote, nil
+}
+
+// ListTicketCannedReplies returns the shared reply texts by title.
+func ListTicketCannedReplies() ([]TicketCannedReply, error) {
+	replies := []TicketCannedReply{}
+	err := DB.Order("title ASC").Order("id ASC").Find(&replies).Error
+	return replies, err
+}
+
+// SaveTicketCannedReply creates a reply text, or updates it when its Id is
+// set.
+func SaveTicketCannedReply(reply *TicketCannedReply) error {
+	now := common.GetTimestamp()
+	reply.UpdatedAt = now
+	if reply.Id == 0 {
+		reply.CreatedAt = now
+		return DB.Create(reply).Error
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var existing TicketCannedReply
+		if err := lockForUpdate(tx.Where("id = ?", reply.Id)).First(&existing).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&TicketCannedReply{}).Where("id = ?", reply.Id).UpdateColumns(map[string]any{
+			"title": reply.Title, "content": reply.Content, "updated_by": reply.UpdatedBy, "updated_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", reply.Id).First(reply).Error
+	})
+}
+
+// DeleteTicketCannedReply removes a reply text.
+func DeleteTicketCannedReply(id int) error {
+	result := DB.Where("id = ?", id).Delete(&TicketCannedReply{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // TopUpBelongsToUser reports whether the top-up order is the user's.
@@ -391,6 +556,18 @@ func AutoCloseRepliedTickets(before int64) (int64, error) {
 			"status": TicketStatusClosed, "closed_at": now, "closed_by": TicketClosedBySystem, "updated_at": now,
 		})
 	return result.RowsAffected, result.Error
+}
+
+// ticketOverdueCondition matches open tickets that have waited for support
+// since before the cutoff of their priority.
+func ticketOverdueCondition(overdueBefore map[string]int64) *gorm.DB {
+	condition := DB.Where("1 = 0")
+	for _, priority := range TicketPriorities {
+		if cutoff, ok := overdueBefore[priority]; ok {
+			condition = condition.Or("priority = ? AND waiting_since < ?", priority, cutoff)
+		}
+	}
+	return DB.Where("status = ?", TicketStatusOpen).Where(condition)
 }
 
 func ticketScope(tx *gorm.DB, ticketId int, ownerId int) *gorm.DB {
