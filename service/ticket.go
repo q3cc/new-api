@@ -60,7 +60,7 @@ type TicketDraft struct {
 }
 
 // OpenTicket validates a draft and stores it as a new ticket, then tells the
-// administrators who receive ticket notices.
+// administrators who receive ticket notices and the ticket webhook.
 func OpenTicket(userId int, username string, draft TicketDraft) (*model.Ticket, error) {
 	title := strings.TrimSpace(draft.Title)
 	if title == "" {
@@ -100,6 +100,7 @@ func OpenTicket(userId int, username string, draft TicketDraft) (*model.Ticket, 
 	if err := model.CreateTicket(ticket, message, attachments, TicketMaxOpenPerUser); err != nil {
 		return nil, err
 	}
+	postTicketEvent(TicketEventCreated, ticket, username, content, len(attachments))
 	params := map[string]any{"Id": ticket.Id, "Title": html.EscapeString(ticket.Title), "User": html.EscapeString(username),
 		"Link": PaymentReturnURL("/tickets/manage/" + strconv.Itoa(ticket.Id))}
 	gopool.Go(func() {
@@ -125,7 +126,7 @@ type TicketPost struct {
 
 // PostTicketReply adds a message to a ticket. A staff reply notifies the
 // ticket's owner; a user reply notifies the administrators who receive ticket
-// notices; a note notifies nobody.
+// notices and the ticket webhook; a note notifies nobody.
 func PostTicketReply(post TicketPost) (*model.Ticket, error) {
 	if post.Note && !post.Staff {
 		return nil, common.NewMessage("Invalid parameters")
@@ -155,6 +156,7 @@ func PostTicketReply(post TicketPost) (*model.Ticket, error) {
 		return ticket, nil
 	}
 	params["Link"] = PaymentReturnURL("/tickets/manage/" + strconv.Itoa(ticket.Id))
+	postTicketEvent(TicketEventReplied, ticket, post.AuthorName, content, len(attachments))
 	gopool.Go(func() {
 		notifyTicketWatchers(func(lang string) (string, string) {
 			return i18n.Translate(lang, i18n.MsgTicketNotifyUserReplySubject, params), i18n.Translate(lang, i18n.MsgTicketNotifyUserReplyContent, params)
@@ -196,7 +198,7 @@ func SetTicketPriority(ticketId int, priority string) error {
 
 // RateTicket records the owner's 1 to 5 star rating of a closed ticket with
 // an optional comment.
-func RateTicket(ticketId int, ownerId int, rating int, comment string) error {
+func RateTicket(ticketId int, ownerId int, username string, rating int, comment string) error {
 	if rating < 1 || rating > 5 {
 		return common.NewMessage("Rating must be between 1 and 5")
 	}
@@ -204,7 +206,12 @@ func RateTicket(ticketId int, ownerId int, rating int, comment string) error {
 	if utf8.RuneCountInString(comment) > TicketRatingCommentMaxLength {
 		return common.NewMessage("Comment must be at most {{max}} characters", map[string]any{"max": TicketRatingCommentMaxLength})
 	}
-	return model.RateTicket(ticketId, ownerId, rating, comment)
+	ticket, err := model.RateTicket(ticketId, ownerId, rating, comment)
+	if err != nil {
+		return err
+	}
+	postTicketEvent(TicketEventRated, ticket, username, comment, 0)
+	return nil
 }
 
 // SaveTicketCannedReply validates and stores a shared reply text.

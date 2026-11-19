@@ -891,5 +891,6 @@
   "archived playground conversation %d cannot be decompressed": "已归档的操练场会话 %d 无法解压",
   "playground archive failed after %d conversations: %v": "操练场会话归档在处理 %d 个会话后失败: %v",
   "playground archive compressed %d conversations": "操练场会话归档已压缩 %d 个会话",
-  "playground conversation %d was left uncompressed: its archive copy does not restore to the original": "操练场会话 %d 未压缩：压缩副本无法还原为原文"
+  "playground conversation %d was left uncompressed: its archive copy does not restore to the original": "操练场会话 %d 未压缩：压缩副本无法还原为原文",
+  "ticket webhook %s for ticket %d failed: %s": "工单 webhook %s（工单 %d）发送失败：%s"
 }

@@ -21,12 +21,28 @@ var ticketSetting = TicketSetting{
 	SLALowHours:    72,
 }
 
+// TicketWebhookSetting is where ticket events are posted for a chat bot, such
+// as a Koishi bot that relays them to the support group. It is kept out of
+// TicketSetting because every staff member can read that one; only the root
+// user changes it, through the options API.
+type TicketWebhookSetting struct {
+	URL    string `json:"url"`
+	Secret string `json:"secret"`
+}
+
+var ticketWebhookSetting = TicketWebhookSetting{}
+
 func init() {
 	config.GlobalConfig.Register("ticket_setting", &ticketSetting)
+	config.GlobalConfig.Register("ticket_webhook_setting", &ticketWebhookSetting)
 }
 
 func GetTicketSetting() *TicketSetting {
 	return &ticketSetting
+}
+
+func GetTicketWebhookSetting() *TicketWebhookSetting {
+	return &ticketWebhookSetting
 }
 
 // ResponseHours returns the response target of a ticket priority; an unknown

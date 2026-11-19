@@ -54,9 +54,16 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 		return fmt.Errorf("failed to marshal webhook payload: %v", err)
 	}
 
-	// 创建 HTTP 请求
+	return deliverWebhook(webhookURL, secret, payloadBytes)
+}
+
+// deliverWebhook posts a JSON body to a webhook, through the worker when one is
+// configured and otherwise with SSRF protection. With a secret, the
+// X-Webhook-Signature header carries the hex HMAC-SHA256 of the body.
+func deliverWebhook(webhookURL string, secret string, payloadBytes []byte) error {
 	var req *http.Request
 	var resp *http.Response
+	var err error
 
 	if system_setting.EnableWorker() {
 		// 构建worker请求数据

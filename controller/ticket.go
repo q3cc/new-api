@@ -442,7 +442,7 @@ func RateSelfTicket(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	if err := service.RateTicket(ticketId, c.GetInt("id"), request.Rating, request.Comment); err != nil {
+	if err := service.RateTicket(ticketId, c.GetInt("id"), c.GetString("username"), request.Rating, request.Comment); err != nil {
 		respondTicketError(c, err)
 		return
 	}

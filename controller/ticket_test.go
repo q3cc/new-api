@@ -2,11 +2,16 @@ package controller
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -445,5 +451,95 @@ func TestTicketSupportTools(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, recorder.Code)
 		_, recorder = env.call(http.MethodGet, "/ticket/"+strconv.Itoa(second.Data.Id), root, nil, "")
 		assert.Equal(t, http.StatusOK, recorder.Code, "other tickets stay")
+	})
+}
+
+// TestTicketWebhookEvents covers what the ticket webhook, such as a Koishi bot
+// relaying to the support group, receives: a signed event when a user opens,
+// replies to or rates a ticket, nothing for support replies and notes, and
+// nothing until both a URL and a secret are set.
+func TestTicketWebhookEvents(t *testing.T) {
+	const secret = "ticket-webhook-test-secret"
+	type delivery struct {
+		event  service.TicketEvent
+		signed bool
+	}
+	received := make(chan delivery, 16)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write(body)
+		var event service.TicketEvent
+		_ = common.Unmarshal(body, &event)
+		received <- delivery{event: event, signed: r.Header.Get("X-Webhook-Signature") == hex.EncodeToString(mac.Sum(nil))}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+	service.InitHttpClient()
+	fetch := system_setting.GetFetchSetting()
+	webhook := operation_setting.GetTicketWebhookSetting()
+	savedProtection, savedWebhook, savedWorker := fetch.EnableSSRFProtection, *webhook, system_setting.WorkerUrl
+	t.Cleanup(func() {
+		fetch.EnableSSRFProtection, *webhook, system_setting.WorkerUrl = savedProtection, savedWebhook, savedWorker
+	})
+	fetch.EnableSSRFProtection, system_setting.WorkerUrl = false, ""
+	next := func(t *testing.T) service.TicketEvent {
+		t.Helper()
+		select {
+		case got := <-received:
+			assert.True(t, got.signed, "X-Webhook-Signature must be the HMAC-SHA256 of the body")
+			assert.NotEmpty(t, got.event.DeliveryId)
+			assert.InDelta(t, time.Now().Unix(), got.event.Timestamp, 60)
+			return got.event
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "no ticket webhook event arrived")
+			return service.TicketEvent{}
+		}
+	}
+
+	runTicketDialects(t, func(t *testing.T, env *ticketTestEnv) {
+		const alice, root = ticketAlice, ticketRoot
+		*webhook = operation_setting.TicketWebhookSetting{}
+		// The webhook settings are read before anything is sent, so these
+		// two posts cannot deliver once the settings change below.
+		unsent := env.open(alice, map[string]string{"title": "Before setup", "category": "api", "content": "x"})
+		require.True(t, unsent.Success, unsent.MessageKey)
+		webhook.URL = server.URL + "/koishi"
+		require.True(t, env.json(http.MethodPost, "/self/tickets/"+strconv.Itoa(unsent.Data.Id)+"/reply", alice, `{"content":"no secret yet"}`).Success)
+		webhook.Secret = secret
+
+		long := strings.Repeat("长", 320)
+		created := env.open(alice, map[string]string{"title": "Refund <now>", "category": "billing", "content": long, "topup_trade_no": "T-ALICE-1", "request_id": "req-1"}, ticketTestPNG)
+		require.True(t, created.Success, created.MessageKey)
+		id := created.Data.Id
+		event := next(t)
+		assert.Equal(t, service.TicketEventCreated, event.Event)
+		assert.Equal(t, service.TicketEventTicket{Id: id, Title: "Refund <now>", Category: "billing", Priority: model.TicketPriorityNormal,
+			UserId: alice, Username: "alice", TopUpTradeNo: "T-ALICE-1", RequestId: "req-1"}, event.Ticket)
+		assert.Equal(t, strings.Repeat("长", 300)+"…", event.Content, "long messages are cut to 300 characters")
+		assert.Equal(t, 1, event.ImageCount)
+		assert.Zero(t, event.Rating)
+		assert.True(t, strings.HasSuffix(event.Link, "/tickets/manage/"+strconv.Itoa(id)), event.Link)
+
+		path := "/self/tickets/" + strconv.Itoa(id)
+		staffPath := "/ticket/" + strconv.Itoa(id)
+		require.True(t, env.json(http.MethodPost, staffPath+"/reply", root, `{"content":"Looking"}`).Success)
+		require.True(t, env.json(http.MethodPost, staffPath+"/reply", root, `{"content":"Internal","internal":true}`).Success)
+		require.True(t, env.json(http.MethodPost, path+"/reply", alice, `{"content":"Still broken"}`).Success)
+		event = next(t)
+		assert.Equal(t, service.TicketEventReplied, event.Event, "support replies and notes send nothing")
+		assert.Equal(t, id, event.Ticket.Id)
+		assert.Equal(t, "alice", event.Ticket.Username)
+		assert.Equal(t, "Still broken", event.Content)
+		assert.Zero(t, event.ImageCount)
+
+		require.True(t, env.json(http.MethodPost, path+"/close", alice, ``).Success)
+		require.True(t, env.json(http.MethodPost, path+"/rate", alice, `{"rating":4,"comment":"Quick fix"}`).Success)
+		event = next(t)
+		assert.Equal(t, service.TicketEventRated, event.Event)
+		assert.Equal(t, id, event.Ticket.Id)
+		assert.Equal(t, 4, event.Rating)
+		assert.Equal(t, "Quick fix", event.Content)
+		assert.Empty(t, received)
 	})
 }

@@ -276,11 +276,12 @@ func SetTicketPriority(ticketId int, priority string) error {
 	})
 }
 
-// RateTicket records the owner's satisfaction with a closed ticket, once.
-func RateTicket(ticketId int, ownerId int, rating int, comment string) error {
+// RateTicket records the owner's satisfaction with a closed ticket, once, and
+// returns the rated ticket.
+func RateTicket(ticketId int, ownerId int, rating int, comment string) (*Ticket, error) {
 	now := common.GetTimestamp()
-	return DB.Transaction(func(tx *gorm.DB) error {
-		var ticket Ticket
+	var ticket Ticket
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockForUpdate(ticketScope(tx, ticketId, ownerId)).First(&ticket).Error; err != nil {
 			return err
 		}
@@ -290,10 +291,18 @@ func RateTicket(ticketId int, ownerId int, rating int, comment string) error {
 		if ticket.RatedAt != 0 {
 			return ErrTicketRated
 		}
-		return tx.Model(&Ticket{}).Where("id = ?", ticket.Id).UpdateColumns(map[string]any{
+		if err := tx.Model(&Ticket{}).Where("id = ?", ticket.Id).UpdateColumns(map[string]any{
 			"rating": rating, "rating_comment": comment, "rated_at": now,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		ticket.Rating, ticket.RatingComment, ticket.RatedAt = rating, comment, now
+		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &ticket, nil
 }
 
 // DeleteTicket removes a ticket with all its messages and images.
