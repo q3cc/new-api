@@ -133,6 +133,7 @@ func newTicketTestEnv(t *testing.T, kind, dsn string) *ticketTestEnv {
 	router.GET("/self/tickets/:id", GetSelfTicket)
 	router.POST("/self/tickets/:id/reply", ReplySelfTicket)
 	router.POST("/self/tickets/:id/close", CloseSelfTicket)
+	router.POST("/self/tickets/:id/reopen", ReopenSelfTicket)
 	router.POST("/self/tickets/:id/rate", RateSelfTicket)
 	router.GET("/ticket/", GetAllTickets)
 	router.GET("/ticket/summary", GetTicketSummary)
@@ -295,35 +296,54 @@ func TestTicketLifecycle(t *testing.T) {
 		assert.True(t, reply.Data.AdminUnread)
 		assert.Zero(t, reply.Data.AssigneeId, "users do not see who handles their ticket")
 
-		// A closed ticket takes no replies until support reopens it.
+		// A closed ticket takes no replies until it is reopened. Its owner
+		// may reopen it, which hands it back to support; nobody else may.
 		closed, _ := env.call(http.MethodPost, ticketPath+"/close", alice, nil, "")
 		require.True(t, closed.Success)
 		reply = env.json(http.MethodPost, ticketPath+"/reply", alice, `{"content":"One more"}`)
 		assert.False(t, reply.Success)
 		assert.Equal(t, "This ticket is closed", reply.MessageKey)
+		_, recorder := env.call(http.MethodPost, ticketPath+"/reopen", bob, nil, "")
+		assert.Equal(t, http.StatusNotFound, recorder.Code)
+		require.True(t, env.json(http.MethodPost, ticketPath+"/reopen", alice, ``).Success)
+		var reopenedTicket model.Ticket
+		require.NoError(t, env.db.First(&reopenedTicket, ticketId).Error)
+		assert.Equal(t, model.TicketStatusOpen, reopenedTicket.Status)
+		assert.True(t, reopenedTicket.AdminUnread, "support sees the reopened ticket as unread")
+		assert.Empty(t, reopenedTicket.ClosedBy)
+		assert.Equal(t, "This ticket is not closed", env.json(http.MethodPost, ticketPath+"/reopen", alice, ``).MessageKey)
+		require.True(t, env.json(http.MethodPost, "/ticket/"+strconv.Itoa(ticketId)+"/close", root, ``).Success)
 		reopened, _ := env.call(http.MethodPost, "/ticket/"+strconv.Itoa(ticketId)+"/reopen", root, nil, "")
 		require.True(t, reopened.Success)
 		adminDetail, _ := env.call(http.MethodGet, "/ticket/"+strconv.Itoa(ticketId), root, nil, "")
 		assert.Equal(t, "alice", adminDetail.Data.Ticket.Username)
 
-		// A user may keep at most TicketMaxOpenPerUser tickets unresolved.
+		// A user may keep at most TicketMaxOpenPerUser tickets unresolved,
+		// and reopening one counts toward that limit.
+		var others []int
 		for range service.TicketMaxOpenPerUser - 1 {
-			require.True(t, env.open(alice, valid).Success)
+			other := env.open(alice, valid)
+			require.True(t, other.Success)
+			others = append(others, other.Data.Id)
 		}
 		capped := env.open(alice, valid)
 		assert.False(t, capped.Success)
 		assert.Equal(t, "You can have at most {{count}} unresolved tickets", capped.MessageKey)
+		othersPath := "/self/tickets/" + strconv.Itoa(others[0])
+		require.True(t, env.json(http.MethodPost, othersPath+"/close", alice, ``).Success)
+		require.True(t, env.open(alice, valid).Success)
+		assert.Equal(t, "You can have at most {{count}} unresolved tickets", env.json(http.MethodPost, othersPath+"/reopen", alice, ``).MessageKey)
 
-		// Support replies the user left unanswered for the idle period
-		// close on their own; a recent one stays.
-		idle := time.Now().Add(-8 * 24 * time.Hour).Unix()
+		// A ticket whose last support reply has waited TicketAutoCloseAfter
+		// (30 minutes) for the user closes on its own; a fresher one stays.
+		assert.Equal(t, 30*time.Minute, service.TicketAutoCloseAfter)
+		idle := time.Now().Add(-service.TicketAutoCloseAfter - time.Minute).Unix()
 		require.NoError(t, env.db.Model(&model.Ticket{}).Where("id = ?", ticketId).
 			UpdateColumns(map[string]any{"status": model.TicketStatusReplied, "updated_at": idle}).Error)
-		var recentTicket model.Ticket
-		require.NoError(t, env.db.Where("user_id = ? AND id <> ?", alice, ticketId).Order("id ASC").First(&recentTicket).Error)
+		recentTicket := model.Ticket{Id: others[1]}
 		require.NoError(t, env.db.Model(&model.Ticket{}).Where("id = ?", recentTicket.Id).
-			UpdateColumns(map[string]any{"status": model.TicketStatusReplied}).Error)
-		closedCount, err := model.AutoCloseRepliedTickets(time.Now().Add(-7 * 24 * time.Hour).Unix())
+			UpdateColumns(map[string]any{"status": model.TicketStatusReplied, "updated_at": time.Now().Add(-10 * time.Minute).Unix()}).Error)
+		closedCount, err := model.AutoCloseRepliedTickets(time.Now().Add(-service.TicketAutoCloseAfter).Unix())
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), closedCount)
 		var idleTicket model.Ticket
@@ -456,8 +476,8 @@ func TestTicketSupportTools(t *testing.T) {
 
 // TestTicketWebhookEvents covers what the ticket webhook, such as a Koishi bot
 // relaying to the support group, receives: a signed event when a user opens,
-// replies to or rates a ticket, nothing for support replies and notes, and
-// nothing until both a URL and a secret are set.
+// replies to, rates or reopens a ticket, nothing for support replies, notes
+// and reopenings, and nothing until both a URL and a secret are set.
 func TestTicketWebhookEvents(t *testing.T) {
 	const secret = "ticket-webhook-test-secret"
 	type delivery struct {
@@ -540,6 +560,15 @@ func TestTicketWebhookEvents(t *testing.T) {
 		assert.Equal(t, id, event.Ticket.Id)
 		assert.Equal(t, 4, event.Rating)
 		assert.Equal(t, "Quick fix", event.Content)
+
+		// A user reopening tells the webhook; support reopening does not.
+		require.True(t, env.json(http.MethodPost, path+"/reopen", alice, ``).Success)
+		event = next(t)
+		assert.Equal(t, service.TicketEventReopened, event.Event)
+		assert.Equal(t, id, event.Ticket.Id)
+		assert.Equal(t, "alice", event.Ticket.Username)
+		require.True(t, env.json(http.MethodPost, staffPath+"/close", root, ``).Success)
+		require.True(t, env.json(http.MethodPost, staffPath+"/reopen", root, ``).Success)
 		assert.Empty(t, received)
 	})
 }

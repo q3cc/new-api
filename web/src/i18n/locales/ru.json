@@ -8642,9 +8642,7 @@
     "Ticket reopened": "Обращение открыто повторно",
     "Reopen": "Открыть снова",
     "Close ticket": "Закрыть обращение",
-    "This ticket was closed automatically after 7 days without a reply.": "Обращение закрыто автоматически: 7 дней без ответа.",
     "This ticket is closed.": "Обращение закрыто.",
-    "Open a new ticket if you still need help.": "Если помощь всё ещё нужна, создайте новое обращение.",
     "Reopen ticket": "Открыть обращение снова",
     "The ticket goes back to the support queue.": "Обращение вернётся в очередь поддержки.",
     "A closed ticket takes no more replies.": "В закрытое обращение больше нельзя ответить.",
@@ -8745,6 +8743,9 @@
     "Permanently delete tickets with their messages and images.": "Безвозвратно удалять обращения вместе с сообщениями и изображениями.",
     "View every user's tickets, messages, notes and images.": "Просмотр обращений, сообщений, заметок и изображений всех пользователей.",
     "Reply to, add notes to, prioritize, close and reopen users' tickets.": "Отвечать на обращения, добавлять заметки, менять приоритет, закрывать и открывать снова.",
-    "Press Enter to confirm, Ctrl + Enter for a new line": "Enter — подтвердить, Ctrl + Enter — новая строка"
+    "Press Enter to confirm, Ctrl + Enter for a new line": "Enter — подтвердить, Ctrl + Enter — новая строка",
+    "This ticket closed automatically 30 minutes after the last support reply.": "Обращение закрыто автоматически через 30 минут после последнего ответа поддержки.",
+    "Reopen it if you still need help.": "Если помощь всё ещё нужна, откройте его снова.",
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Если вы не ответите в течение 30 минут после последнего ответа поддержки, обращение закроется автоматически. Позже его можно открыть снова."
   }
 }

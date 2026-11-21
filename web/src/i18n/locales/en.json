@@ -8642,9 +8642,7 @@
     "Ticket reopened": "Ticket reopened",
     "Reopen": "Reopen",
     "Close ticket": "Close ticket",
-    "This ticket was closed automatically after 7 days without a reply.": "This ticket was closed automatically after 7 days without a reply.",
     "This ticket is closed.": "This ticket is closed.",
-    "Open a new ticket if you still need help.": "Open a new ticket if you still need help.",
     "Reopen ticket": "Reopen ticket",
     "The ticket goes back to the support queue.": "The ticket goes back to the support queue.",
     "A closed ticket takes no more replies.": "A closed ticket takes no more replies.",
@@ -8745,6 +8743,9 @@
     "Permanently delete tickets with their messages and images.": "Permanently delete tickets with their messages and images.",
     "View every user's tickets, messages, notes and images.": "View every user's tickets, messages, notes and images.",
     "Reply to, add notes to, prioritize, close and reopen users' tickets.": "Reply to, add notes to, prioritize, close and reopen users' tickets.",
-    "Press Enter to confirm, Ctrl + Enter for a new line": "Press Enter to confirm, Ctrl + Enter for a new line"
+    "Press Enter to confirm, Ctrl + Enter for a new line": "Press Enter to confirm, Ctrl + Enter for a new line",
+    "This ticket closed automatically 30 minutes after the last support reply.": "This ticket closed automatically 30 minutes after the last support reply.",
+    "Reopen it if you still need help.": "Reopen it if you still need help.",
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later."
   }
 }

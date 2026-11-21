@@ -257,7 +257,22 @@ func ReopenTicket(c *gin.Context) {
 		respondTicketError(c, gorm.ErrRecordNotFound)
 		return
 	}
-	if err := model.ReopenTicket(ticketId); err != nil {
+	if err := service.ReopenTicket(ticketId, 0, c.GetString("username")); err != nil {
+		respondTicketError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+// ReopenSelfTicket puts one of the user's closed tickets back in the support
+// queue.
+func ReopenSelfTicket(c *gin.Context) {
+	ticketId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		respondTicketError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	if err := service.ReopenTicket(ticketId, c.GetInt("id"), c.GetString("username")); err != nil {
 		respondTicketError(c, err)
 		return
 	}

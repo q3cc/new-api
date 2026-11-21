@@ -34,9 +34,12 @@ const (
 	TicketRatingCommentMaxLength    = 500
 	TicketCannedReplyTitleMaxLength = 64
 
+	// TicketAutoCloseAfter is how long a support reply waits for the user
+	// before the ticket closes on its own; the user may reopen it.
+	TicketAutoCloseAfter = 30 * time.Minute
+
 	ticketNotifyType        = "ticket"
-	ticketAutoCloseAfter    = 7 * 24 * time.Hour
-	ticketAutoCloseInterval = time.Hour
+	ticketAutoCloseInterval = time.Minute
 )
 
 var (
@@ -188,6 +191,26 @@ func TicketResponseDueAt(ticket *model.Ticket) int64 {
 	return ticket.WaitingSince + int64(hours)*3600
 }
 
+// ReopenTicket puts a closed ticket back in the support queue. A user
+// (ownerId > 0) may reopen only their own ticket, within the unresolved
+// ticket limit, and their reopening tells the administrators who receive
+// ticket notices and the ticket webhook; support passes 0.
+func ReopenTicket(ticketId int, ownerId int, username string) error {
+	ticket, err := model.ReopenTicket(ticketId, ownerId, TicketMaxOpenPerUser)
+	if err != nil || ownerId == 0 {
+		return err
+	}
+	postTicketEvent(TicketEventReopened, ticket, username, "", 0)
+	params := map[string]any{"Id": ticket.Id, "Title": html.EscapeString(ticket.Title), "User": html.EscapeString(username),
+		"Link": PaymentReturnURL("/tickets/manage/" + strconv.Itoa(ticket.Id))}
+	gopool.Go(func() {
+		notifyTicketWatchers(func(lang string) (string, string) {
+			return i18n.Translate(lang, i18n.MsgTicketNotifyReopenSubject, params), i18n.Translate(lang, i18n.MsgTicketNotifyReopenContent, params)
+		})
+	})
+	return nil
+}
+
 // SetTicketPriority changes a ticket's priority to one of the known ones.
 func SetTicketPriority(ticketId int, priority string) error {
 	if !slices.Contains(model.TicketPriorities, priority) {
@@ -278,8 +301,8 @@ func ticketAttachmentsFromImages(images [][]byte) ([]model.TicketAttachment, err
 	return attachments, nil
 }
 
-// StartTicketAutoCloseTask closes, hourly on the master node, tickets whose
-// support reply has waited for the user for 7 days.
+// StartTicketAutoCloseTask closes, every minute on the master node, tickets
+// whose last support reply has waited TicketAutoCloseAfter for the user.
 func StartTicketAutoCloseTask() {
 	ticketAutoCloseOnce.Do(func() {
 		if !common.IsMasterNode {
@@ -306,7 +329,7 @@ func StartTicketAutoCloseTask() {
 }
 
 func autoCloseIdleTickets() {
-	closed, err := model.AutoCloseRepliedTickets(time.Now().Add(-ticketAutoCloseAfter).Unix())
+	closed, err := model.AutoCloseRepliedTickets(time.Now().Add(-TicketAutoCloseAfter).Unix())
 	if err != nil {
 		logger.LogWarn(context.Background(), common.LogText("ticket auto close failed: %v", err))
 		return

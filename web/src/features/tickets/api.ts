@@ -198,8 +198,10 @@ export async function closeTicket(viewer: TicketViewer, id: number) {
   return requireServerSuccess(response.data)
 }
 
-export async function reopenTicket(id: number) {
-  const response = await api.post<Envelope<null>>(`/api/ticket/${id}/reopen`)
+export async function reopenTicket(viewer: TicketViewer, id: number) {
+  const response = await api.post<Envelope<null>>(
+    `${ticketPath(viewer, id)}/reopen`
+  )
   return requireServerSuccess(response.data)
 }
 

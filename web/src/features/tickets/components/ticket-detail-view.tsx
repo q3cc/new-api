@@ -102,7 +102,7 @@ export function TicketDetailView(props: {
   const action = useMutation({
     mutationFn: (kind: TicketAction) => {
       if (kind === 'delete') return deleteTicket(props.ticketId)
-      if (kind === 'reopen') return reopenTicket(props.ticketId)
+      if (kind === 'reopen') return reopenTicket(props.viewer, props.ticketId)
       return closeTicket(props.viewer, props.ticketId)
     },
     meta: { errorToast: false },
@@ -148,11 +148,9 @@ export function TicketDetailView(props: {
         {ticket && (
           <SectionPageLayout.Actions>
             {ticket.status === 'closed' ? (
-              staff && (
-                <Button variant='outline' onClick={() => setConfirm('reopen')}>
-                  {t('Reopen')}
-                </Button>
-              )
+              <Button variant='outline' onClick={() => setConfirm('reopen')}>
+                {t('Reopen')}
+              </Button>
             ) : (
               <Button variant='outline' onClick={() => setConfirm('close')}>
                 {t('Close ticket')}
@@ -195,15 +193,28 @@ export function TicketDetailView(props: {
                 messages={query.data.messages}
               />
               {ticket.status === 'closed' && (
-                <p className='text-muted-foreground rounded-lg border border-dashed p-4 text-center text-sm'>
-                  {ticket.closed_by === 'system'
-                    ? t(
-                        'This ticket was closed automatically after 7 days without a reply.'
-                      )
-                    : t('This ticket is closed.')}{' '}
-                  {staff
-                    ? t('Support can still add internal notes.')
-                    : t('Open a new ticket if you still need help.')}
+                // Two lines rather than two sentences joined by a space,
+                // which reads wrong after Chinese full stops.
+                <p className='text-muted-foreground space-y-1 rounded-lg border border-dashed p-4 text-center text-sm'>
+                  <span className='block'>
+                    {ticket.closed_by === 'system'
+                      ? t(
+                          'This ticket closed automatically 30 minutes after the last support reply.'
+                        )
+                      : t('This ticket is closed.')}
+                  </span>
+                  <span className='block'>
+                    {staff
+                      ? t('Support can still add internal notes.')
+                      : t('Reopen it if you still need help.')}
+                  </span>
+                </p>
+              )}
+              {!staff && ticket.status === 'replied' && (
+                <p className='text-muted-foreground text-sm'>
+                  {t(
+                    'Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.'
+                  )}
                 </p>
               )}
               <TicketRating ticket={ticket} viewer={props.viewer} />

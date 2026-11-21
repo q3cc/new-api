@@ -130,6 +130,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/tickets/:id", controller.GetSelfTicket)
 				selfRoute.POST("/tickets/:id/reply", middleware.UserCriticalRateLimit("ticket"), controller.ReplySelfTicket)
 				selfRoute.POST("/tickets/:id/close", controller.CloseSelfTicket)
+				selfRoute.POST("/tickets/:id/reopen", middleware.UserCriticalRateLimit("ticket"), controller.ReopenSelfTicket)
 				selfRoute.POST("/tickets/:id/rate", controller.RateSelfTicket)
 				selfRoute.GET("/models", controller.GetUserModels)
 				selfRoute.PUT("/self", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateSelf)

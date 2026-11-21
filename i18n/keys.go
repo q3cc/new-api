@@ -142,4 +142,6 @@ const (
 	MsgTicketNotifyUserReplyContent  = "ticket.notify_user_reply_content"
 	MsgTicketNotifyStaffReplySubject = "ticket.notify_staff_reply_subject"
 	MsgTicketNotifyStaffReplyContent = "ticket.notify_staff_reply_content"
+	MsgTicketNotifyReopenSubject     = "ticket.notify_reopen_subject"
+	MsgTicketNotifyReopenContent     = "ticket.notify_reopen_content"
 )

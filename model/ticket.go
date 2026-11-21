@@ -247,21 +247,42 @@ func CloseTicket(ticketId int, ownerId int, closedBy string) error {
 }
 
 // ReopenTicket puts a closed ticket back in the support queue; its response
-// target counts again from now.
-func ReopenTicket(ticketId int) error {
+// target counts again from now. ownerId limits the ticket to that user, who
+// may then hold at most maxOpen unresolved tickets and whose reopening shows
+// as unread to support; staff pass 0.
+func ReopenTicket(ticketId int, ownerId int, maxOpen int) (*Ticket, error) {
 	now := common.GetTimestamp()
-	return DB.Transaction(func(tx *gorm.DB) error {
-		var ticket Ticket
-		if err := lockForUpdate(tx.Where("id = ?", ticketId)).First(&ticket).Error; err != nil {
+	var ticket Ticket
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(ticketScope(tx, ticketId, ownerId)).First(&ticket).Error; err != nil {
 			return err
 		}
 		if ticket.Status != TicketStatusClosed {
 			return ErrTicketNotClosed
 		}
-		return tx.Model(&Ticket{}).Where("id = ?", ticket.Id).UpdateColumns(map[string]any{
+		updates := map[string]any{
 			"status": TicketStatusOpen, "closed_at": 0, "closed_by": "", "updated_at": now, "waiting_since": now,
-		}).Error
+		}
+		if ownerId > 0 {
+			var open int64
+			if err := tx.Model(&Ticket{}).Where("user_id = ? AND status <> ?", ownerId, TicketStatusClosed).
+				Count(&open).Error; err != nil {
+				return err
+			}
+			if open >= int64(maxOpen) {
+				return common.NewMessage("You can have at most {{count}} unresolved tickets", map[string]any{"count": maxOpen})
+			}
+			updates["admin_unread"] = true
+		}
+		if err := tx.Model(&Ticket{}).Where("id = ?", ticket.Id).UpdateColumns(updates).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", ticket.Id).First(&ticket).Error
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &ticket, nil
 }
 
 // SetTicketPriority changes how pressing a ticket is, which also changes its

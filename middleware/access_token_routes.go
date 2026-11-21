@@ -114,6 +114,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/user/tickets/:id/reply":             accessTokenScopeRule("profile:write"),
 	"POST /api/user/tickets/:id/close":             accessTokenScopeRule("profile:write"),
 	"POST /api/user/tickets/:id/rate":              accessTokenScopeRule("profile:write"),
+	"POST /api/user/tickets/:id/reopen":            accessTokenScopeRule("profile:write"),
 	"GET /api/ticket/attachment/:id":               accessTokenSessionRule,
 	"GET /api/user/topup/info":                     accessTokenScopeRule("wallet:read"),
 	"GET /api/user/topup/self":                     accessTokenScopeRule("wallet:read"),

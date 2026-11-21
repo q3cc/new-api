@@ -8642,9 +8642,7 @@
     "Ticket reopened": "Ticket rouvert",
     "Reopen": "Rouvrir",
     "Close ticket": "Clôturer le ticket",
-    "This ticket was closed automatically after 7 days without a reply.": "Ce ticket a été clôturé automatiquement après 7 jours sans réponse.",
     "This ticket is closed.": "Ce ticket est clôturé.",
-    "Open a new ticket if you still need help.": "Ouvrez un nouveau ticket si vous avez encore besoin d'aide.",
     "Reopen ticket": "Rouvrir le ticket",
     "The ticket goes back to the support queue.": "Le ticket retourne dans la file du support.",
     "A closed ticket takes no more replies.": "Un ticket clôturé n'accepte plus de réponses.",
@@ -8745,6 +8743,9 @@
     "Permanently delete tickets with their messages and images.": "Supprimer définitivement des tickets avec leurs messages et images.",
     "View every user's tickets, messages, notes and images.": "Voir les tickets, messages, notes et images de tous les utilisateurs.",
     "Reply to, add notes to, prioritize, close and reopen users' tickets.": "Répondre aux tickets, y ajouter des notes, les prioriser, les clôturer et les rouvrir.",
-    "Press Enter to confirm, Ctrl + Enter for a new line": "Entrée pour confirmer, Ctrl + Entrée pour aller à la ligne"
+    "Press Enter to confirm, Ctrl + Enter for a new line": "Entrée pour confirmer, Ctrl + Entrée pour aller à la ligne",
+    "This ticket closed automatically 30 minutes after the last support reply.": "Ce ticket a été clôturé automatiquement 30 minutes après la dernière réponse du support.",
+    "Reopen it if you still need help.": "Rouvrez-le si vous avez encore besoin d'aide.",
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Sans réponse de votre part dans les 30 minutes suivant la dernière réponse du support, ce ticket sera clôturé automatiquement. Vous pourrez le rouvrir ensuite."
   }
 }

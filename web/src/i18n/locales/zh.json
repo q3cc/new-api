@@ -8642,9 +8642,7 @@
     "Ticket reopened": "工单已重新打开",
     "Reopen": "重新打开",
     "Close ticket": "关闭工单",
-    "This ticket was closed automatically after 7 days without a reply.": "该工单 7 天未回复，已自动关闭。",
     "This ticket is closed.": "该工单已关闭。",
-    "Open a new ticket if you still need help.": "如仍需帮助，请新建工单。",
     "Reopen ticket": "重新打开工单",
     "The ticket goes back to the support queue.": "工单将回到待处理队列。",
     "A closed ticket takes no more replies.": "关闭后的工单将无法再回复。",
@@ -8745,6 +8743,9 @@
     "Permanently delete tickets with their messages and images.": "永久删除工单及其消息和图片。",
     "View every user's tickets, messages, notes and images.": "查看所有用户的工单、消息、内部备注和图片。",
     "Reply to, add notes to, prioritize, close and reopen users' tickets.": "回复用户工单、添加内部备注、调整优先级、关闭和重新打开工单。",
-    "Press Enter to confirm, Ctrl + Enter for a new line": "回车直接确认，Ctrl + 回车换行"
+    "Press Enter to confirm, Ctrl + Enter for a new line": "回车直接确认，Ctrl + 回车换行",
+    "This ticket closed automatically 30 minutes after the last support reply.": "客服最后一次回复后 30 分钟内未收到您的回复，工单已自动关闭。",
+    "Reopen it if you still need help.": "如仍需帮助，可重新打开。",
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "客服回复后 30 分钟内如未回复，工单将自动关闭，之后可重新打开。"
   }
 }

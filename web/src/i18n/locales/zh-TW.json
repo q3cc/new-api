@@ -8642,9 +8642,7 @@
     "Ticket reopened": "工單已重新開啟",
     "Reopen": "重新開啟",
     "Close ticket": "關閉工單",
-    "This ticket was closed automatically after 7 days without a reply.": "此工單 7 天未回覆，已自動關閉。",
     "This ticket is closed.": "此工單已關閉。",
-    "Open a new ticket if you still need help.": "如仍需協助，請新建工單。",
     "Reopen ticket": "重新開啟工單",
     "The ticket goes back to the support queue.": "工單將回到待處理佇列。",
     "A closed ticket takes no more replies.": "關閉後的工單將無法再回覆。",
@@ -8745,6 +8743,9 @@
     "Permanently delete tickets with their messages and images.": "永久刪除工單及其訊息和圖片。",
     "View every user's tickets, messages, notes and images.": "檢視所有用戶的工單、訊息、內部備註與圖片。",
     "Reply to, add notes to, prioritize, close and reopen users' tickets.": "回覆用戶工單、新增內部備註、調整優先級、關閉與重新開啟工單。",
-    "Press Enter to confirm, Ctrl + Enter for a new line": "按 Enter 直接確認，Ctrl + Enter 換行"
+    "Press Enter to confirm, Ctrl + Enter for a new line": "按 Enter 直接確認，Ctrl + Enter 換行",
+    "This ticket closed automatically 30 minutes after the last support reply.": "客服最後一次回覆後 30 分鐘內未收到您的回覆，工單已自動關閉。",
+    "Reopen it if you still need help.": "如仍需協助，可重新開啟。",
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "客服回覆後 30 分鐘內如未回覆，工單將自動關閉，之後可重新開啟。"
   }
 }

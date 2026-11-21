@@ -8642,9 +8642,7 @@
     "Ticket reopened": "チケットを再オープンしました",
     "Reopen": "再オープン",
     "Close ticket": "チケットをクローズ",
-    "This ticket was closed automatically after 7 days without a reply.": "7 日間返信がなかったため、このチケットは自動的にクローズされました。",
     "This ticket is closed.": "このチケットはクローズされています。",
-    "Open a new ticket if you still need help.": "まだサポートが必要な場合は、新しいチケットを作成してください。",
     "Reopen ticket": "チケットを再オープン",
     "The ticket goes back to the support queue.": "チケットはサポートの対応待ちに戻ります。",
     "A closed ticket takes no more replies.": "クローズしたチケットには返信できなくなります。",
@@ -8745,6 +8743,9 @@
     "Permanently delete tickets with their messages and images.": "チケットをメッセージや画像ごと完全に削除します。",
     "View every user's tickets, messages, notes and images.": "全ユーザーのチケット、メッセージ、メモ、画像を表示します。",
     "Reply to, add notes to, prioritize, close and reopen users' tickets.": "チケットへの返信、メモの追加、優先度の設定、クローズと再オープンを行います。",
-    "Press Enter to confirm, Ctrl + Enter for a new line": "Enter で確定、Ctrl + Enter で改行"
+    "Press Enter to confirm, Ctrl + Enter for a new line": "Enter で確定、Ctrl + Enter で改行",
+    "This ticket closed automatically 30 minutes after the last support reply.": "サポートの最後の返信から 30 分経過したため、このチケットは自動的にクローズされました。",
+    "Reopen it if you still need help.": "まだサポートが必要な場合は再オープンしてください。",
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "サポートの最後の返信から 30 分以内に返信がない場合、チケットは自動的にクローズされます。後から再オープンできます。"
   }
 }

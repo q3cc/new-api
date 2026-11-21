@@ -150,7 +150,9 @@ beforeEach(() => {
     }
     detail = {
       ...detail,
-      ticket: { ...detail.ticket, status: 'closed', closed_by: 'user' },
+      ticket: String(url).endsWith('/reopen')
+        ? { ...detail.ticket, status: 'open', closed_by: '' }
+        : { ...detail.ticket, status: 'closed', closed_by: 'user' },
     }
     return { data: { success: true, data: null } }
   })
@@ -201,7 +203,7 @@ it('shows a notice in place of an image that cannot be loaded', async () => {
   ).toBeInTheDocument()
 })
 
-it('closes the ticket only after confirmation, then offers no reply box', async () => {
+it('closes the ticket only after confirmation, then lets the owner reopen it', async () => {
   const user = userEvent.setup()
   renderTicket('user')
   await user.click(await screen.findByRole('button', { name: 'Close ticket' }))
@@ -209,9 +211,40 @@ it('closes the ticket only after confirmation, then offers no reply box', async 
   const dialog = await screen.findByRole('alertdialog')
   await user.click(within(dialog).getByRole('button', { name: 'Close ticket' }))
   await waitFor(() => expect(posts).toEqual(['/api/user/tickets/7/close']))
-  expect(await screen.findByText(/This ticket is closed\./)).toBeInTheDocument()
+  expect(await screen.findByText('This ticket is closed.')).toBeInTheDocument()
+  expect(
+    screen.getByText('Reopen it if you still need help.')
+  ).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Send reply' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull()
+
+  await user.click(screen.getByRole('button', { name: 'Reopen' }))
+  const confirm = await screen.findByRole('alertdialog')
+  await user.click(within(confirm).getByRole('button', { name: 'Reopen' }))
+  await waitFor(() =>
+    expect(posts).toEqual([
+      '/api/user/tickets/7/close',
+      '/api/user/tickets/7/reopen',
+    ])
+  )
+  expect(
+    await screen.findByRole('button', { name: 'Send reply' })
+  ).toBeInTheDocument()
+})
+
+it('warns only the owner that a support reply closes the ticket in 30 minutes', async () => {
+  renderTicket('user')
+  expect(
+    await screen.findByText(/within 30 minutes of the last support reply/)
+  ).toBeInTheDocument()
+  client.clear()
+})
+
+it('does not show support the owner-side 30-minute warning', async () => {
+  renderTicket('staff')
+  await screen.findByRole('button', { name: 'Close ticket' })
+  expect(
+    screen.queryByText(/within 30 minutes of the last support reply/)
+  ).toBeNull()
 })
 
 it('lets support reopen a closed ticket, see the owner, and still add notes', async () => {
@@ -222,8 +255,11 @@ it('lets support reopen a closed ticket, see the owner, and still add notes', as
   renderTicket('staff')
   expect(
     await screen.findByText(
-      /This ticket was closed automatically after 7 days without a reply\. Support can still add internal notes\./
+      'This ticket closed automatically 30 minutes after the last support reply.'
     )
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText('Support can still add internal notes.')
   ).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'alice (#12)' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Reopen' })).toBeEnabled()

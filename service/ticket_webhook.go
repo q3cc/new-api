@@ -14,9 +14,10 @@ import (
 
 // Ticket events posted to the ticket webhook.
 const (
-	TicketEventCreated = "ticket.created"
-	TicketEventReplied = "ticket.replied"
-	TicketEventRated   = "ticket.rated"
+	TicketEventCreated  = "ticket.created"
+	TicketEventReplied  = "ticket.replied"
+	TicketEventReopened = "ticket.reopened"
+	TicketEventRated    = "ticket.rated"
 
 	ticketEventContentMaxLength = 300
 )
