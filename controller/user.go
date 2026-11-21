@@ -348,6 +348,10 @@ func GetAllUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := attachManageableGiftQuotas(c.GetInt("role"), users); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 
@@ -379,6 +383,10 @@ func SearchUsers(c *gin.Context) {
 	}
 
 	if err := model.AttachUserRiskScores(users); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := attachManageableGiftQuotas(c.GetInt("role"), users); err != nil {
 		common.ApiError(c, err)
 		return
 	}

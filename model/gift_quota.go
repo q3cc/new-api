@@ -59,69 +59,115 @@ func recordGiftQuotaTx(tx *gorm.DB, userId int, source string, quota int, refKey
 // GetUserGiftQuotaSummary adds up every gift credit that reached the user's
 // wallet. Items with no credit are left out.
 func GetUserGiftQuotaSummary(userId int) (*GiftQuotaSummary, error) {
-	var user User
-	if err := DB.Select("id", "aff_quota", "aff_history").First(&user, userId).Error; err != nil {
+	summaries, err := GetGiftQuotaSummaries([]int{userId})
+	if err != nil {
+		return nil, err
+	}
+	summary, ok := summaries[userId]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return summary, nil
+}
+
+// GetGiftQuotaSummaries is GetUserGiftQuotaSummary for a page of users: one
+// query per source whatever the page size. Ids that match no user are left
+// out of the result.
+func GetGiftQuotaSummaries(userIds []int) (map[int]*GiftQuotaSummary, error) {
+	summaries := make(map[int]*GiftQuotaSummary, len(userIds))
+	if len(userIds) == 0 {
+		return summaries, nil
+	}
+	var users []User
+	if err := DB.Select("id", "aff_quota", "aff_history").Where("id IN ?", userIds).Find(&users).Error; err != nil {
 		return nil, err
 	}
 
-	var recorded []GiftQuotaItem
+	type userQuota struct {
+		UserId int
+		Source string
+		Quota  int64
+	}
+	var recorded []userQuota
 	if err := DB.Model(&GiftQuotaRecord{}).
-		Select("source, COALESCE(SUM(quota), 0) AS quota").
-		Where("user_id = ?", userId).
-		Group("source").
+		Select("user_id, source, COALESCE(SUM(quota), 0) AS quota").
+		Where("user_id IN ?", userIds).
+		Group("user_id, source").
 		Scan(&recorded).Error; err != nil {
 		return nil, err
 	}
-	bySource := make(map[string]int64, len(recorded)+4)
-	for _, item := range recorded {
-		bySource[item.Source] += item.Quota
+	bySource := make(map[int]map[string]int64, len(users))
+	for _, user := range users {
+		bySource[user.Id] = map[string]int64{}
+	}
+	for _, row := range recorded {
+		if sources, ok := bySource[row.UserId]; ok {
+			sources[row.Source] += row.Quota
+		}
 	}
 
 	// Invitation rewards count once moved into the wallet. aff_history also
 	// grows when an inviter reward is paid as trial credit, which never
 	// reaches aff_quota, so that part is taken back out.
-	var trialAffiliate int64
+	var trialAffiliate []userQuota
 	if err := DB.Model(&TrialCreditGrant{}).
-		Where("user_id = ? AND source = ?", userId, "affiliate").
-		Select("COALESCE(SUM(quota), 0)").Scan(&trialAffiliate).Error; err != nil {
+		Select("user_id, COALESCE(SUM(quota), 0) AS quota").
+		Where("user_id IN ? AND source = ?", userIds, "affiliate").
+		Group("user_id").
+		Scan(&trialAffiliate).Error; err != nil {
 		return nil, err
 	}
-	bySource[GiftSourceAffiliate] = max(int64(user.AffHistoryQuota)-int64(user.AffQuota)-trialAffiliate, 0)
-
-	var lottery int64
-	if err := DB.Model(&LotteryEntry{}).
-		Joins("JOIN lottery_prizes ON lottery_prizes.id = lottery_entries.prize_id").
-		Where("lottery_entries.user_id = ? AND lottery_entries.prize_type = ? AND lottery_entries.delivery_status = ?",
-			userId, LotteryPrizeQuota, LotteryDeliveryDelivered).
-		Select("COALESCE(SUM(lottery_prizes.quota), 0)").Scan(&lottery).Error; err != nil {
-		return nil, err
+	trialAffiliateByUser := make(map[int]int64, len(trialAffiliate))
+	for _, row := range trialAffiliate {
+		trialAffiliateByUser[row.UserId] = row.Quota
 	}
-	bySource[GiftSourceLottery] = lottery
-
-	var checkin int64
-	if err := DB.Model(&Checkin{}).Where("user_id = ?", userId).
-		Select("COALESCE(SUM(quota_awarded), 0)").Scan(&checkin).Error; err != nil {
-		return nil, err
+	for _, user := range users {
+		bySource[user.Id][GiftSourceAffiliate] = max(int64(user.AffHistoryQuota)-int64(user.AffQuota)-trialAffiliateByUser[user.Id], 0)
 	}
-	bySource[GiftSourceCheckin] = checkin
 
-	// A redeemed code still counts after an admin deletes it.
-	var redemption int64
-	if err := DB.Unscoped().Model(&Redemption{}).
-		Where("used_user_id = ? AND gift = ? AND redemption_type = ?", userId, true, RedemptionTypeBalance).
-		Select("COALESCE(SUM(quota), 0)").Scan(&redemption).Error; err != nil {
-		return nil, err
+	summed := []struct {
+		source string
+		query  *gorm.DB
+	}{
+		{GiftSourceLottery, DB.Model(&LotteryEntry{}).
+			Joins("JOIN lottery_prizes ON lottery_prizes.id = lottery_entries.prize_id").
+			Select("lottery_entries.user_id, COALESCE(SUM(lottery_prizes.quota), 0) AS quota").
+			Where("lottery_entries.user_id IN ? AND lottery_entries.prize_type = ? AND lottery_entries.delivery_status = ?",
+				userIds, LotteryPrizeQuota, LotteryDeliveryDelivered).
+			Group("lottery_entries.user_id")},
+		{GiftSourceCheckin, DB.Model(&Checkin{}).
+			Select("user_id, COALESCE(SUM(quota_awarded), 0) AS quota").
+			Where("user_id IN ?", userIds).
+			Group("user_id")},
+		// A redeemed code still counts after an admin deletes it.
+		{GiftSourceRedemption, DB.Unscoped().Model(&Redemption{}).
+			Select("used_user_id AS user_id, COALESCE(SUM(quota), 0) AS quota").
+			Where("used_user_id IN ? AND gift = ? AND redemption_type = ?", userIds, true, RedemptionTypeBalance).
+			Group("used_user_id")},
 	}
-	bySource[GiftSourceRedemption] = redemption
-
-	summary := &GiftQuotaSummary{Items: []GiftQuotaItem{}}
-	for _, source := range []string{GiftSourceRegistration, GiftSourceTopUp, GiftSourceAffiliate, GiftSourceLottery, GiftSourceCheckin, GiftSourceRedemption, GiftSourceAdmin} {
-		quota := bySource[source]
-		if quota <= 0 {
-			continue
+	for _, item := range summed {
+		var rows []userQuota
+		if err := item.query.Scan(&rows).Error; err != nil {
+			return nil, err
 		}
-		summary.Items = append(summary.Items, GiftQuotaItem{Source: source, Quota: quota})
-		summary.Total += quota
+		for _, row := range rows {
+			if sources, ok := bySource[row.UserId]; ok {
+				sources[item.source] = row.Quota
+			}
+		}
 	}
-	return summary, nil
+
+	for userId, sources := range bySource {
+		summary := &GiftQuotaSummary{Items: []GiftQuotaItem{}}
+		for _, source := range []string{GiftSourceRegistration, GiftSourceTopUp, GiftSourceAffiliate, GiftSourceLottery, GiftSourceCheckin, GiftSourceRedemption, GiftSourceAdmin} {
+			quota := sources[source]
+			if quota <= 0 {
+				continue
+			}
+			summary.Items = append(summary.Items, GiftQuotaItem{Source: source, Quota: quota})
+			summary.Total += quota
+		}
+		summaries[userId] = summary
+	}
+	return summaries, nil
 }

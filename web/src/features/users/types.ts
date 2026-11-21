@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+import type { GiftQuotaSummary } from '@/features/wallet/types'
 import type { AdminPermissionMatrix } from '@/lib/admin-permissions'
 
 // ============================================================================
@@ -73,6 +74,8 @@ export const userSchema = z.object({
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
   risk_score: userRiskScoreSchema.optional(),
+  /** Only for users the viewer may manage */
+  gift_quota: z.custom<GiftQuotaSummary>().optional(),
 })
 export type User = z.infer<typeof userSchema>
 

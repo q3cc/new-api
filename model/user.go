@@ -113,6 +113,7 @@ type User struct {
 	AuthVersion          int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions     map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 	RiskScore            *UserRiskScore             `json:"risk_score,omitempty" gorm:"-:all"`
+	GiftQuota            *GiftQuotaSummary          `json:"gift_quota,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {

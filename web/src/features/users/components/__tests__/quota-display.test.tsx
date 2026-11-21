@@ -43,6 +43,7 @@ import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
+import type { GiftQuotaSummary } from '@/features/wallet/types'
 import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 import { formatTimestampToDate } from '@/lib/format'
@@ -65,7 +66,11 @@ await i18n.init({
   initAsync: false,
 })
 
-function QuotaTable(props: { remaining: number; used: number }) {
+function QuotaTable(props: {
+  remaining: number
+  used: number
+  gift?: GiftQuotaSummary
+}) {
   const columns = useUsersColumns().filter((column) =>
     ['quota', 'used_quota'].includes(
       column.id ?? ('accessorKey' in column ? String(column.accessorKey) : '')
@@ -82,6 +87,7 @@ function QuotaTable(props: { remaining: number; used: number }) {
         status: 1,
         quota: props.remaining,
         used_quota: props.used,
+        gift_quota: props.gift,
         request_count: 0,
         group: 'default',
       } as User,
@@ -174,6 +180,42 @@ it('shows balance above secondary usage text and opens quota details on click', 
   )
   expect(trigger).toHaveFocus()
 })
+
+it('shows the gift credit a user received under the balance', () => {
+  render(
+    <I18nextProvider i18n={i18n}>
+      <QuotaTable
+        remaining={1900}
+        used={1100}
+        gift={{ total: 500000, items: [{ source: 'admin', quota: 500000 }] }}
+      />
+    </I18nextProvider>
+  )
+  const cell = screen.getAllByRole('cell')[0]
+  const gift = within(cell).getByRole('button', {
+    name: 'Gift credit received: $1',
+  })
+  // Its own popover, not part of the balance button.
+  expect(
+    screen.getByRole('button', {
+      name: 'Available Balance 0.0038; Used amount 0.0022',
+    })
+  ).not.toContainElement(gift)
+})
+
+it.each([undefined, { total: 0, items: [] }])(
+  'shows no gift badge without gift credit (%o)',
+  (gift) => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QuotaTable remaining={1900} used={1100} gift={gift} />
+      </I18nextProvider>
+    )
+    expect(
+      screen.queryByRole('button', { name: /Gift credit received/ })
+    ).not.toBeInTheDocument()
+  }
+)
 
 it.each([0, 500000])(
   'shows usage for a zero balance only when used quota is nonzero (used=%s)',

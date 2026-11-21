@@ -42,3 +42,22 @@ func GetUserGiftQuota(c *gin.Context) {
 	}
 	common.ApiSuccess(c, summary)
 }
+
+// attachManageableGiftQuotas adds the gift credit summary to the listed users
+// the caller may manage, the same rule GetUserGiftQuota applies.
+func attachManageableGiftQuotas(role int, users []*model.User) error {
+	ids := make([]int, 0, len(users))
+	for _, user := range users {
+		if canManageTargetRole(role, user.Role) {
+			ids = append(ids, user.Id)
+		}
+	}
+	summaries, err := model.GetGiftQuotaSummaries(ids)
+	if err != nil {
+		return err
+	}
+	for _, user := range users {
+		user.GiftQuota = summaries[user.Id]
+	}
+	return nil
+}

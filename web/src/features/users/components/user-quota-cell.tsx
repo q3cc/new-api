@@ -20,6 +20,8 @@ import { useTranslation } from 'react-i18next'
 
 import { QuotaDetailsPopover } from '@/components/quota-details-popover'
 import { StatusBadge } from '@/components/status-badge'
+import { GiftQuotaPopover } from '@/features/wallet/components/gift-quota-popover'
+import type { GiftQuotaSummary } from '@/features/wallet/types'
 import { formatQuotaWithCurrency, getCurrencyDisplay } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -27,6 +29,7 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 type UserQuotaCellProps = {
   remaining: number
   used: number
+  gift?: GiftQuotaSummary
 }
 
 export function UserQuotaCell(props: UserQuotaCellProps) {
@@ -55,6 +58,12 @@ export function UserQuotaCell(props: UserQuotaCellProps) {
         { label: t('Available Balance'), value: formattedRemaining },
         { label: t('Total Used'), value: formattedUsed },
       ]}
+      afterTrigger={
+        props.gift &&
+        props.gift.total > 0 && (
+          <GiftQuotaPopover summary={props.gift} className='mt-1' />
+        )
+      }
     >
       {hasQuota ? (
         <span className='grid min-w-0 grid-cols-1 gap-y-1 text-sm tabular-nums'>

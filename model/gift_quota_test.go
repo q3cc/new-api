@@ -169,6 +169,20 @@ func TestGiftQuotaSummaryDatabaseMatrix(t *testing.T) {
 
 			_, err = GetUserGiftQuotaSummary(newcomer.Id + 1000)
 			require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+
+			// A page of users: each summary equals the one-user result, so
+			// the grouped queries never mix one user's rows into another's.
+			summaries, err := GetGiftQuotaSummaries([]int{owner.Id, inviter.Id, newcomer.Id, newcomer.Id + 1000})
+			require.NoError(t, err)
+			require.Len(t, summaries, 3, "an unknown id is left out")
+			for _, id := range []int{owner.Id, inviter.Id, newcomer.Id} {
+				single, err := GetUserGiftQuotaSummary(id)
+				require.NoError(t, err)
+				assert.Equal(t, single, summaries[id])
+			}
+			assert.EqualValues(t, 1735, summaries[owner.Id].Total)
+			assert.Contains(t, summaries[inviter.Id].Items, GiftQuotaItem{Source: GiftSourceLottery, Quota: 300})
+			assert.Contains(t, summaries[inviter.Id].Items, GiftQuotaItem{Source: GiftSourceCheckin, Quota: 40})
 		})
 	}
 }

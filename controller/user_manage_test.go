@@ -690,9 +690,51 @@ func TestGetUserRecentIpsMergesSourcesAndHidesHigherRoles(t *testing.T) {
 	assert.Contains(t, request(root.Id, common.RoleAdminUser).Body.String(), `"success":false`)
 }
 
+// userListTables are the tables the user list reads beyond users: risk
+// scores and every source of the gift credit summary.
+var userListTables = []any{&model.UserRiskScore{}, &model.GiftQuotaRecord{}, &model.TrialCreditGrant{}, &model.LotteryPrize{}, &model.LotteryEntry{}, &model.Checkin{}, &model.Redemption{}}
+
+func TestUserListShowsGiftCreditOfManageableUsers(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	require.NoError(t, db.AutoMigrate(userListTables...))
+	member := model.User{Username: "gift-list-member", Password: "password", AffCode: "gift-list-member", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	peer := model.User{Username: "gift-list-admin", Password: "password", AffCode: "gift-list-admin", Role: common.RoleAdminUser, Status: common.UserStatusEnabled, Group: "default"}
+	for _, user := range []*model.User{&member, &peer} {
+		require.NoError(t, db.Create(user).Error)
+	}
+	require.NoError(t, db.Create(&[]model.GiftQuotaRecord{
+		{UserId: member.Id, Source: model.GiftSourceAdmin, Quota: 500, RefKey: "gift-list:member"},
+		{UserId: peer.Id, Source: model.GiftSourceAdmin, Quota: 700, RefKey: "gift-list:peer"},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/user/search?keyword=gift-list-", nil)
+	c.Set("role", common.RoleAdminUser)
+	SearchUsers(c)
+
+	var list struct {
+		Data struct {
+			Items []struct {
+				Username  string                  `json:"username"`
+				GiftQuota *model.GiftQuotaSummary `json:"gift_quota"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &list))
+	gifts := map[string]*model.GiftQuotaSummary{}
+	for _, item := range list.Data.Items {
+		gifts[item.Username] = item.GiftQuota
+	}
+	require.Len(t, gifts, 2)
+	require.NotNil(t, gifts["gift-list-member"])
+	assert.Equal(t, model.GiftQuotaSummary{Total: 500, Items: []model.GiftQuotaItem{{Source: model.GiftSourceAdmin, Quota: 500}}}, *gifts["gift-list-member"])
+	assert.Nil(t, gifts["gift-list-admin"], "an admin cannot read a peer's gift credit, as with GetUserGiftQuota")
+}
+
 func TestUserRiskScoreInListAndDetail(t *testing.T) {
 	db := setupManageUserTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.UserRiskScore{}))
+	require.NoError(t, db.AutoMigrate(userListTables...))
 	target := model.User{Username: "risk-target", Password: "password", AffCode: "risk-target", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
 	partner := model.User{Username: "risk-partner", Password: "password", AffCode: "risk-partner", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
 	clean := model.User{Username: "risk-clean", Password: "password", AffCode: "risk-clean", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
