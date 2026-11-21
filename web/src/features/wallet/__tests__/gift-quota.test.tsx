@@ -16,7 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { afterEach, beforeEach, expect, test } from 'vitest'
@@ -71,6 +77,20 @@ test('with a gift summary the balance shows the cumulative gift credit', () => {
     screen.getByRole('button', { name: 'Gift credit received: $3' })
   ).toBeVisible()
   expect(screen.queryByText('Remaining quota')).not.toBeInTheDocument()
+})
+
+test('the phone layout of the gift badge keeps the cumulative wording', () => {
+  renderCard(summary)
+
+  // A bare "Gift $3" under the balance reads like a second balance, so the
+  // narrow layout spells out that the amount is the total received so far.
+  const badge = screen.getByRole('button', {
+    name: 'Gift credit received: $3',
+  })
+  expect(
+    within(badge).getByText('Total gift credit received')
+  ).toBeInTheDocument()
+  expect(within(badge).queryByText('Gift $3')).not.toBeInTheDocument()
 })
 
 test('opening the gift credit lists each source and the total', async () => {

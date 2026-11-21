@@ -8603,7 +8603,6 @@
     "Gift credit comes from sign-up bonuses, invitation rewards, lottery prizes, check-ins and other platform giveaways. It is spent together with your balance. It can only be used on this platform and cannot be withdrawn or transferred. When you request a refund, the gift credit you have received is deducted first; see the user agreement for details.": "贈金來自註冊贈送、邀請獎勵、抽獎、簽到等平台活動，與餘額一起使用，消費時不區分。贈金僅限平台內消費，不可提現、不可轉贈。申請退款時，已獲得的贈金會先從可退餘額中扣除，具體以用戶協議為準。",
     "Count as gift credit": "計入贈金",
     "The amount is added to the user's gift credit, which is deducted when they request a refund. Leave it off for paid manual top-ups.": "增加的額度計入用戶累計贈金，用戶申請退款時會扣除。手動充值（用戶已付款）請勿勾選。",
-    "Gift {{amount}}": "贈金 {{amount}}",
     "Top-up bonus": "儲值贈送",
     "Ticket": "工單",
     "Last activity": "最近更新",

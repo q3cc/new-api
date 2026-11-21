@@ -66,10 +66,18 @@ export function GiftQuotaPopover(props: GiftQuotaPopoverProps) {
       triggerClassName='w-auto max-w-full'
     >
       <span className='inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[11px] font-medium whitespace-normal text-amber-700 sm:px-1.5 sm:text-xs dark:text-amber-400'>
-        <Gift className='size-3 shrink-0 sm:size-3.5' aria-hidden='true' />
-        {/* Phone columns are too narrow for the full label. */}
-        <span className='min-w-0 break-all sm:hidden'>
-          {t('Gift {{amount}}', { amount: total })}
+        <Gift
+          className='hidden size-3.5 shrink-0 sm:block'
+          aria-hidden='true'
+        />
+        {/* Phone columns are too narrow for one line. A bare "Gift ¥X" under
+            the balance reads like a second balance, so keep the full wording,
+            without the icon so it fits, and put the amount on its own line. */}
+        <span className='flex min-w-0 flex-col sm:hidden'>
+          <span className='text-balance'>
+            {t('Total gift credit received')}
+          </span>
+          <span className='break-all tabular-nums'>{total}</span>
         </span>
         <span className='hidden min-w-0 truncate sm:inline'>{label}</span>
         <CircleHelp
