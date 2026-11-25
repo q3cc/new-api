@@ -8611,7 +8611,6 @@
     "New ticket": "Nouveau ticket",
     "No tickets yet": "Aucun ticket pour le moment",
     "Search tickets": "Rechercher des tickets",
-    "Search by ticket ID or title...": "Rechercher par ID ou titre du ticket...",
     "Assigned to me": "Qui me sont attribués",
     "User #{{id}}": "Utilisateur n°{{id}}",
     "Ticket Management": "Gestion des tickets",
@@ -8745,6 +8744,17 @@
     "Press Enter to confirm, Ctrl + Enter for a new line": "Entrée pour confirmer, Ctrl + Entrée pour aller à la ligne",
     "This ticket closed automatically 30 minutes after the last support reply.": "Ce ticket a été clôturé automatiquement 30 minutes après la dernière réponse du support.",
     "Reopen it if you still need help.": "Rouvrez-le si vous avez encore besoin d'aide.",
-    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Sans réponse de votre part dans les 30 minutes suivant la dernière réponse du support, ce ticket sera clôturé automatiquement. Vous pourrez le rouvrir ensuite."
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Sans réponse de votre part dans les 30 minutes suivant la dernière réponse du support, ce ticket sera clôturé automatiquement. Vous pourrez le rouvrir ensuite.",
+    "Search by ticket ID, title, username or email...": "Rechercher par ID de ticket, titre, nom d'utilisateur ou e-mail...",
+    "Show tickets of {{name}}": "Afficher les tickets de {{name}}",
+    "User info": "Informations utilisateur",
+    "User overview": "Aperçu de l'utilisateur",
+    "Recent orders": "Commandes récentes",
+    "All orders": "Toutes les commandes",
+    "No orders yet": "Aucune commande pour l'instant",
+    "Quick links": "Liens rapides",
+    "Tickets": "Tickets",
+    "Tickets ({{count}})": "Tickets ({{count}})",
+    "Open in user management": "Ouvrir dans la gestion des utilisateurs"
   }
 }

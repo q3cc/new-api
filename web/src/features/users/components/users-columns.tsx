@@ -48,6 +48,7 @@ import { DataTableRowActions } from './data-table-row-actions'
 import { UserInviteesDialog } from './user-invitees-dialog'
 import { UserQuotaCell } from './user-quota-cell'
 import { UserRiskBadge } from './user-risk-badge'
+import { UsernameButton } from './username-button'
 
 export function useUsersColumns(): ColumnDef<User>[] {
   const { t } = useTranslation()
@@ -106,9 +107,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
           return (
             <div className='flex min-w-[160px] flex-col gap-1'>
               <div className='flex items-center gap-2'>
-                <LongText className='max-w-[140px] text-sm font-normal'>
-                  {username}
-                </LongText>
+                <UsernameButton user={row.original} />
                 <UserRiskBadge risk={row.original.risk_score} />
                 {remark && (
                   <Tooltip>

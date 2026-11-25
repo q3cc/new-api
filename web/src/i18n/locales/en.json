@@ -8611,7 +8611,6 @@
     "New ticket": "New ticket",
     "No tickets yet": "No tickets yet",
     "Search tickets": "Search tickets",
-    "Search by ticket ID or title...": "Search by ticket ID or title...",
     "Assigned to me": "Assigned to me",
     "User #{{id}}": "User #{{id}}",
     "Ticket Management": "Ticket Management",
@@ -8745,6 +8744,17 @@
     "Press Enter to confirm, Ctrl + Enter for a new line": "Press Enter to confirm, Ctrl + Enter for a new line",
     "This ticket closed automatically 30 minutes after the last support reply.": "This ticket closed automatically 30 minutes after the last support reply.",
     "Reopen it if you still need help.": "Reopen it if you still need help.",
-    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later."
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.",
+    "Search by ticket ID, title, username or email...": "Search by ticket ID, title, username or email...",
+    "Show tickets of {{name}}": "Show tickets of {{name}}",
+    "User info": "User info",
+    "User overview": "User overview",
+    "Recent orders": "Recent orders",
+    "All orders": "All orders",
+    "No orders yet": "No orders yet",
+    "Quick links": "Quick links",
+    "Tickets": "Tickets",
+    "Tickets ({{count}})": "Tickets ({{count}})",
+    "Open in user management": "Open in user management"
   }
 }

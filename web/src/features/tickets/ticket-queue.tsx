@@ -124,12 +124,19 @@ export function TicketQueuePage(props: {
       accessorKey: 'user_id',
       header: t('User'),
       cell: ({ row }) => (
-        <div>
+        <Button
+          variant='link'
+          className='h-auto max-w-40 flex-col items-start gap-0 p-0 font-normal'
+          aria-label={t('Show tickets of {{name}}', {
+            name: row.original.username || `#${row.original.user_id}`,
+          })}
+          onClick={() => changeFilters({ user_id: row.original.user_id })}
+        >
           <span>#{row.original.user_id}</span>
-          <div className='text-muted-foreground max-w-40 truncate text-xs'>
+          <span className='text-muted-foreground w-full truncate text-xs'>
             {row.original.username || '—'}
-          </div>
-        </div>
+          </span>
+        </Button>
       ),
     },
     {
@@ -173,7 +180,7 @@ export function TicketQueuePage(props: {
     <div className='flex flex-wrap items-center gap-2'>
       <Input
         aria-label={t('Search tickets')}
-        placeholder={t('Search by ticket ID or title...')}
+        placeholder={t('Search by ticket ID, title, username or email...')}
         value={props.search.keyword ?? ''}
         maxLength={128}
         onChange={(event) => changeFilters({ keyword: event.target.value })}

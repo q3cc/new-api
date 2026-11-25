@@ -8611,7 +8611,6 @@
     "New ticket": "新建工單",
     "No tickets yet": "暫無工單",
     "Search tickets": "搜尋工單",
-    "Search by ticket ID or title...": "依工單 ID 或標題搜尋...",
     "Assigned to me": "指派給我",
     "User #{{id}}": "用戶 #{{id}}",
     "Ticket Management": "工單管理",
@@ -8745,6 +8744,17 @@
     "Press Enter to confirm, Ctrl + Enter for a new line": "按 Enter 直接確認，Ctrl + Enter 換行",
     "This ticket closed automatically 30 minutes after the last support reply.": "客服最後一次回覆後 30 分鐘內未收到您的回覆，工單已自動關閉。",
     "Reopen it if you still need help.": "如仍需協助，可重新開啟。",
-    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "客服回覆後 30 分鐘內如未回覆，工單將自動關閉，之後可重新開啟。"
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "客服回覆後 30 分鐘內如未回覆，工單將自動關閉，之後可重新開啟。",
+    "Search by ticket ID, title, username or email...": "按工單 ID、標題、使用者名稱或電子郵件搜尋...",
+    "Show tickets of {{name}}": "查看 {{name}} 的工單",
+    "User info": "使用者資訊",
+    "User overview": "使用者概覽",
+    "Recent orders": "最近訂單",
+    "All orders": "全部訂單",
+    "No orders yet": "暫無訂單",
+    "Quick links": "快捷入口",
+    "Tickets": "工單",
+    "Tickets ({{count}})": "工單（{{count}}）",
+    "Open in user management": "在使用者管理中開啟"
   }
 }

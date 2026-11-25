@@ -8611,7 +8611,6 @@
     "New ticket": "Tạo phiếu hỗ trợ",
     "No tickets yet": "Chưa có phiếu hỗ trợ nào",
     "Search tickets": "Tìm phiếu hỗ trợ",
-    "Search by ticket ID or title...": "Tìm theo ID hoặc tiêu đề phiếu...",
     "Assigned to me": "Được giao cho tôi",
     "User #{{id}}": "Người dùng #{{id}}",
     "Ticket Management": "Quản lý phiếu hỗ trợ",
@@ -8745,6 +8744,17 @@
     "Press Enter to confirm, Ctrl + Enter for a new line": "Nhấn Enter để xác nhận, Ctrl + Enter để xuống dòng",
     "This ticket closed automatically 30 minutes after the last support reply.": "Phiếu đã tự động đóng 30 phút sau phản hồi cuối của bộ phận hỗ trợ.",
     "Reopen it if you still need help.": "Nếu vẫn cần hỗ trợ, hãy mở lại phiếu.",
-    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Nếu bạn không trả lời trong 30 phút kể từ phản hồi cuối của bộ phận hỗ trợ, phiếu sẽ tự động đóng. Bạn có thể mở lại sau."
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Nếu bạn không trả lời trong 30 phút kể từ phản hồi cuối của bộ phận hỗ trợ, phiếu sẽ tự động đóng. Bạn có thể mở lại sau.",
+    "Search by ticket ID, title, username or email...": "Tìm theo ID phiếu, tiêu đề, tên người dùng hoặc email...",
+    "Show tickets of {{name}}": "Xem phiếu hỗ trợ của {{name}}",
+    "User info": "Thông tin người dùng",
+    "User overview": "Tổng quan người dùng",
+    "Recent orders": "Đơn hàng gần đây",
+    "All orders": "Tất cả đơn hàng",
+    "No orders yet": "Chưa có đơn hàng",
+    "Quick links": "Liên kết nhanh",
+    "Tickets": "Phiếu hỗ trợ",
+    "Tickets ({{count}})": "Phiếu hỗ trợ ({{count}})",
+    "Open in user management": "Mở trong quản lý người dùng"
   }
 }

@@ -28,6 +28,7 @@ import {
   ShieldAlert,
   Link2,
   CreditCard,
+  IdCard,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -94,6 +95,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const handleEdit = () => {
     setCurrentRow(user)
     setOpen('update')
+  }
+
+  const handleOverview = () => {
+    setCurrentRow(user)
+    setOpen('overview')
   }
 
   const handleDelete = () => {
@@ -210,6 +216,21 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           <Pencil />
         </TooltipTrigger>
         <TooltipContent>{t('Edit')}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              onClick={handleOverview}
+              aria-label={t('User overview')}
+            />
+          }
+        >
+          <IdCard />
+        </TooltipTrigger>
+        <TooltipContent>{t('User overview')}</TooltipContent>
       </Tooltip>
 
       <DataTableRowActionMenu

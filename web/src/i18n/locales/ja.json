@@ -8611,7 +8611,6 @@
     "New ticket": "新規チケット",
     "No tickets yet": "チケットはまだありません",
     "Search tickets": "チケットを検索",
-    "Search by ticket ID or title...": "チケット ID またはタイトルで検索...",
     "Assigned to me": "自分の担当",
     "User #{{id}}": "ユーザー #{{id}}",
     "Ticket Management": "チケット管理",
@@ -8745,6 +8744,17 @@
     "Press Enter to confirm, Ctrl + Enter for a new line": "Enter で確定、Ctrl + Enter で改行",
     "This ticket closed automatically 30 minutes after the last support reply.": "サポートの最後の返信から 30 分経過したため、このチケットは自動的にクローズされました。",
     "Reopen it if you still need help.": "まだサポートが必要な場合は再オープンしてください。",
-    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "サポートの最後の返信から 30 分以内に返信がない場合、チケットは自動的にクローズされます。後から再オープンできます。"
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "サポートの最後の返信から 30 分以内に返信がない場合、チケットは自動的にクローズされます。後から再オープンできます。",
+    "Search by ticket ID, title, username or email...": "チケットID、タイトル、ユーザー名、メールで検索...",
+    "Show tickets of {{name}}": "{{name}} のチケットを表示",
+    "User info": "ユーザー情報",
+    "User overview": "ユーザー概要",
+    "Recent orders": "最近の注文",
+    "All orders": "すべての注文",
+    "No orders yet": "注文はまだありません",
+    "Quick links": "クイックリンク",
+    "Tickets": "チケット",
+    "Tickets ({{count}})": "チケット（{{count}}）",
+    "Open in user management": "ユーザー管理で開く"
   }
 }

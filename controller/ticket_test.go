@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -107,7 +108,7 @@ func newTicketTestEnv(t *testing.T, kind, dsn string) *ticketTestEnv {
 	require.NoError(t, db.AutoMigrate(append(tables, &model.UserMessage{})...))
 	require.NoError(t, db.AutoMigrate(tables...), "a second migration must be a no-op")
 	for _, user := range []model.User{
-		{Id: ticketAlice, Username: "alice", AffCode: "t931", Status: common.UserStatusEnabled, Role: common.RoleCommonUser},
+		{Id: ticketAlice, Username: "alice", Email: "alice@example.com", AffCode: "t931", Status: common.UserStatusEnabled, Role: common.RoleCommonUser},
 		{Id: ticketBob, Username: "bob", AffCode: "t932", Status: common.UserStatusEnabled, Role: common.RoleCommonUser},
 		{Id: ticketRoot, Username: "root", AffCode: "t933", Status: common.UserStatusEnabled, Role: common.RoleRootUser},
 	} {
@@ -471,6 +472,27 @@ func TestTicketSupportTools(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, recorder.Code)
 		_, recorder = env.call(http.MethodGet, "/ticket/"+strconv.Itoa(second.Data.Id), root, nil, "")
 		assert.Equal(t, http.StatusOK, recorder.Code, "other tickets stay")
+
+		// The queue search also finds a ticket by its owner's name or email;
+		// a % or _ in the keyword matches only itself.
+		refund := env.open(bob, map[string]string{"title": "Refund 50%", "category": model.TicketCategoryBilling, "content": "Charged twice"})
+		require.True(t, refund.Success, refund.MessageKey)
+		for keyword, want := range map[string][]int{
+			"errors":                     {second.Data.Id},
+			"ali":                        {second.Data.Id},
+			"alice@example.com":          {second.Data.Id},
+			strconv.Itoa(refund.Data.Id): {refund.Data.Id},
+			"50%":                        {refund.Data.Id},
+			"%":                          {refund.Data.Id},
+			"_":                          {},
+		} {
+			found, _ := env.call(http.MethodGet, "/ticket/?keyword="+url.QueryEscape(keyword), root, nil, "")
+			ids := []int{}
+			for _, item := range found.Data.Items {
+				ids = append(ids, item.Id)
+			}
+			assert.Equal(t, want, ids, "keyword %q", keyword)
+		}
 	})
 }
 

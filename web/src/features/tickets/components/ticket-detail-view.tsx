@@ -39,6 +39,7 @@ import {
 import { formatTimestampToDate } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { getServerErrorMessage } from '@/lib/server-error-message'
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
@@ -55,6 +56,7 @@ import {
   TICKET_PRIORITY_CONFIG,
 } from '../constants'
 import type { Ticket, TicketPriority, TicketViewer } from '../types'
+import { TicketOwnerCard } from './ticket-owner-card'
 import { TicketRating } from './ticket-rating'
 import { TicketReplyForm } from './ticket-reply-form'
 import { TicketResponseDue } from './ticket-response-due'
@@ -62,6 +64,9 @@ import { TicketStatusBadge } from './ticket-status-badge'
 import { TicketThread } from './ticket-thread'
 
 type TicketAction = 'close' | 'reopen' | 'delete'
+
+/** How often an open conversation checks for new posts while visible. */
+const REFRESH_MS = 30_000
 
 /** One ticket with its conversation, as its owner or support sees it. */
 export function TicketDetailView(props: {
@@ -86,19 +91,26 @@ export function TicketDetailView(props: {
     queryKey: ticketKeys.detail(props.viewer, props.ticketId),
     queryFn: ({ signal }) =>
       getTicketDetail(props.viewer, props.ticketId, signal),
+    // New posts from the other side show up without a reload; React Query
+    // pauses this while the tab is hidden.
+    refetchInterval: REFRESH_MS,
     meta: { errorToast: false },
   })
   // Opening a ticket marks the other side's posts read on the server, so the
-  // lists and sidebar counts are stale once it loads.
+  // lists and sidebar counts are stale once it loads or gains a post. A poll
+  // that finds nothing new leaves them alone.
+  const revision = query.data
+    ? `${query.data.ticket.status}:${query.data.messages.length}`
+    : ''
   useEffect(() => {
-    if (!query.dataUpdatedAt) return
+    if (!revision) return
     void queryClient.invalidateQueries({
       queryKey: ['tickets', props.viewer, 'list'],
     })
     void queryClient.invalidateQueries({
       queryKey: staff ? ticketKeys.summary : ticketKeys.userUnread,
     })
-  }, [query.dataUpdatedAt, queryClient, props.viewer, staff])
+  }, [revision, queryClient, props.viewer, staff])
   const action = useMutation({
     mutationFn: (kind: TicketAction) => {
       if (kind === 'delete') return deleteTicket(props.ticketId)
@@ -182,50 +194,79 @@ export function TicketDetailView(props: {
             />
           )}
           {query.isSuccess && ticket && (
-            <div className='mx-auto max-w-3xl space-y-6'>
-              <TicketFacts
-                ticket={ticket}
-                staff={staff}
-                onOpenOrder={() => setOrderOpen(true)}
-              />
-              <TicketThread
-                viewer={props.viewer}
-                messages={query.data.messages}
-              />
-              {ticket.status === 'closed' && (
-                // Two lines rather than two sentences joined by a space,
-                // which reads wrong after Chinese full stops.
-                <p className='text-muted-foreground space-y-1 rounded-lg border border-dashed p-4 text-center text-sm'>
-                  <span className='block'>
-                    {ticket.closed_by === 'system'
-                      ? t(
-                          'This ticket closed automatically 30 minutes after the last support reply.'
-                        )
-                      : t('This ticket is closed.')}
-                  </span>
-                  <span className='block'>
-                    {staff
-                      ? t('Support can still add internal notes.')
-                      : t('Reopen it if you still need help.')}
-                  </span>
-                </p>
+            <div
+              className={cn(
+                'mx-auto',
+                staff
+                  ? 'grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start'
+                  : 'max-w-3xl space-y-6'
               )}
-              {!staff && ticket.status === 'replied' && (
-                <p className='text-muted-foreground text-sm'>
-                  {t(
-                    'Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.'
-                  )}
-                </p>
-              )}
-              <TicketRating ticket={ticket} viewer={props.viewer} />
-              {(ticket.status !== 'closed' || staff) && (
-                <TicketReplyForm
-                  key={`${ticket.id}-${ticket.status === 'closed'}`}
-                  viewer={props.viewer}
-                  ticketId={ticket.id}
-                  notesOnly={ticket.status === 'closed'}
+            >
+              {/* First in reading order; beside the conversation on wide
+                  screens. */}
+              <div
+                className={cn(
+                  'min-w-0 space-y-4',
+                  staff && 'lg:col-start-2 lg:row-start-1'
+                )}
+              >
+                <TicketFacts
+                  ticket={ticket}
+                  staff={staff}
+                  onOpenOrder={() => setOrderOpen(true)}
                 />
-              )}
+                {staff && (
+                  <TicketOwnerCard
+                    userId={ticket.user_id}
+                    username={ticket.username}
+                  />
+                )}
+              </div>
+              <div
+                className={cn(
+                  'min-w-0 space-y-6',
+                  staff && 'lg:col-start-1 lg:row-start-1'
+                )}
+              >
+                <TicketThread
+                  viewer={props.viewer}
+                  messages={query.data.messages}
+                />
+                {ticket.status === 'closed' && (
+                  // Two lines rather than two sentences joined by a space,
+                  // which reads wrong after Chinese full stops.
+                  <p className='text-muted-foreground space-y-1 rounded-lg border border-dashed p-4 text-center text-sm'>
+                    <span className='block'>
+                      {ticket.closed_by === 'system'
+                        ? t(
+                            'This ticket closed automatically 30 minutes after the last support reply.'
+                          )
+                        : t('This ticket is closed.')}
+                    </span>
+                    <span className='block'>
+                      {staff
+                        ? t('Support can still add internal notes.')
+                        : t('Reopen it if you still need help.')}
+                    </span>
+                  </p>
+                )}
+                {!staff && ticket.status === 'replied' && (
+                  <p className='text-muted-foreground text-sm'>
+                    {t(
+                      'Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.'
+                    )}
+                  </p>
+                )}
+                <TicketRating ticket={ticket} viewer={props.viewer} />
+                {(ticket.status !== 'closed' || staff) && (
+                  <TicketReplyForm
+                    key={`${ticket.id}-${ticket.status === 'closed'}`}
+                    viewer={props.viewer}
+                    ticketId={ticket.id}
+                    notesOnly={ticket.status === 'closed'}
+                  />
+                )}
+              </div>
             </div>
           )}
         </SectionPageLayout.Content>
@@ -293,7 +334,12 @@ function TicketFacts(props: {
     onError: (err) => handleServerError(err),
   })
   return (
-    <dl className='grid gap-x-6 gap-y-3 rounded-lg border p-4 text-sm sm:grid-cols-2'>
+    <dl
+      className={cn(
+        'grid gap-x-6 gap-y-3 rounded-lg border p-4 text-sm sm:grid-cols-2',
+        props.staff && 'lg:grid-cols-1'
+      )}
+    >
       <div className='space-y-1'>
         <dt className='text-muted-foreground'>{t('Status')}</dt>
         <dd>

@@ -421,11 +421,19 @@ func ListTickets(filter TicketFilter, pageInfo *common.PageInfo) ([]Ticket, int6
 		query = query.Where(ticketOverdueCondition(filter.OverdueBefore))
 	}
 	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
+		// The keyword matches the ticket number, the title, or the owner's
+		// name or email, so support can find a ticket from what a user
+		// tells them.
+		pattern := containsSearchPattern(keyword)
+		owners := DB.Unscoped().Model(&User{}).Select("id").
+			Where("username LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!' OR email LIKE ? ESCAPE '!'", pattern, pattern, pattern)
+		condition := "title LIKE ? ESCAPE '!' OR user_id IN (?)"
+		args := []any{pattern, owners}
 		if id, err := strconv.Atoi(keyword); err == nil {
-			query = query.Where("id = ? OR title LIKE ?", id, "%"+keyword+"%")
-		} else {
-			query = query.Where("title LIKE ?", "%"+keyword+"%")
+			condition = "id = ? OR " + condition
+			args = append([]any{id}, args...)
 		}
+		query = query.Where("("+condition+")", args...)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

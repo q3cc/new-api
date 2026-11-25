@@ -24,7 +24,13 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
@@ -32,6 +38,7 @@ import { api } from '@/lib/api'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { ticketKeys } from '../api'
 import { TicketDetailView } from '../components/ticket-detail-view'
 import type { TicketDetail, TicketViewer } from '../types'
 
@@ -268,6 +275,51 @@ it('lets support reopen a closed ticket, see the owner, and still add notes', as
     screen.getByRole('textbox', { name: 'Internal note' })
   ).toBeInTheDocument()
   expect(screen.queryByRole('group', { name: 'Message type' })).toBeNull()
+})
+
+it('gives support the owner card folded on a narrow screen, and the owner none', async () => {
+  renderTicket('staff')
+  const card = await screen.findByRole('button', { name: /^User info/ })
+  expect(card).toHaveAttribute('aria-expanded', 'false')
+  expect(card).toHaveTextContent('alice')
+  client.clear()
+  cleanup()
+
+  renderTicket('user')
+  await screen.findByRole('list', { name: 'Conversation' })
+  expect(screen.queryByRole('button', { name: /User info/ })).toBeNull()
+})
+
+it('keeps a draft when a refresh brings in a new post', async () => {
+  const user = userEvent.setup()
+  renderTicket('staff')
+  const box = await screen.findByRole('textbox', { name: 'Reply' })
+  await user.type(box, 'Half-written answer')
+
+  detail = {
+    ...detail,
+    ticket: { ...detail.ticket, status: 'open' },
+    messages: [
+      ...detail.messages,
+      {
+        id: 3,
+        ticket_id: 7,
+        user_id: 12,
+        username: 'alice',
+        is_staff: false,
+        kind: '',
+        content: 'Any news?',
+        created_at: 1_700_000_200,
+        attachments: [],
+      },
+    ],
+  }
+  await client.refetchQueries({ queryKey: ticketKeys.detail('staff', 7) })
+
+  expect(await screen.findByText('Any news?')).toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: 'Reply' })).toHaveValue(
+    'Half-written answer'
+  )
 })
 
 it('sends the reply on Enter and empties the composer', async () => {

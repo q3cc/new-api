@@ -8611,7 +8611,6 @@
     "New ticket": "Новое обращение",
     "No tickets yet": "Обращений пока нет",
     "Search tickets": "Поиск обращений",
-    "Search by ticket ID or title...": "Поиск по ID или заголовку обращения...",
     "Assigned to me": "Назначенные мне",
     "User #{{id}}": "Пользователь #{{id}}",
     "Ticket Management": "Управление обращениями",
@@ -8745,6 +8744,17 @@
     "Press Enter to confirm, Ctrl + Enter for a new line": "Enter — подтвердить, Ctrl + Enter — новая строка",
     "This ticket closed automatically 30 minutes after the last support reply.": "Обращение закрыто автоматически через 30 минут после последнего ответа поддержки.",
     "Reopen it if you still need help.": "Если помощь всё ещё нужна, откройте его снова.",
-    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Если вы не ответите в течение 30 минут после последнего ответа поддержки, обращение закроется автоматически. Позже его можно открыть снова."
+    "Without a reply from you within 30 minutes of the last support reply, this ticket closes automatically. You can reopen it later.": "Если вы не ответите в течение 30 минут после последнего ответа поддержки, обращение закроется автоматически. Позже его можно открыть снова.",
+    "Search by ticket ID, title, username or email...": "Поиск по ID обращения, заголовку, имени пользователя или email...",
+    "Show tickets of {{name}}": "Показать обращения {{name}}",
+    "User info": "Сведения о пользователе",
+    "User overview": "Обзор пользователя",
+    "Recent orders": "Последние заказы",
+    "All orders": "Все заказы",
+    "No orders yet": "Заказов пока нет",
+    "Quick links": "Быстрые ссылки",
+    "Tickets": "Обращения",
+    "Tickets ({{count}})": "Обращения ({{count}})",
+    "Open in user management": "Открыть в управлении пользователями"
   }
 }
