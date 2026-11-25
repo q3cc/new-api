@@ -26,6 +26,8 @@ export const ordersSearchSchema = z.object({
   page: z.number().int().min(1).optional().catch(1),
   pageSize: z.number().int().min(1).max(100).optional().catch(20),
   keyword: z.string().max(255).optional().catch(''),
+  /** Keeps one user's orders, as linked from a user's overview. */
+  user_id: z.number().int().min(1).optional().catch(undefined),
   order_type: z.enum(['topup', 'subscription']).optional().catch(undefined),
   status: z
     .enum(['pending', 'success', 'failed', 'expired'])

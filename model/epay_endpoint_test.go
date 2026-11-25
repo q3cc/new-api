@@ -3,6 +3,7 @@ package model
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -464,6 +465,26 @@ func assertAdminOrderContracts(t *testing.T, db *gorm.DB) {
 		_, total, err := GetAdminBillingHistory(owner.Email, BillingHistoryFilter{}, &common.PageInfo{Page: 1, PageSize: 20})
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), total)
+	})
+	t.Run("a user filter keeps only that user's orders, even when a trade number holds the id", func(t *testing.T) {
+		other := User{Username: "orders_other", Email: "orders-other@example.com", AffCode: "orders_other"}
+		require.NoError(t, db.Create(&other).Error)
+		require.NoError(t, db.Create(&TopUp{UserId: other.Id, TradeNo: "other-" + strconv.Itoa(owner.Id), Status: common.TopUpStatusSuccess, PaymentMethod: PaymentMethodStripe, CreateTime: end}).Error)
+
+		rows, total, err := GetAdminBillingHistory("", BillingHistoryFilter{UserId: owner.Id}, &common.PageInfo{Page: 1, PageSize: 20})
+		require.NoError(t, err)
+		assert.Equal(t, int64(4), total)
+		for _, row := range rows {
+			assert.Equal(t, owner.Username, row.Username)
+		}
+		_, total, err = GetAdminBillingHistory(strconv.Itoa(owner.Id), BillingHistoryFilter{}, &common.PageInfo{Page: 1, PageSize: 20})
+		require.NoError(t, err)
+		assert.Equal(t, int64(5), total, "a numeric keyword also matches trade numbers")
+		_, total, err = GetAdminBillingHistory("orders-mirror", BillingHistoryFilter{UserId: other.Id}, &common.PageInfo{Page: 1, PageSize: 20})
+		require.NoError(t, err)
+		assert.Zero(t, total, "the keyword narrows the user's orders")
+		_, _, err = GetAdminBillingHistory("", BillingHistoryFilter{UserId: -1}, &common.PageInfo{Page: 1, PageSize: 20})
+		require.Error(t, err)
 	})
 	t.Run("details resolve the saved endpoint version and expose only safe fields", func(t *testing.T) {
 		for _, tc := range []struct{ kind, trade, endpoint string }{

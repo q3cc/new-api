@@ -233,6 +233,19 @@ it('restoring another URL updates the visible keyword and search request', async
   )
 })
 
+it('a user filter is sent with the request and its chip clears it', async () => {
+  render(<OrdersHarness initial={{ user_id: 12, page: 1, pageSize: 20 }} />)
+  await screen.findByRole('button', { name: 'order-topup' })
+  expect(requests.at(-1)).toMatchObject({ user_id: 12, p: 1 })
+
+  await userEvent
+    .setup()
+    .click(screen.getByRole('button', { name: 'User #12 ×' }))
+
+  await waitFor(() => expect(requests.at(-1)?.user_id).toBeUndefined())
+  expect(screen.queryByRole('button', { name: 'User #12 ×' })).toBeNull()
+})
+
 it('rejects reversed date ranges before sending an order request', () => {
   render(
     <OrdersHarness initial={{ start_timestamp: 200, end_timestamp: 100 }} />

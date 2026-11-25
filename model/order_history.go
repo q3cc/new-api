@@ -68,6 +68,9 @@ func queryBillingHistory(userId int, admin bool, keyword string, page *common.Pa
 			query = query.Where("orders.user_id = ? AND orders.create_time >= ?", userId, topUpQueryCutoff())
 		}
 		if admin {
+			if filters.UserId > 0 {
+				query = query.Where("orders.user_id = ?", filters.UserId)
+			}
 			if filters.OrderType != "" {
 				query = query.Where("orders.order_type = ?", filters.OrderType)
 			}
@@ -118,6 +121,8 @@ func queryBillingHistory(userId int, admin bool, keyword string, page *common.Pa
 }
 
 type BillingHistoryFilter struct {
+	// UserId keeps one user's orders; zero lists every user's.
+	UserId         int    `form:"user_id"`
 	OrderType      string `form:"order_type"`
 	Status         string `form:"status"`
 	PaymentMethod  string `form:"payment_method"`
@@ -134,7 +139,7 @@ func (f BillingHistoryFilter) Validate() error {
 	default:
 		return common.NewMessage("Invalid parameters")
 	}
-	if len(f.PaymentMethod) > 50 || f.StartTimestamp != nil && *f.StartTimestamp < 0 || f.EndTimestamp != nil && *f.EndTimestamp < 0 || f.StartTimestamp != nil && f.EndTimestamp != nil && *f.StartTimestamp > *f.EndTimestamp {
+	if f.UserId < 0 || len(f.PaymentMethod) > 50 || f.StartTimestamp != nil && *f.StartTimestamp < 0 || f.EndTimestamp != nil && *f.EndTimestamp < 0 || f.StartTimestamp != nil && f.EndTimestamp != nil && *f.StartTimestamp > *f.EndTimestamp {
 		return common.NewMessage("Invalid parameters")
 	}
 	return nil

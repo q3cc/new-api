@@ -323,6 +323,14 @@ export function OrdersPage(props: {
           }
           className='w-full sm:w-auto'
         />
+        {props.search.user_id && (
+          <Button
+            variant='outline'
+            onClick={() => changeFilters({ user_id: undefined })}
+          >
+            {t('User #{{id}}', { id: props.search.user_id })} ×
+          </Button>
+        )}
         <Button
           variant='outline'
           onClick={() =>
