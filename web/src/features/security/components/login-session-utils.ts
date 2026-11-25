@@ -18,6 +18,19 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 
+import { clientPlatformName } from '../lib/client-device'
+
+/**
+ * The Lyra Box client identifies itself as `LyraBox/<version> (<platform>; …)`,
+ * both when it signs in with a password and when a device is authorized in
+ * the browser. Returns its platform name, or null for any other user agent.
+ */
+export function lyraClientPlatform(userAgent: string): string | null {
+  const match = /^LyraBox\/\S+(?: \((\w+)[;)])?/.exec(userAgent)
+  if (!match) return null
+  return match[1] ? clientPlatformName(match[1].toLowerCase()) : ''
+}
+
 export function sessionDevice(
   userAgent: string,
   unknownDevice: string,
@@ -25,6 +38,10 @@ export function sessionDevice(
   maxTouchPoints = 0
 ): string {
   if (!userAgent) return unknownDevice
+  const clientPlatform = lyraClientPlatform(userAgent)
+  if (clientPlatform !== null) {
+    return clientPlatform ? `Lyra Box · ${clientPlatform}` : 'Lyra Box'
+  }
   let browser = browserLabel
   if (userAgent.includes('Edg/')) browser = 'Edge'
   else if (userAgent.includes('Chrome/')) browser = 'Chrome'
@@ -59,6 +76,8 @@ export function loginMethodLabel(method: string, t: TFunction): string {
       return t('Telegram')
     case 'oauth':
       return t('OAuth')
+    case 'client_device':
+      return t('Browser authorization')
     case 'unknown':
     case '':
       return t('Unknown')

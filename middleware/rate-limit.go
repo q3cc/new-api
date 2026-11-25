@@ -212,6 +212,17 @@ func UserCriticalRateLimit(scope string) func(c *gin.Context) {
 	)
 }
 
+// ClientDevicePollRateLimit paces native clients polling a browser
+// authorization. A device polls every 5 seconds for at most 10 minutes; the
+// per-IP budget leaves room for a few devices behind one address. It follows
+// the critical limit switch like the other authentication endpoints.
+func ClientDevicePollRateLimit() func(c *gin.Context) {
+	if !common.CriticalRateLimitEnable {
+		return defNext
+	}
+	return rateLimitFactory(30, 60, "CDP")
+}
+
 func DownloadRateLimit() func(c *gin.Context) {
 	return rateLimitFactory(common.DownloadRateLimitNum, common.DownloadRateLimitDuration, "DW")
 }

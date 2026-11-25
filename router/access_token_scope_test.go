@@ -57,6 +57,11 @@ var accessTokenExemptRoutes = []string{
 	"POST /api/user/auth/refresh",
 	"POST /api/user/auth/logout",
 
+	// Native client browser authorization, proved by the device key.
+	"POST /api/user/device-auth/start",
+	"POST /api/user/device-auth/token",
+	"POST /api/user/device-auth/refresh",
+
 	// Payment callbacks.
 	"GET /api/user/epay/:endpoint_id/notify",
 	"POST /api/user/epay/:endpoint_id/notify",

@@ -36,6 +36,9 @@ const (
 	VerificationScopePasswordSet         = "account.password.set"
 	VerificationScopePasswordChange      = "account.password.change"
 	VerificationScopeAccountDelete       = "account.delete"
+	// VerificationScopeClientDeviceAuthorize approves a native client's browser
+	// authorization, which signs that device in for a login session.
+	VerificationScopeClientDeviceAuthorize = "client_device.authorize"
 	// Administrative step-up scopes bind the managed user into the proof so a
 	// proof issued for one account cannot be replayed against another.
 	VerificationScopeAdminUserCreate       = "admin.user.create"
@@ -98,6 +101,12 @@ type AccountUnbindingContext struct {
 
 type AdminUserContext struct {
 	UserID int `json:"user_id"`
+}
+
+// ClientDeviceAuthorizeContext binds an approval to one user code, compared
+// in its normalized form.
+type ClientDeviceAuthorizeContext struct {
+	UserCode string `json:"user_code"`
 }
 
 type AdminUserManageContext struct {
@@ -221,6 +230,16 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 	case VerificationScopeAccountUnbind:
 		var context AccountUnbindingContext
 		if len(fields) != 1 || common.Unmarshal(fields["provider_id"], &context.ProviderID) != nil || context.ProviderID <= 0 {
+			return VerificationBinding{}, ErrVerificationContextInvalid
+		}
+		normalized = context
+	case VerificationScopeClientDeviceAuthorize:
+		var context ClientDeviceAuthorizeContext
+		if len(fields) != 1 || common.Unmarshal(fields["user_code"], &context.UserCode) != nil {
+			return VerificationBinding{}, ErrVerificationContextInvalid
+		}
+		context.UserCode = NormalizeClientDeviceUserCode(context.UserCode)
+		if len(context.UserCode) != clientDeviceUserCodeLength {
 			return VerificationBinding{}, ErrVerificationContextInvalid
 		}
 		normalized = context
@@ -357,7 +376,7 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 		VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
 		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
-		VerificationScopeSystemUpgrade:
+		VerificationScopeSystemUpgrade, VerificationScopeClientDeviceAuthorize:
 		if scope == VerificationScopeAccountDelete && state.Role == common.RoleRootUser {
 			return nil, ErrVerificationForbidden
 		}

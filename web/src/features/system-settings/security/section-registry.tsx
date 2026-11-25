@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { ClientDeviceSection } from '../request-limits/client-device-section'
 import { RateLimitSection } from '../request-limits/rate-limit-section'
 import { SSRFSection } from '../request-limits/ssrf-section'
 import { TokenLimitSection } from '../request-limits/token-limit-section'
@@ -42,6 +43,23 @@ const SECURITY_SECTIONS = [
     ),
   },
 
+  {
+    id: 'client-devices',
+    titleKey: 'Client Sign-in',
+    build: (settings: SecuritySettings) => (
+      <ClientDeviceSection
+        defaultValues={{
+          enabled: settings['client_device_setting.enabled'],
+          maxDevicesPerUser:
+            settings['client_device_setting.max_devices_per_user'],
+          verifiedRpmEnabled:
+            settings['client_device_setting.verified_rpm_enabled'],
+          verifiedRpmMultiplier:
+            settings['client_device_setting.verified_rpm_multiplier'],
+        }}
+      />
+    ),
+  },
   {
     id: 'ssrf',
     titleKey: 'SSRF Protection',

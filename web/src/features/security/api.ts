@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { TwoFAStatus } from '@/features/profile/types'
+import type {
+  AccountSecurityResult,
+  ApiResponse,
+  TwoFAStatus,
+} from '@/features/profile/types'
 import type { PermissionResourceDef } from '@/lib/admin-permissions'
 import { api } from '@/lib/api'
 import {
@@ -216,4 +220,95 @@ export function enable2FA(
       }
     )
   )
+}
+
+// ============================================================================
+// Client devices (native clients signed in by browser authorization)
+// ============================================================================
+
+export type ClientDevicePlatform =
+  | 'ios'
+  | 'android'
+  | 'macos'
+  | 'windows'
+  | 'linux'
+  | 'web'
+
+export interface ClientDevice {
+  id: number
+  device_id: string
+  name: string
+  platform: ClientDevicePlatform
+  app_version: string
+  /** Signed by an official client build. */
+  verified: boolean
+  status: string
+  created_at: number
+  last_used_at: number
+  last_ip: string
+}
+
+/** A pending browser authorization, as the approving user sees it. */
+export interface ClientDeviceAuthorization {
+  user_code: string
+  client_name: string
+  platform: ClientDevicePlatform
+  app_version: string
+  verified: boolean
+  request_ip: string
+  created_at: number
+  expires_at: number
+}
+
+export async function listClientDevices(): Promise<
+  ApiResponse<ClientDevice[]>
+> {
+  const res = await api.get('/api/user/client-devices')
+  return res.data
+}
+
+export async function revokeClientDevice(
+  id: number
+): Promise<ApiResponse<{ id: number; current: boolean }>> {
+  const res = await api.delete(`/api/user/client-devices/${id}`)
+  return res.data
+}
+
+export async function getClientDeviceAuthorization(
+  userCode: string
+): Promise<ApiResponse<ClientDeviceAuthorization>> {
+  const res = await api.get(
+    `/api/user/device-auth/requests/${encodeURIComponent(userCode)}`,
+    authRequestOptions
+  )
+  return res.data
+}
+
+export function approveClientDeviceAuthorization(
+  userCode: string,
+  proofToken: string,
+  signal: AbortSignal
+): Promise<AccountSecurityResult & { status: string }> {
+  return authResult(
+    api.post(
+      `/api/user/device-auth/requests/${encodeURIComponent(userCode)}/approve`,
+      undefined,
+      {
+        ...authRequestOptions,
+        headers: { 'X-Security-Proof': proofToken },
+        singleUseAuthorization: true,
+        signal,
+      }
+    ),
+    'Failed to authorize the device'
+  )
+}
+
+export async function denyClientDeviceAuthorization(
+  userCode: string
+): Promise<ApiResponse<{ status: string }>> {
+  const res = await api.post(
+    `/api/user/device-auth/requests/${encodeURIComponent(userCode)}/deny`
+  )
+  return res.data
 }

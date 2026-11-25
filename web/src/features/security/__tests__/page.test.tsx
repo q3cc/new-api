@@ -100,6 +100,9 @@ beforeEach(() => {
     if (url === '/api/user/sessions') {
       return { data: { success: true, data: [] } }
     }
+    if (url === '/api/user/client-devices') {
+      return { data: { success: true, data: [] } }
+    }
     throw new Error(`Unexpected GET ${url}`)
   })
 })

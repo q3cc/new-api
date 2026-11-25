@@ -477,6 +477,9 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'user.binding_bind': 'Account binding',
   'user.binding_unbind': 'Account unlinking',
   'user.email_binding_resend': 'Email confirmation code resend',
+  'client_device.approve': 'Authorized client {{name}} ({{platform}})',
+  'client_device.deny': 'Denied client {{name}} ({{platform}})',
+  'client_device.revoke': 'Revoked client {{name}} ({{platform}})',
 
   login: 'Logged in successfully via {{method}}',
   // User management

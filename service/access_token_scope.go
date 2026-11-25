@@ -240,6 +240,8 @@ var accessTokenVerificationScopes = map[string]string{
 	VerificationScopeAccessTokenRevoke:     "",
 	VerificationScopeSystemUpgrade:         "",
 	VerificationScopeLogin:                 "",
+	// Approving a device signs it in, which only a login session may do.
+	VerificationScopeClientDeviceAuthorize: "",
 }
 
 // AccessTokenVerificationScope returns the token scope a PAT needs for a

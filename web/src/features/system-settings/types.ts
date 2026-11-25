@@ -441,6 +441,10 @@ export type SecuritySettings = {
   'user_risk_setting.multi_ip_threshold': number
   'user_risk_setting.multi_ip_score': number
   'user_risk_setting.max_score': number
+  'client_device_setting.enabled': boolean
+  'client_device_setting.max_devices_per_user': number
+  'client_device_setting.verified_rpm_enabled': boolean
+  'client_device_setting.verified_rpm_multiplier': number
 }
 
 export type UpstreamChannel = {

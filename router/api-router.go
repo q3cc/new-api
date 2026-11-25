@@ -111,6 +111,11 @@ func SetApiRouter(router *gin.Engine) {
 			userRoute.POST("/epay/notify", anonymousRequestBodyLimit, controller.EpayNotify)
 			userRoute.GET("/epay/notify", controller.EpayNotify)
 			userRoute.GET("/groups", controller.GetUserGroups)
+			// Browser authorization for native clients (Lyra Box). The device
+			// proves each call with its key; see service/client_device.go.
+			userRoute.POST("/device-auth/start", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.StartClientDeviceAuthorization)
+			userRoute.POST("/device-auth/token", middleware.ClientDevicePollRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.ExchangeClientDeviceCode)
+			userRoute.POST("/device-auth/refresh", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.RefreshClientDeviceSession)
 
 			selfRoute := userRoute.Group("/")
 			selfRoute.Use(middleware.DisableCache(), middleware.UserAuth())
@@ -118,6 +123,11 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/sessions", middleware.DisableCache(), controller.GetLoginSessions)
 				selfRoute.DELETE("/sessions/:sid", middleware.DisableCache(), controller.DeleteLoginSession)
 				selfRoute.POST("/sessions/revoke-others", middleware.DisableCache(), controller.RevokeOtherLoginSessions)
+				selfRoute.GET("/device-auth/requests/:user_code", middleware.UserCriticalRateLimit("client-device"), controller.GetClientDeviceAuthorization)
+				selfRoute.POST("/device-auth/requests/:user_code/approve", middleware.UserCriticalRateLimit("client-device"), controller.ApproveClientDeviceAuthorization)
+				selfRoute.POST("/device-auth/requests/:user_code/deny", middleware.UserCriticalRateLimit("client-device"), controller.DenyClientDeviceAuthorization)
+				selfRoute.GET("/client-devices", controller.ListClientDevices)
+				selfRoute.DELETE("/client-devices/:id", controller.RevokeClientDevice)
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self", controller.GetSelf)
 				selfRoute.GET("/self/trial-credit", controller.GetTrialCreditSelf)

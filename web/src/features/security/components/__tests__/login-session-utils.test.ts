@@ -19,7 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import { loginMethodLabel, sessionDevice } from '../login-session-utils'
+import {
+  loginMethodLabel,
+  lyraClientPlatform,
+  sessionDevice,
+} from '../login-session-utils'
 
 const translate = ((key: string) => key) as TFunction
 
@@ -31,6 +35,34 @@ describe('login session presentation', () => {
     expect(loginMethodLabel('oauth:custom-provider', translate)).toBe(
       'OAuth · custom-provider'
     )
+  })
+
+  test('labels a browser-authorized client login', () => {
+    expect(loginMethodLabel('client_device', translate)).toBe(
+      'Browser authorization'
+    )
+  })
+
+  test('labels Lyra Box client sessions by platform instead of as a browser', () => {
+    expect(
+      sessionDevice(
+        'LyraBox/1.2.0 (ios; Lyra Box on iPhone)',
+        'Unknown device',
+        'Browser'
+      )
+    ).toBe('Lyra Box · iOS')
+    expect(
+      sessionDevice('LyraBox/0.1.0 (android)', 'Unknown device', 'Browser')
+    ).toBe('Lyra Box · Android')
+    expect(sessionDevice('LyraBox/0.1.0', 'Unknown device', 'Browser')).toBe(
+      'Lyra Box'
+    )
+  })
+
+  test('does not treat a browser that mentions Lyra Box later in its user agent as the client', () => {
+    expect(
+      lyraClientPlatform('Mozilla/5.0 (Windows NT 10.0) LyraBox/1.0 Chrome/126')
+    ).toBeNull()
   })
 
   test('labels iPad Safari as iOS when its user agent also mentions Mac OS X', () => {

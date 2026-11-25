@@ -397,6 +397,8 @@ func migrateDB() error {
 		&TicketMessage{},
 		&TicketAttachment{},
 		&TicketCannedReply{},
+		&ClientDeviceAuthorization{},
+		&ClientDevice{},
 	)
 	if err != nil {
 		return err

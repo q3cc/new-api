@@ -27,7 +27,11 @@ import dayjs from '@/lib/dayjs'
 import { formatTimestampRelative } from '@/lib/format'
 import type { LoginSession } from '@/stores/auth-store'
 
-import { loginMethodLabel, sessionDevice } from './login-session-utils'
+import {
+  loginMethodLabel,
+  lyraClientPlatform,
+  sessionDevice,
+} from './login-session-utils'
 
 interface LoginSessionItemProps {
   session: LoginSession
@@ -58,6 +62,9 @@ export function LoginSessionItem({ session, onRevoke }: LoginSessionItemProps) {
             )}
           </p>
           {session.current && <Badge variant='secondary'>{t('Current')}</Badge>}
+          {lyraClientPlatform(session.user_agent) !== null && (
+            <Badge variant='outline'>{t('API login')}</Badge>
+          )}
         </div>
         <p className='text-muted-foreground mt-1 text-xs'>
           {t('IP: {{ip}} · Method: {{method}}', {

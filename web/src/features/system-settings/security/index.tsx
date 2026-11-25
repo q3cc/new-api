@@ -46,6 +46,10 @@ const defaultSecuritySettings: SecuritySettings = {
   'user_risk_setting.multi_ip_threshold': 10,
   'user_risk_setting.multi_ip_score': 1,
   'user_risk_setting.max_score': 100,
+  'client_device_setting.enabled': true,
+  'client_device_setting.max_devices_per_user': 10,
+  'client_device_setting.verified_rpm_enabled': false,
+  'client_device_setting.verified_rpm_multiplier': 2,
 }
 
 export function SecuritySettings() {

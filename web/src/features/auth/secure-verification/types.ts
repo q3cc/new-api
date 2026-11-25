@@ -39,6 +39,7 @@ export type SecurityProofScope =
   | 'account.password.set'
   | 'account.password.change'
   | 'account.delete'
+  | 'client_device.authorize'
   | 'admin.user.create'
   | 'admin.user.update'
   | 'admin.user.delete'
@@ -93,6 +94,7 @@ export type VerificationOperation =
       scope: 'access_token.revoke'
       context: { token_id: number } | { legacy: true }
     }
+  | { scope: 'client_device.authorize'; context: { user_code: string } }
   | {
       scope: Exclude<
         SecurityProofScope,
@@ -102,6 +104,7 @@ export type VerificationOperation =
         | 'access_token.generate'
         | 'access_token.update'
         | 'access_token.revoke'
+        | 'client_device.authorize'
         | 'system.upgrade'
         | `admin.user.${string}`
       >
