@@ -296,6 +296,9 @@ func validateOptionValue(key string, value string) error {
 	if err := operation_setting.ValidateClientDeviceOption(key, value); err != nil {
 		return err
 	}
+	if err := operation_setting.ValidateChatSyncOption(key, value); err != nil {
+		return err
+	}
 	if key == operation_setting.SystemTaskRetentionDaysOptionKey {
 		return operation_setting.ValidateSystemTaskRetentionDays(value)
 	}

@@ -8788,8 +8788,6 @@
     "Deny": "Refuser",
     "Authorizing...": "Autorisation...",
     "Failed to authorize the device": "Échec de l'autorisation de l'appareil",
-    "Client Sign-in": "Connexion des clients",
-    "Save client sign-in settings": "Enregistrer les paramètres de connexion des clients",
     "Allow sign-in by browser authorization": "Autoriser la connexion par autorisation du navigateur",
     "Native clients such as Lyra Box show a code; the user approves it on the /device page.": "Les clients natifs comme Lyra Box affichent un code ; l'utilisateur l'approuve sur la page /device.",
     "Authorized devices per user": "Appareils autorisés par utilisateur",
@@ -8813,6 +8811,19 @@
     "Client device not found.": "Appareil client introuvable.",
     "Invalid client device ID": "ID d'appareil client invalide",
     "Devices per user must be between 1 and {{max}}": "Le nombre d'appareils par utilisateur doit être compris entre 1 et {{max}}",
-    "The rate limit multiplier must be between 1 and {{max}}": "Le multiplicateur de limite de débit doit être compris entre 1 et {{max}}"
+    "The rate limit multiplier must be between 1 and {{max}}": "Le multiplicateur de limite de débit doit être compris entre 1 et {{max}}",
+    "Native Clients": "Clients natifs",
+    "Save native client settings": "Enregistrer les paramètres des clients natifs",
+    "Cloud chat sync": "Synchronisation des conversations dans le cloud",
+    "Signed-in clients can pull all of their chats from the cloud; they upload only when the user chooses to.": "Les clients connectés peuvent récupérer toutes leurs conversations depuis le cloud ; ils n'envoient que lorsque l'utilisateur le décide.",
+    "Synced chats per user": "Conversations synchronisées par utilisateur",
+    "Chat storage per user (MB)": "Stockage des conversations par utilisateur (Mo)",
+    "The value must be between 1 and {{max}}": "La valeur doit être comprise entre 1 et {{max}}",
+    "Fetch between 1 and {{max}} sessions at a time": "Récupérez entre 1 et {{max}} conversations à la fois",
+    "Upload between 1 and {{max}} sessions at a time": "Envoyez entre 1 et {{max}} conversations à la fois",
+    "Invalid chat session": "Conversation invalide",
+    "Chat session not found": "Conversation introuvable",
+    "Chat sync is disabled on this site.": "La synchronisation des conversations est désactivée sur ce site.",
+    "The upload is too large. Upload fewer sessions at a time.": "L'envoi est trop volumineux. Envoyez moins de conversations à la fois."
   }
 }

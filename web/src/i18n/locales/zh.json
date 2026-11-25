@@ -8788,8 +8788,6 @@
     "Deny": "拒绝",
     "Authorizing...": "正在授权...",
     "Failed to authorize the device": "授权设备失败",
-    "Client Sign-in": "客户端登录",
-    "Save client sign-in settings": "保存客户端登录设置",
     "Allow sign-in by browser authorization": "允许通过浏览器授权登录",
     "Native clients such as Lyra Box show a code; the user approves it on the /device page.": "Lyra Box 等原生客户端会显示一个代码，用户在 /device 页面批准即可。",
     "Authorized devices per user": "每个用户可授权的设备数",
@@ -8813,6 +8811,19 @@
     "Client device not found.": "未找到该客户端设备。",
     "Invalid client device ID": "客户端设备 ID 无效",
     "Devices per user must be between 1 and {{max}}": "每个用户的设备数必须在 1 到 {{max}} 之间",
-    "The rate limit multiplier must be between 1 and {{max}}": "速率限制倍率必须在 1 到 {{max}} 之间"
+    "The rate limit multiplier must be between 1 and {{max}}": "速率限制倍率必须在 1 到 {{max}} 之间",
+    "Native Clients": "原生客户端",
+    "Save native client settings": "保存原生客户端设置",
+    "Cloud chat sync": "会话云同步",
+    "Signed-in clients can pull all of their chats from the cloud; they upload only when the user chooses to.": "已登录的客户端可以从云端拉取全部会话；只有用户主动操作时才会上传。",
+    "Synced chats per user": "每个用户可同步的会话数",
+    "Chat storage per user (MB)": "每个用户的会话存储空间（MB）",
+    "The value must be between 1 and {{max}}": "数值必须在 1 到 {{max}} 之间",
+    "Fetch between 1 and {{max}} sessions at a time": "每次只能获取 1 到 {{max}} 个会话",
+    "Upload between 1 and {{max}} sessions at a time": "每次只能上传 1 到 {{max}} 个会话",
+    "Invalid chat session": "会话数据无效",
+    "Chat session not found": "未找到该会话",
+    "Chat sync is disabled on this site.": "本站已关闭会话云同步。",
+    "The upload is too large. Upload fewer sessions at a time.": "上传内容过大，请减少每次上传的会话数。"
   }
 }

@@ -8788,8 +8788,6 @@
     "Deny": "拒絕",
     "Authorizing...": "正在授權...",
     "Failed to authorize the device": "授權裝置失敗",
-    "Client Sign-in": "用戶端登入",
-    "Save client sign-in settings": "儲存用戶端登入設定",
     "Allow sign-in by browser authorization": "允許透過瀏覽器授權登入",
     "Native clients such as Lyra Box show a code; the user approves it on the /device page.": "Lyra Box 等原生用戶端會顯示一個代碼，使用者在 /device 頁面核准即可。",
     "Authorized devices per user": "每位使用者可授權的裝置數",
@@ -8813,6 +8811,19 @@
     "Client device not found.": "找不到該用戶端裝置。",
     "Invalid client device ID": "用戶端裝置 ID 無效",
     "Devices per user must be between 1 and {{max}}": "每位使用者的裝置數必須介於 1 到 {{max}} 之間",
-    "The rate limit multiplier must be between 1 and {{max}}": "速率限制倍率必須介於 1 到 {{max}} 之間"
+    "The rate limit multiplier must be between 1 and {{max}}": "速率限制倍率必須介於 1 到 {{max}} 之間",
+    "Native Clients": "原生用戶端",
+    "Save native client settings": "儲存原生用戶端設定",
+    "Cloud chat sync": "對話雲端同步",
+    "Signed-in clients can pull all of their chats from the cloud; they upload only when the user chooses to.": "已登入的用戶端可以從雲端拉取全部對話；只有使用者主動操作時才會上傳。",
+    "Synced chats per user": "每位使用者可同步的對話數",
+    "Chat storage per user (MB)": "每位使用者的對話儲存空間（MB）",
+    "The value must be between 1 and {{max}}": "數值必須介於 1 到 {{max}} 之間",
+    "Fetch between 1 and {{max}} sessions at a time": "每次只能取得 1 到 {{max}} 個對話",
+    "Upload between 1 and {{max}} sessions at a time": "每次只能上傳 1 到 {{max}} 個對話",
+    "Invalid chat session": "對話資料無效",
+    "Chat session not found": "找不到該對話",
+    "Chat sync is disabled on this site.": "本站已關閉對話雲端同步。",
+    "The upload is too large. Upload fewer sessions at a time.": "上傳內容過大，請減少每次上傳的對話數。"
   }
 }

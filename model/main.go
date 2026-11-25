@@ -399,6 +399,7 @@ func migrateDB() error {
 		&TicketCannedReply{},
 		&ClientDeviceAuthorization{},
 		&ClientDevice{},
+		&ChatSyncSession{},
 	)
 	if err != nil {
 		return err

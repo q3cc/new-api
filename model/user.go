@@ -1042,6 +1042,10 @@ func (user *User) HardDelete() (int64, error) {
 		if err := deleteUserAuthenticationData(tx, user.Id); err != nil {
 			return err
 		}
+		// Chats the user synced from a client leave with the account.
+		if err := tx.Where("user_id = ?", user.Id).Delete(&ChatSyncSession{}).Error; err != nil {
+			return err
+		}
 		return tx.Unscoped().Delete(user).Error
 	})
 	if err != nil {
@@ -1070,6 +1074,8 @@ func deleteUserAuthenticationData(tx *gorm.DB, userId int) error {
 		&AuthFlow{},
 		&PasskeyCredential{},
 		&Token{},
+		&ClientDevice{},
+		&ClientDeviceAuthorization{},
 	} {
 		if err := tx.Unscoped().Where("user_id = ?", userId).Delete(authenticationData).Error; err != nil {
 			return err

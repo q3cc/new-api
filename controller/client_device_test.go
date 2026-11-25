@@ -102,6 +102,7 @@ func newClientDeviceTestEnv(t *testing.T, kind, dsn string) *clientDeviceTestEnv
 	previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
 	previousRedis, previousMaster := common.RedisEnabled, common.IsMasterNode
 	setting := *operation_setting.GetClientDeviceSetting()
+	chatSync := *operation_setting.GetChatSyncSetting()
 	model.DB, model.LOG_DB = db, db
 	common.SetDatabaseTypes(common.DatabaseType(kind), common.DatabaseType(kind))
 	common.RedisEnabled, common.IsMasterNode = false, true
@@ -111,13 +112,14 @@ func newClientDeviceTestEnv(t *testing.T, kind, dsn string) *clientDeviceTestEnv
 		common.SetDatabaseTypes(previousMain, previousLog)
 		common.RedisEnabled, common.IsMasterNode = previousRedis, previousMaster
 		*operation_setting.GetClientDeviceSetting() = setting
+		*operation_setting.GetChatSyncSetting() = chatSync
 		_ = config.GlobalConfig.LoadFromDB(map[string]string{"client_device_secret_setting.build_secret": ""})
 	})
 	tables := []any{&model.User{}, &model.UserSession{}, &model.Log{}, &model.AuditLog{}, &model.CasbinRule{}, &model.AuthzRole{},
 		&model.UserAccessToken{}, &model.Option{}, &model.AuthFlow{}, &model.TwoFA{}, &model.TwoFABackupCode{},
-		&model.PasskeyCredential{}, &model.UserOAuthBinding{}, &model.ClientDeviceAuthorization{}, &model.ClientDevice{}}
+		&model.PasskeyCredential{}, &model.UserOAuthBinding{}, &model.ClientDeviceAuthorization{}, &model.ClientDevice{}, &model.ChatSyncSession{}}
 	require.NoError(t, db.AutoMigrate(tables...))
-	require.NoError(t, db.AutoMigrate(&model.ClientDeviceAuthorization{}, &model.ClientDevice{}), "a second migration must be a no-op")
+	require.NoError(t, db.AutoMigrate(&model.ClientDeviceAuthorization{}, &model.ClientDevice{}, &model.ChatSyncSession{}), "a second migration must be a no-op")
 	require.NoError(t, authz.Init(db))
 
 	user := model.User{Username: "device-owner", Password: "placeholder", AffCode: "device-owner", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, AuthVersion: 1, Group: "default"}
@@ -135,6 +137,10 @@ func newClientDeviceTestEnv(t *testing.T, kind, dsn string) *clientDeviceTestEnv
 	selfRoute.POST("/device-auth/requests/:user_code/deny", DenyClientDeviceAuthorization)
 	selfRoute.GET("/client-devices", ListClientDevices)
 	selfRoute.DELETE("/client-devices/:id", RevokeClientDevice)
+	selfRoute.GET("/chat-sessions", ListChatSyncSessions)
+	selfRoute.POST("/chat-sessions/fetch", FetchChatSyncSessions)
+	selfRoute.PUT("/chat-sessions", UploadChatSyncSessions)
+	selfRoute.DELETE("/chat-sessions/:session_id", DeleteChatSyncSession)
 	return &clientDeviceTestEnv{router: router, userJWT: jwt, user: identity, userID: user.Id}
 }
 

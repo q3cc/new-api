@@ -45,7 +45,7 @@ const SECURITY_SECTIONS = [
 
   {
     id: 'client-devices',
-    titleKey: 'Client Sign-in',
+    titleKey: 'Native Clients',
     build: (settings: SecuritySettings) => (
       <ClientDeviceSection
         defaultValues={{
@@ -56,6 +56,10 @@ const SECURITY_SECTIONS = [
             settings['client_device_setting.verified_rpm_enabled'],
           verifiedRpmMultiplier:
             settings['client_device_setting.verified_rpm_multiplier'],
+          chatSyncEnabled: settings['chat_sync_setting.enabled'],
+          chatSyncMaxSessions: settings['chat_sync_setting.max_sessions_per_user'],
+          chatSyncMaxMegabytes:
+            settings['chat_sync_setting.max_megabytes_per_user'],
         }}
       />
     ),

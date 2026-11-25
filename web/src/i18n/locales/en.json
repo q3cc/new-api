@@ -8788,8 +8788,6 @@
     "Deny": "Deny",
     "Authorizing...": "Authorizing...",
     "Failed to authorize the device": "Failed to authorize the device",
-    "Client Sign-in": "Client Sign-in",
-    "Save client sign-in settings": "Save client sign-in settings",
     "Allow sign-in by browser authorization": "Allow sign-in by browser authorization",
     "Native clients such as Lyra Box show a code; the user approves it on the /device page.": "Native clients such as Lyra Box show a code; the user approves it on the /device page.",
     "Authorized devices per user": "Authorized devices per user",
@@ -8813,6 +8811,19 @@
     "Client device not found.": "Client device not found.",
     "Invalid client device ID": "Invalid client device ID",
     "Devices per user must be between 1 and {{max}}": "Devices per user must be between 1 and {{max}}",
-    "The rate limit multiplier must be between 1 and {{max}}": "The rate limit multiplier must be between 1 and {{max}}"
+    "The rate limit multiplier must be between 1 and {{max}}": "The rate limit multiplier must be between 1 and {{max}}",
+    "Native Clients": "Native Clients",
+    "Save native client settings": "Save native client settings",
+    "Cloud chat sync": "Cloud chat sync",
+    "Signed-in clients can pull all of their chats from the cloud; they upload only when the user chooses to.": "Signed-in clients can pull all of their chats from the cloud; they upload only when the user chooses to.",
+    "Synced chats per user": "Synced chats per user",
+    "Chat storage per user (MB)": "Chat storage per user (MB)",
+    "The value must be between 1 and {{max}}": "The value must be between 1 and {{max}}",
+    "Fetch between 1 and {{max}} sessions at a time": "Fetch between 1 and {{max}} sessions at a time",
+    "Upload between 1 and {{max}} sessions at a time": "Upload between 1 and {{max}} sessions at a time",
+    "Invalid chat session": "Invalid chat session",
+    "Chat session not found": "Chat session not found",
+    "Chat sync is disabled on this site.": "Chat sync is disabled on this site.",
+    "The upload is too large. Upload fewer sessions at a time.": "The upload is too large. Upload fewer sessions at a time."
   }
 }

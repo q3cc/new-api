@@ -8788,8 +8788,6 @@
     "Deny": "拒否",
     "Authorizing...": "承認しています...",
     "Failed to authorize the device": "デバイスを承認できませんでした",
-    "Client Sign-in": "クライアントのサインイン",
-    "Save client sign-in settings": "クライアントのサインイン設定を保存",
     "Allow sign-in by browser authorization": "ブラウザ承認によるサインインを許可",
     "Native clients such as Lyra Box show a code; the user approves it on the /device page.": "Lyra Box などのネイティブクライアントがコードを表示し、ユーザーが /device ページで承認します。",
     "Authorized devices per user": "ユーザーあたりの承認済みデバイス数",
@@ -8813,6 +8811,19 @@
     "Client device not found.": "クライアントデバイスが見つかりません。",
     "Invalid client device ID": "クライアントデバイス ID が無効です",
     "Devices per user must be between 1 and {{max}}": "ユーザーあたりのデバイス数は 1〜{{max}} の範囲で指定してください",
-    "The rate limit multiplier must be between 1 and {{max}}": "レート制限の倍率は 1〜{{max}} の範囲で指定してください"
+    "The rate limit multiplier must be between 1 and {{max}}": "レート制限の倍率は 1〜{{max}} の範囲で指定してください",
+    "Native Clients": "ネイティブクライアント",
+    "Save native client settings": "ネイティブクライアントの設定を保存",
+    "Cloud chat sync": "チャットのクラウド同期",
+    "Signed-in clients can pull all of their chats from the cloud; they upload only when the user chooses to.": "サインイン済みのクライアントはクラウドからすべてのチャットを取得できます。アップロードはユーザーが操作したときだけ行われます。",
+    "Synced chats per user": "ユーザーあたりの同期チャット数",
+    "Chat storage per user (MB)": "ユーザーあたりのチャット保存容量（MB）",
+    "The value must be between 1 and {{max}}": "値は 1〜{{max}} の範囲で指定してください",
+    "Fetch between 1 and {{max}} sessions at a time": "一度に取得できるのは 1〜{{max}} 件の会話です",
+    "Upload between 1 and {{max}} sessions at a time": "一度にアップロードできるのは 1〜{{max}} 件の会話です",
+    "Invalid chat session": "会話データが無効です",
+    "Chat session not found": "会話が見つかりません",
+    "Chat sync is disabled on this site.": "このサイトではチャットの同期が無効になっています。",
+    "The upload is too large. Upload fewer sessions at a time.": "アップロードが大きすぎます。一度にアップロードする会話を減らしてください。"
   }
 }

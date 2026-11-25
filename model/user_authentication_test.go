@@ -105,6 +105,8 @@ func TestHardDeleteUserPublishesTombstoneAndPurgesAuthenticationData(t *testing.
 		TokenHash: "hard-delete-success-flow", Purpose: AuthFlowPurposeTwoFALogin,
 		UserId: user.Id, ExpiresAt: time.Now().Add(time.Minute),
 	}).Error)
+	require.NoError(t, DB.Create(&ClientDevice{UserId: user.Id, DeviceId: "hard-delete-device", PublicKey: "public-key", Status: ClientDeviceStatusActive}).Error)
+	require.NoError(t, DB.Create(&ChatSyncSession{UserId: user.Id, SessionId: "hard-delete-chat", Content: "{}", ContentHash: "hash", Size: 2}).Error)
 	require.NoError(t, populateUserCache(user))
 	// Administrative hard deletion commonly targets an already soft-deleted
 	// user; the shared version increment must therefore query unscoped.
@@ -127,6 +129,8 @@ func TestHardDeleteUserPublishesTombstoneAndPurgesAuthenticationData(t *testing.
 		&AuthFlow{},
 		&ExternalIdentityClaim{},
 		&UserAccessToken{},
+		&ClientDevice{},
+		&ChatSyncSession{},
 	} {
 		require.NoError(t, DB.Unscoped().Model(record).Where("user_id = ?", user.Id).Count(&count).Error)
 		assert.Zero(t, count)

@@ -8788,8 +8788,6 @@
     "Deny": "Отклонить",
     "Authorizing...": "Авторизация...",
     "Failed to authorize the device": "Не удалось авторизовать устройство",
-    "Client Sign-in": "Вход клиентов",
-    "Save client sign-in settings": "Сохранить настройки входа клиентов",
     "Allow sign-in by browser authorization": "Разрешить вход через авторизацию в браузере",
     "Native clients such as Lyra Box show a code; the user approves it on the /device page.": "Нативные клиенты, например Lyra Box, показывают код; пользователь одобряет его на странице /device.",
     "Authorized devices per user": "Авторизованных устройств на пользователя",
@@ -8813,6 +8811,19 @@
     "Client device not found.": "Клиентское устройство не найдено.",
     "Invalid client device ID": "Недопустимый ID клиентского устройства",
     "Devices per user must be between 1 and {{max}}": "Число устройств на пользователя должно быть от 1 до {{max}}",
-    "The rate limit multiplier must be between 1 and {{max}}": "Множитель лимита скорости должен быть от 1 до {{max}}"
+    "The rate limit multiplier must be between 1 and {{max}}": "Множитель лимита скорости должен быть от 1 до {{max}}",
+    "Native Clients": "Нативные клиенты",
+    "Save native client settings": "Сохранить настройки нативных клиентов",
+    "Cloud chat sync": "Облачная синхронизация чатов",
+    "Signed-in clients can pull all of their chats from the cloud; they upload only when the user chooses to.": "Клиенты, выполнившие вход, могут загрузить все свои чаты из облака; выгрузка — только по решению пользователя.",
+    "Synced chats per user": "Синхронизируемых чатов на пользователя",
+    "Chat storage per user (MB)": "Хранилище чатов на пользователя (МБ)",
+    "The value must be between 1 and {{max}}": "Значение должно быть от 1 до {{max}}",
+    "Fetch between 1 and {{max}} sessions at a time": "За раз можно получить от 1 до {{max}} чатов",
+    "Upload between 1 and {{max}} sessions at a time": "За раз можно выгрузить от 1 до {{max}} чатов",
+    "Invalid chat session": "Недопустимые данные чата",
+    "Chat session not found": "Чат не найден",
+    "Chat sync is disabled on this site.": "Синхронизация чатов на этом сайте отключена.",
+    "The upload is too large. Upload fewer sessions at a time.": "Слишком большой объём. Выгружайте меньше чатов за раз."
   }
 }

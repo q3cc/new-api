@@ -223,6 +223,12 @@ func ClientDevicePollRateLimit() func(c *gin.Context) {
 	return rateLimitFactory(30, 60, "CDP")
 }
 
+// ChatSyncRateLimit paces chat sync batches per user: a sync of a few
+// thousand sessions moves them 100 at a time.
+func ChatSyncRateLimit() func(c *gin.Context) {
+	return userRateLimitFactory(60, 60, "CS")
+}
+
 func DownloadRateLimit() func(c *gin.Context) {
 	return rateLimitFactory(common.DownloadRateLimitNum, common.DownloadRateLimitDuration, "DW")
 }

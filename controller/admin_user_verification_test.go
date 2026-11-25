@@ -353,7 +353,7 @@ func TestAdminUserVerificationPolicy(t *testing.T) {
 	})
 	t.Run("a user:write token completes the deletion on its own proof", func(t *testing.T) {
 		operator, _, target := setupAdminUserTest(t)
-		require.NoError(t, model.DB.AutoMigrate(&model.ExternalIdentityClaim{}, &model.Token{}))
+		require.NoError(t, model.DB.AutoMigrate(&model.ExternalIdentityClaim{}, &model.Token{}, &model.ClientDevice{}, &model.ClientDeviceAuthorization{}, &model.ChatSyncSession{}))
 		raw, _ := createScopedAccessToken(t, operator.Id, 0, "user:write")
 		router := newAccessTokenTestRouter()
 		response := accessTokenRequest(router, http.MethodPost, "/api/verify", raw, "", fmt.Sprintf(`{"scope":"admin.user.delete","method":"password","password":"enrollment-password","context":{"user_id":%d}}`, target.Id))
@@ -378,7 +378,7 @@ func TestAdminUserVerificationPolicy(t *testing.T) {
 	})
 	t.Run("a user:write token deletes on its grant without a proof", func(t *testing.T) {
 		operator, _, target := setupAdminUserTest(t)
-		require.NoError(t, model.DB.AutoMigrate(&model.ExternalIdentityClaim{}, &model.Token{}))
+		require.NoError(t, model.DB.AutoMigrate(&model.ExternalIdentityClaim{}, &model.Token{}, &model.ClientDevice{}, &model.ClientDeviceAuthorization{}, &model.ChatSyncSession{}))
 		raw, _ := createScopedAccessToken(t, operator.Id, 0, "user:write")
 		response := accessTokenRequest(newAccessTokenTestRouter(), http.MethodDelete, fmt.Sprintf("/api/user/%d", target.Id), raw, "", "")
 		body := decodeSecurityEnrollmentResponse(t, response)

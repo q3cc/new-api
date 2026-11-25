@@ -50,6 +50,9 @@ const schema = z.object({
   maxDevicesPerUser: z.coerce.number().int().min(1).max(100),
   verifiedRpmEnabled: z.boolean(),
   verifiedRpmMultiplier: z.coerce.number().min(1).max(100),
+  chatSyncEnabled: z.boolean(),
+  chatSyncMaxSessions: z.coerce.number().int().min(1).max(100000),
+  chatSyncMaxMegabytes: z.coerce.number().int().min(1).max(100000),
   buildSecret: z.string(),
 })
 
@@ -62,11 +65,14 @@ const OPTION_KEYS: Record<keyof ClientDeviceDefaults, string> = {
   maxDevicesPerUser: 'client_device_setting.max_devices_per_user',
   verifiedRpmEnabled: 'client_device_setting.verified_rpm_enabled',
   verifiedRpmMultiplier: 'client_device_setting.verified_rpm_multiplier',
+  chatSyncEnabled: 'chat_sync_setting.enabled',
+  chatSyncMaxSessions: 'chat_sync_setting.max_sessions_per_user',
+  chatSyncMaxMegabytes: 'chat_sync_setting.max_megabytes_per_user',
 }
 
 /**
- * Browser authorization for native clients (Lyra Box) and the higher model
- * request rate limit for requests signed by a verified device.
+ * Native clients (Lyra Box): browser authorization, the higher model request
+ * rate limit for requests signed by a verified device, and cloud chat sync.
  */
 export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults }) {
   const { t } = useTranslation()
@@ -78,6 +84,7 @@ export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults
   const { isDirty, isSubmitting } = form.formState
   const busy = updateOption.isPending || isSubmitting
   const verifiedRpmEnabled = form.watch('verifiedRpmEnabled')
+  const chatSyncEnabled = form.watch('chatSyncEnabled')
 
   async function onSubmit(values: Values) {
     const updates: Array<{ key: string; value: string }> = []
@@ -104,14 +111,14 @@ export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults
   }
 
   return (
-    <SettingsSection title={t('Client Sign-in')}>
+    <SettingsSection title={t('Native Clients')}>
       <Form {...form}>
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)} autoComplete='off'>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
             isSaving={busy}
             isSaveDisabled={!isDirty}
-            saveLabel='Save client sign-in settings'
+            saveLabel='Save native client settings'
           />
           <FormField
             control={form.control}
@@ -178,6 +185,59 @@ export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults
                 </FormItem>
               )}
             />
+          )}
+          <FormField
+            control={form.control}
+            name='chatSyncEnabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Cloud chat sync')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Signed-in clients can pull all of their chats from the cloud; they upload only when the user chooses to.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={busy}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+          {chatSyncEnabled && (
+            <div className='grid gap-6 sm:grid-cols-2'>
+              <FormField
+                control={form.control}
+                name='chatSyncMaxSessions'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Synced chats per user')}</FormLabel>
+                    <FormControl>
+                      <Input type='number' min={1} max={100000} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='chatSyncMaxMegabytes'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Chat storage per user (MB)')}</FormLabel>
+                    <FormControl>
+                      <Input type='number' min={1} max={100000} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
           )}
           <FormField
             control={form.control}

@@ -8788,8 +8788,6 @@
     "Deny": "Từ chối",
     "Authorizing...": "Đang ủy quyền...",
     "Failed to authorize the device": "Không ủy quyền được thiết bị",
-    "Client Sign-in": "Đăng nhập ứng dụng khách",
-    "Save client sign-in settings": "Lưu cài đặt đăng nhập ứng dụng khách",
     "Allow sign-in by browser authorization": "Cho phép đăng nhập bằng ủy quyền trình duyệt",
     "Native clients such as Lyra Box show a code; the user approves it on the /device page.": "Các ứng dụng khách gốc như Lyra Box hiển thị một mã; người dùng phê duyệt mã đó trên trang /device.",
     "Authorized devices per user": "Số thiết bị được ủy quyền mỗi người dùng",
@@ -8813,6 +8811,19 @@
     "Client device not found.": "Không tìm thấy thiết bị khách.",
     "Invalid client device ID": "ID thiết bị khách không hợp lệ",
     "Devices per user must be between 1 and {{max}}": "Số thiết bị mỗi người dùng phải từ 1 đến {{max}}",
-    "The rate limit multiplier must be between 1 and {{max}}": "Hệ số nhân rate limit phải từ 1 đến {{max}}"
+    "The rate limit multiplier must be between 1 and {{max}}": "Hệ số nhân rate limit phải từ 1 đến {{max}}",
+    "Native Clients": "Ứng dụng khách gốc",
+    "Save native client settings": "Lưu cài đặt ứng dụng khách gốc",
+    "Cloud chat sync": "Đồng bộ trò chuyện lên đám mây",
+    "Signed-in clients can pull all of their chats from the cloud; they upload only when the user chooses to.": "Ứng dụng khách đã đăng nhập có thể tải toàn bộ trò chuyện từ đám mây; chỉ tải lên khi người dùng chủ động.",
+    "Synced chats per user": "Số trò chuyện đồng bộ mỗi người dùng",
+    "Chat storage per user (MB)": "Dung lượng trò chuyện mỗi người dùng (MB)",
+    "The value must be between 1 and {{max}}": "Giá trị phải từ 1 đến {{max}}",
+    "Fetch between 1 and {{max}} sessions at a time": "Mỗi lần chỉ lấy từ 1 đến {{max}} trò chuyện",
+    "Upload between 1 and {{max}} sessions at a time": "Mỗi lần chỉ tải lên từ 1 đến {{max}} trò chuyện",
+    "Invalid chat session": "Dữ liệu trò chuyện không hợp lệ",
+    "Chat session not found": "Không tìm thấy trò chuyện",
+    "Chat sync is disabled on this site.": "Trang này đã tắt đồng bộ trò chuyện.",
+    "The upload is too large. Upload fewer sessions at a time.": "Dữ liệu tải lên quá lớn. Hãy tải lên ít trò chuyện hơn mỗi lần."
   }
 }

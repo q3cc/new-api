@@ -50,6 +50,9 @@ const defaultSecuritySettings: SecuritySettings = {
   'client_device_setting.max_devices_per_user': 10,
   'client_device_setting.verified_rpm_enabled': false,
   'client_device_setting.verified_rpm_multiplier': 2,
+  'chat_sync_setting.enabled': true,
+  'chat_sync_setting.max_sessions_per_user': 2000,
+  'chat_sync_setting.max_megabytes_per_user': 200,
 }
 
 export function SecuritySettings() {

@@ -445,6 +445,9 @@ export type SecuritySettings = {
   'client_device_setting.max_devices_per_user': number
   'client_device_setting.verified_rpm_enabled': boolean
   'client_device_setting.verified_rpm_multiplier': number
+  'chat_sync_setting.enabled': boolean
+  'chat_sync_setting.max_sessions_per_user': number
+  'chat_sync_setting.max_megabytes_per_user': number
 }
 
 export type UpstreamChannel = {
