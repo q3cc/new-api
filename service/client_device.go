@@ -199,7 +199,7 @@ func GetPendingClientDeviceAuthorization(userCode string) (*ClientDeviceAuthoriz
 // devices as allowed.
 func DecideClientDeviceAuthorization(userID int, userCode string, approve bool) (*model.ClientDeviceAuthorization, error) {
 	if approve {
-		count, err := model.CountActiveClientDevices(userID)
+		count, err := model.CountActiveClientDevices(userID, time.Now().Unix())
 		if err != nil {
 			return nil, err
 		}
@@ -345,7 +345,7 @@ func VerifyClientDeviceRequest(userID int, deviceID, method, path, bodyHash stri
 
 // ListClientDevices returns the user's active devices.
 func ListClientDevices(userID int) ([]model.ClientDevice, error) {
-	devices, err := model.ListActiveClientDevices(userID)
+	devices, err := model.ListActiveClientDevices(userID, time.Now().Unix())
 	if devices == nil {
 		devices = []model.ClientDevice{}
 	}

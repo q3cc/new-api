@@ -170,17 +170,28 @@ func CreateClientDevice(device *ClientDevice) error {
 	return DB.Create(device).Error
 }
 
-func CountActiveClientDevices(userID int) (int64, error) {
+// signedInClientDevices scopes a query to a user's active devices whose login
+// session is still alive. A device whose session ended (sign-out, revocation
+// from the security page, expiry, a password change) is no longer listed or
+// counted, without each of those paths having to revoke it.
+func signedInClientDevices(userID int, now int64) *gorm.DB {
+	liveSessions := DB.Model(&UserSession{}).Select("sid").
+		Where("user_id = ? AND status = ? AND revoked_at = 0 AND expires_at > ?", userID, UserSessionStatusActive, now)
+	return DB.Model(&ClientDevice{}).
+		Where("user_id = ? AND status = ? AND session_sid IN (?)", userID, ClientDeviceStatusActive, liveSessions)
+}
+
+func CountActiveClientDevices(userID int, now int64) (int64, error) {
 	var count int64
-	err := DB.Model(&ClientDevice{}).Where("user_id = ? AND status = ?", userID, ClientDeviceStatusActive).Count(&count).Error
+	err := signedInClientDevices(userID, now).Count(&count).Error
 	return count, err
 }
 
-// ListActiveClientDevices returns a user's active devices, most recently used
-// first.
-func ListActiveClientDevices(userID int) ([]ClientDevice, error) {
+// ListActiveClientDevices returns a user's signed-in devices, most recently
+// used first.
+func ListActiveClientDevices(userID int, now int64) ([]ClientDevice, error) {
 	var devices []ClientDevice
-	err := DB.Where("user_id = ? AND status = ?", userID, ClientDeviceStatusActive).
+	err := signedInClientDevices(userID, now).
 		Order("last_used_at desc").Order("id desc").
 		Find(&devices).Error
 	return devices, err

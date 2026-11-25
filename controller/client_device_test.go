@@ -278,6 +278,30 @@ func TestClientDeviceBrowserAuthorization(t *testing.T) {
 		rotated := response["data"].(map[string]any)["refresh_token"].(string)
 		assert.NotEqual(t, refreshToken, rotated)
 
+		// Signing the device's session out (here: from the security page) takes
+		// it off the list without revoking the device itself.
+		sid := login["session"].(map[string]any)["sid"].(string)
+		_, err := model.RevokeUserSession(env.userID, sid, "user_revoked")
+		require.NoError(t, err)
+		_, response = env.do(t, http.MethodGet, "/api/user/client-devices", env.userJWT, nil)
+		assert.Empty(t, response["data"], "a signed-out device is not an authorized client")
+		status, _ = env.refresh(t, key, deviceID, rotated)
+		assert.Equal(t, http.StatusUnauthorized, status)
+	})
+}
+
+func TestClientDeviceRevokeSignsOut(t *testing.T) {
+	runClientDeviceDialects(t, func(t *testing.T, env *clientDeviceTestEnv) {
+		key := newClientDeviceKey(t)
+		deviceCode, userCode := env.start(t, key, "")
+		status, response := env.approve(t, userCode, userCode)
+		require.Equal(t, http.StatusOK, status, response)
+		status, response = env.poll(t, key, deviceCode)
+		require.Equal(t, http.StatusOK, status, response)
+		login := response["data"].(map[string]any)
+		deviceID := login["device"].(map[string]any)["device_id"].(string)
+		rotated := login["refresh_token"].(string)
+
 		// The browser session lists the device; revoking it signs it out.
 		status, response = env.do(t, http.MethodGet, "/api/user/client-devices", env.userJWT, nil)
 		require.Equal(t, http.StatusOK, status, response)
@@ -344,7 +368,8 @@ func TestClientDeviceAuthorizationRefusals(t *testing.T) {
 
 		t.Run("approval stops at the device limit", func(t *testing.T) {
 			operation_setting.GetClientDeviceSetting().MaxDevicesPerUser = 1
-			require.NoError(t, model.CreateClientDevice(&model.ClientDevice{UserId: env.userID, DeviceId: "existing-device", PublicKey: key.public, Status: model.ClientDeviceStatusActive, CreatedAt: time.Now().Unix()}))
+			createAccessTokenTestSession(t, env.userID, "existing-device-session")
+			require.NoError(t, model.CreateClientDevice(&model.ClientDevice{UserId: env.userID, DeviceId: "existing-device", PublicKey: key.public, SessionSID: "existing-device-session", Status: model.ClientDeviceStatusActive, CreatedAt: time.Now().Unix()}))
 			_, userCode := env.start(t, key, "")
 			status, response := env.approve(t, userCode, userCode)
 			assert.Equal(t, http.StatusConflict, status)
