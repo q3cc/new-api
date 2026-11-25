@@ -25,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
@@ -352,5 +353,90 @@ func TestClientDeviceAuthorizationRefusals(t *testing.T) {
 			assert.Equal(t, http.StatusForbidden, status)
 			assert.Equal(t, "CLIENT_DEVICE_DISABLED", response["code"])
 		})
+	})
+}
+
+func TestVerifiedClientRateLimit(t *testing.T) {
+	runClientDeviceDialects(t, func(t *testing.T, env *clientDeviceTestEnv) {
+		previous := struct {
+			enabled        bool
+			count, success int
+			minutes        int
+			clientSettings operation_setting.ClientDeviceSetting
+		}{setting.ModelRequestRateLimitEnabled, setting.ModelRequestRateLimitCount, setting.ModelRequestRateLimitSuccessCount, setting.ModelRequestRateLimitDurationMinutes, *operation_setting.GetClientDeviceSetting()}
+		t.Cleanup(func() {
+			setting.ModelRequestRateLimitEnabled, setting.ModelRequestRateLimitCount = previous.enabled, previous.count
+			setting.ModelRequestRateLimitSuccessCount, setting.ModelRequestRateLimitDurationMinutes = previous.success, previous.minutes
+			*operation_setting.GetClientDeviceSetting() = previous.clientSettings
+		})
+		setting.ModelRequestRateLimitEnabled = true
+		setting.ModelRequestRateLimitCount, setting.ModelRequestRateLimitSuccessCount = 2, 0
+		setting.ModelRequestRateLimitDurationMinutes = 1
+		operation_setting.GetClientDeviceSetting().VerifiedRPMEnabled = true
+		operation_setting.GetClientDeviceSetting().VerifiedRPMMultiplier = 2
+
+		// Each case gets its own user, with an ID unique across dialects, because
+		// the in-memory limiter is shared by the whole test process.
+		newDevice := func(t *testing.T, verified bool) (int, clientDeviceKey, string) {
+			clientDeviceNonceSeq++
+			user := model.User{Id: 900_000 + clientDeviceNonceSeq, Username: "rpm-" + strconv.FormatInt(time.Now().UnixNano(), 36), Password: "x", Status: common.UserStatusEnabled, AuthVersion: 1, Group: "default"}
+			user.AffCode = user.Username
+			require.NoError(t, model.DB.Create(&user).Error)
+			sid := "rpm-session-" + user.Username
+			createAccessTokenTestSession(t, user.Id, sid)
+			key := newClientDeviceKey(t)
+			deviceID := "device-" + user.Username
+			require.NoError(t, model.CreateClientDevice(&model.ClientDevice{UserId: user.Id, DeviceId: deviceID, PublicKey: key.public, Verified: verified, SessionSID: sid, Status: model.ClientDeviceStatusActive, CreatedAt: time.Now().Unix()}))
+			return user.Id, key, deviceID
+		}
+		send := func(t *testing.T, userID int, key *clientDeviceKey, deviceID, signedBody string) int {
+			body := `{"model":"gpt-4o","messages":[]}`
+			router := gin.New()
+			router.POST("/v1/chat/completions", func(c *gin.Context) { c.Set("id", userID) }, middleware.ModelRequestRateLimit(), func(c *gin.Context) {
+				assert.Empty(t, c.GetHeader(service.ClientDeviceHeaderSignature), "proof headers must not reach the relay")
+				c.Status(http.StatusOK)
+			})
+			request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+			if key != nil {
+				digest := sha256.Sum256([]byte(signedBody))
+				proof := clientDeviceProof(t, *key, "client-device-request", http.MethodPost, "/v1/chat/completions", hex.EncodeToString(digest[:]))
+				request.Header.Set(service.ClientDeviceHeaderID, deviceID)
+				request.Header.Set(service.ClientDeviceHeaderTimestamp, strconv.FormatInt(proof["timestamp"].(int64), 10))
+				request.Header.Set(service.ClientDeviceHeaderNonce, proof["nonce"].(string))
+				request.Header.Set(service.ClientDeviceHeaderSignature, proof["signature"].(string))
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			return response.Code
+		}
+		allowed := func(t *testing.T, userID int, key *clientDeviceKey, deviceID string, tamper bool) int {
+			count := 0
+			for range 6 {
+				signed := `{"model":"gpt-4o","messages":[]}`
+				if tamper {
+					signed = `{"model":"o3","messages":[]}`
+				}
+				if send(t, userID, key, deviceID, signed) == http.StatusOK {
+					count++
+				}
+			}
+			return count
+		}
+
+		userID, _, _ := newDevice(t, true)
+		assert.Equal(t, 2, allowed(t, userID, nil, "", false), "unsigned requests keep the ordinary limit")
+
+		userID, key, deviceID := newDevice(t, true)
+		assert.Equal(t, 4, allowed(t, userID, &key, deviceID, false), "a verified device gets the multiplied limit")
+
+		userID, key, deviceID = newDevice(t, false)
+		assert.Equal(t, 2, allowed(t, userID, &key, deviceID, false), "an unverified build gets the ordinary limit")
+
+		userID, key, deviceID = newDevice(t, true)
+		assert.Equal(t, 2, allowed(t, userID, &key, deviceID, true), "a signature over another body is ignored")
+
+		otherUser, _, _ := newDevice(t, true)
+		_, key, deviceID = newDevice(t, true)
+		assert.Equal(t, 2, allowed(t, otherUser, &key, deviceID, false), "a device only counts for its owner's tokens")
 	})
 }

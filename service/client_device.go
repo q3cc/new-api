@@ -310,6 +310,39 @@ func RefreshClientDeviceSession(request ClientDeviceRefreshRequest, ip string) (
 	return &ClientDeviceLogin{Bundle: bundle, Device: device, User: user}, nil
 }
 
+// Headers a native client attaches to relay requests to prove they come from
+// one of its authorized devices.
+const (
+	ClientDeviceHeaderID        = "X-Lyra-Device"
+	ClientDeviceHeaderTimestamp = "X-Lyra-Timestamp"
+	ClientDeviceHeaderNonce     = "X-Lyra-Nonce"
+	ClientDeviceHeaderSignature = "X-Lyra-Signature"
+)
+
+// VerifyClientDeviceRequest checks a signed relay request. The device must be
+// active, verified and owned by userID (the token's owner), its login session
+// must still be alive, and the signature must cover the method, the path and
+// the SHA-256 of the body, with a fresh timestamp and an unused nonce.
+func VerifyClientDeviceRequest(userID int, deviceID, method, path, bodyHash string, fields ClientDeviceSignedFields, ip string) (*model.ClientDevice, error) {
+	device, err := model.GetActiveClientDevice(deviceID)
+	if err != nil {
+		return nil, err
+	}
+	if !device.Verified || device.UserId != userID {
+		return nil, ErrClientDeviceSignatureInvalid
+	}
+	session, err := model.GetUserSessionCached(device.SessionSID)
+	if err != nil || session.Status != model.UserSessionStatusActive || session.RevokedAt != 0 || session.ExpiresAt <= time.Now().Unix() {
+		return nil, ErrLoginSessionRevoked
+	}
+	message := clientDeviceMessage("client-device-request", fields, method, path, bodyHash)
+	if err := verifyClientDeviceProof(device.PublicKey, fields, message); err != nil {
+		return nil, err
+	}
+	model.TouchClientDevice(device, truncateAuthMetadata(ip, 64), time.Now().Unix())
+	return device, nil
+}
+
 // ListClientDevices returns the user's active devices.
 func ListClientDevices(userID int) ([]model.ClientDevice, error) {
 	devices, err := model.ListActiveClientDevices(userID)

@@ -2,7 +2,10 @@ package middleware
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -13,7 +16,9 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -172,6 +177,10 @@ func modelRequestSucceeded(c *gin.Context) bool {
 // ModelRequestRateLimit 模型请求限流中间件
 func ModelRequestRateLimit() func(c *gin.Context) {
 	return func(c *gin.Context) {
+		// The device proof is read here and removed, so it never reaches a
+		// channel's header passthrough.
+		proof := takeClientDeviceProof(c)
+
 		// 在每个请求时检查是否启用限流
 		if !setting.ModelRequestRateLimitEnabled {
 			c.Next()
@@ -197,6 +206,13 @@ func ModelRequestRateLimit() func(c *gin.Context) {
 			totalMaxCount = groupTotalCount
 			successMaxCount = groupSuccessCount
 			subject += ":" + group
+		}
+
+		// A request signed by a verified device of the token's owner may use a
+		// multiple of both limits; it still counts in the same window.
+		if multiplier := verifiedClientRateMultiplier(c, proof); multiplier > 1 {
+			totalMaxCount = scaleRateLimit(totalMaxCount, multiplier)
+			successMaxCount = scaleRateLimit(successMaxCount, multiplier)
 		}
 
 		// 根据存储类型选择并执行限流处理器
@@ -228,4 +244,78 @@ func rateLimitCapacity(count int, durationSeconds int64) int64 {
 		return math.MaxInt64
 	}
 	return c * durationSeconds
+}
+
+// clientDeviceProof is the signature a native client attached to a request.
+type clientDeviceProof struct {
+	deviceID string
+	fields   service.ClientDeviceSignedFields
+}
+
+// takeClientDeviceProof reads the device proof headers and deletes them from
+// the request.
+func takeClientDeviceProof(c *gin.Context) *clientDeviceProof {
+	header := c.Request.Header
+	proof := &clientDeviceProof{
+		deviceID: header.Get(service.ClientDeviceHeaderID),
+		fields: service.ClientDeviceSignedFields{
+			Nonce:     header.Get(service.ClientDeviceHeaderNonce),
+			Signature: header.Get(service.ClientDeviceHeaderSignature),
+		},
+	}
+	timestamp := header.Get(service.ClientDeviceHeaderTimestamp)
+	for _, name := range []string{service.ClientDeviceHeaderID, service.ClientDeviceHeaderTimestamp, service.ClientDeviceHeaderNonce, service.ClientDeviceHeaderSignature} {
+		header.Del(name)
+	}
+	if proof.deviceID == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return nil
+	}
+	proof.fields.Timestamp = parsed
+	return proof
+}
+
+// verifiedClientRateMultiplier returns the configured multiplier when the
+// request carries a valid proof from a verified device of the token's owner,
+// and 1 otherwise. A proof that fails is ignored, not rejected: the request
+// simply gets the ordinary limits.
+func verifiedClientRateMultiplier(c *gin.Context, proof *clientDeviceProof) float64 {
+	settings := operation_setting.GetClientDeviceSetting()
+	if proof == nil || !settings.VerifiedRPMEnabled || settings.VerifiedRPMMultiplier <= 1 {
+		return 1
+	}
+	body, err := common.GetRequestBody(c)
+	if err != nil {
+		return 1
+	}
+	reader, ok := body.(io.Reader)
+	if !ok {
+		return 1
+	}
+	digest := sha256.New()
+	_, err = io.Copy(digest, reader)
+	if _, seekErr := body.Seek(0, io.SeekStart); err != nil || seekErr != nil {
+		return 1
+	}
+	bodyHash := hex.EncodeToString(digest.Sum(nil))
+	if _, err := service.VerifyClientDeviceRequest(c.GetInt("id"), proof.deviceID, c.Request.Method, c.Request.URL.Path, bodyHash, proof.fields, c.ClientIP()); err != nil {
+		return 1
+	}
+	return settings.VerifiedRPMMultiplier
+}
+
+// scaleRateLimit multiplies a limit, keeping 0 (no limit) and avoiding
+// overflow.
+func scaleRateLimit(count int, multiplier float64) int {
+	if count <= 0 {
+		return count
+	}
+	scaled := math.Ceil(float64(count) * multiplier)
+	if scaled >= math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int(scaled)
 }
