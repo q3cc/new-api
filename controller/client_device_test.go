@@ -29,6 +29,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/pquerna/otp/totp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -287,6 +288,45 @@ func TestClientDeviceBrowserAuthorization(t *testing.T) {
 		assert.Empty(t, response["data"], "a signed-out device is not an authorized client")
 		status, _ = env.refresh(t, key, deviceID, rotated)
 		assert.Equal(t, http.StatusUnauthorized, status)
+	})
+}
+
+// A two-factor account approves a device with its authenticator code, as the
+// /device page's verification dialog sends it; a password alone is refused.
+// The device then signs in without any code of its own.
+func TestClientDeviceAuthorizationWithTwoFactor(t *testing.T) {
+	runClientDeviceDialects(t, func(t *testing.T, env *clientDeviceTestEnv) {
+		factor := &model.TwoFA{UserId: env.userID, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}
+		require.NoError(t, model.DB.Create(factor).Error)
+		env.router.POST("/api/verify", middleware.UserAuth(), UniversalVerify)
+
+		key := newClientDeviceKey(t)
+		deviceCode, userCode := env.start(t, key, clientDeviceTestBuildKey)
+		context := map[string]string{"user_code": userCode}
+
+		_, response := env.do(t, http.MethodPost, "/api/verify", env.userJWT, map[string]any{
+			"scope": service.VerificationScopeClientDeviceAuthorize, "method": "password", "password": "placeholder", "context": context,
+		})
+		assert.Equal(t, false, response["success"], "a password is not enough once 2FA is on: %v", response)
+		assert.Equal(t, "SECURITY_PROOF_METHOD_MISMATCH", response["code"])
+		assert.Nil(t, response["data"])
+
+		code, err := totp.GenerateCode(factor.Secret, time.Now())
+		require.NoError(t, err)
+		status, response := env.do(t, http.MethodPost, "/api/verify", env.userJWT, map[string]any{
+			"scope": service.VerificationScopeClientDeviceAuthorize, "method": "2fa", "code": code, "context": context,
+		})
+		require.Equal(t, http.StatusOK, status, response)
+		require.Equal(t, true, response["success"], response)
+		proof := response["data"].(map[string]any)["proof_token"].(string)
+
+		status, response = env.do(t, http.MethodPost, "/api/user/device-auth/requests/"+userCode+"/approve", env.userJWT, nil, "X-Security-Proof", proof)
+		require.Equal(t, http.StatusOK, status, response)
+
+		status, response = env.poll(t, key, deviceCode)
+		require.Equal(t, http.StatusOK, status, response)
+		login := response["data"].(map[string]any)
+		assert.NotEmpty(t, login["access_token"])
 	})
 }
 

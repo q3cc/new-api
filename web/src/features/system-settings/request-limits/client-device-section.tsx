@@ -74,7 +74,9 @@ const OPTION_KEYS: Record<keyof ClientDeviceDefaults, string> = {
  * Native clients (Lyra Box): browser authorization, the higher model request
  * rate limit for requests signed by a verified device, and cloud chat sync.
  */
-export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults }) {
+export function ClientDeviceSection(props: {
+  defaultValues: ClientDeviceDefaults
+}) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const form = useForm<Values>({
@@ -88,7 +90,9 @@ export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults
 
   async function onSubmit(values: Values) {
     const updates: Array<{ key: string; value: string }> = []
-    for (const field of Object.keys(OPTION_KEYS) as Array<keyof ClientDeviceDefaults>) {
+    for (const field of Object.keys(OPTION_KEYS) as Array<
+      keyof ClientDeviceDefaults
+    >) {
       if (values[field] !== props.defaultValues[field]) {
         updates.push({ key: OPTION_KEYS[field], value: String(values[field]) })
       }
@@ -126,7 +130,9 @@ export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults
             render={({ field }) => (
               <SettingsSwitchItem>
                 <SettingsSwitchContent>
-                  <FormLabel>{t('Allow sign-in by browser authorization')}</FormLabel>
+                  <FormLabel>
+                    {t('Allow sign-in by browser authorization')}
+                  </FormLabel>
                   <FormDescription>
                     {t(
                       'Native clients such as Lyra Box show a code; the user approves it on the /device page.'
@@ -134,7 +140,11 @@ export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults
                   </FormDescription>
                 </SettingsSwitchContent>
                 <FormControl>
-                  <Switch checked={field.value} onCheckedChange={field.onChange} disabled={busy} />
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={busy}
+                  />
                 </FormControl>
               </SettingsSwitchItem>
             )}
@@ -158,7 +168,9 @@ export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults
             render={({ field }) => (
               <SettingsSwitchItem>
                 <SettingsSwitchContent>
-                  <FormLabel>{t('Higher rate limit for verified clients')}</FormLabel>
+                  <FormLabel>
+                    {t('Higher rate limit for verified clients')}
+                  </FormLabel>
                   <FormDescription>
                     {t(
                       "Requests signed by a verified device of the token's owner get a multiple of the model request rate limits."
@@ -166,7 +178,11 @@ export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults
                   </FormDescription>
                 </SettingsSwitchContent>
                 <FormControl>
-                  <Switch checked={field.value} onCheckedChange={field.onChange} disabled={busy} />
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={busy}
+                  />
                 </FormControl>
               </SettingsSwitchItem>
             )}
@@ -179,7 +195,13 @@ export function ClientDeviceSection(props: { defaultValues: ClientDeviceDefaults
                 <FormItem>
                   <FormLabel>{t('Rate limit multiplier')}</FormLabel>
                   <FormControl>
-                    <Input type='number' min={1} max={100} step={0.5} {...field} />
+                    <Input
+                      type='number'
+                      min={1}
+                      max={100}
+                      step={0.5}
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

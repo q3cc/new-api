@@ -56,7 +56,12 @@ let devices: ClientDevice[]
 beforeEach(() => {
   devices = [
     device({}),
-    device({ id: 8, name: 'Lyra Box on Pixel', platform: 'android', verified: false }),
+    device({
+      id: 8,
+      name: 'Lyra Box on Pixel',
+      platform: 'android',
+      verified: false,
+    }),
   ]
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/user/client-devices') {
@@ -77,10 +82,20 @@ afterEach(() => {
 })
 
 async function renderCard() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   const root = createRootRoute()
-  const security = createRoute({ getParentRoute: () => root, path: '/security', component: ClientDevicesCard })
-  const signIn = createRoute({ getParentRoute: () => root, path: '/sign-in', component: () => null })
+  const security = createRoute({
+    getParentRoute: () => root,
+    path: '/security',
+    component: ClientDevicesCard,
+  })
+  const signIn = createRoute({
+    getParentRoute: () => root,
+    path: '/sign-in',
+    component: () => null,
+  })
   const router = createRouter({
     routeTree: root.addChildren([security, signIn]),
     history: createMemoryHistory({ initialEntries: ['/security'] }),
@@ -111,7 +126,11 @@ describe('authorized clients card', () => {
     await renderCard()
     const list = await screen.findByRole('list', { name: 'Authorized clients' })
 
-    await user.click(within(within(list).getAllByRole('listitem')[0]).getByRole('button', { name: 'Revoke' }))
+    await user.click(
+      within(within(list).getAllByRole('listitem')[0]).getByRole('button', {
+        name: 'Revoke',
+      })
+    )
     expect(api.delete).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }))

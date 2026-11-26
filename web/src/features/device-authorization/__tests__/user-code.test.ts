@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
+import { appCallbackUrl } from '../lib/return-to-app'
 import { formatUserCode, normalizeUserCode } from '../lib/user-code'
 
 describe('device user codes', () => {
@@ -30,5 +31,14 @@ describe('device user codes', () => {
   test('shows a complete code in the XXXX-XXXX form the app uses and leaves partial input alone', () => {
     expect(formatUserCode('WDJBMJHT')).toBe('WDJB-MJHT')
     expect(formatUserCode('WDJ')).toBe('WDJ')
+  })
+})
+
+describe('return to the app', () => {
+  test('links back to the fixed app callback with the decision', () => {
+    expect(appCallbackUrl('approved')).toBe(
+      'lyrabox://device-auth?status=approved'
+    )
+    expect(appCallbackUrl('denied')).toBe('lyrabox://device-auth?status=denied')
   })
 })

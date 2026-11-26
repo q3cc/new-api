@@ -39,20 +39,22 @@ import {
   denyClientDeviceAuthorization,
   getClientDeviceAuthorization,
 } from '@/features/security/api'
-import { clientDevicesQueryKey } from '@/features/security/lib/client-device'
 import { useAccountSecurity } from '@/features/security/hooks/use-account-security'
+import { clientDevicesQueryKey } from '@/features/security/lib/client-device'
 import { handleServerError } from '@/lib/handle-server-error'
 import { createServerError } from '@/lib/server-error-message'
 
 import { AuthorizationRequest } from './components/authorization-request'
+import { type DeviceDecision, returnToApp } from './lib/return-to-app'
 import { formatUserCode, normalizeUserCode } from './lib/user-code'
 
-type Decision = 'approved' | 'denied'
+type Decision = DeviceDecision
 
 /**
  * Lets the signed-in user approve a native client (Lyra Box) that started a
  * browser authorization. The client opens /device?code=XXXX-XXXX; the code
- * can also be typed in.
+ * can also be typed in. Opened with return=app (the app's sign-in sheet), the
+ * page goes back to the app once the user decides.
  */
 export function DeviceAuthorization() {
   const { t } = useTranslation()
@@ -71,12 +73,20 @@ export function DeviceAuthorization() {
     queryFn: async () => {
       const response = await getClientDeviceAuthorization(code)
       if (!response.success || !response.data) {
-        throw createServerError(response, t('This code is invalid or has expired.'))
+        throw createServerError(
+          response,
+          t('This code is invalid or has expired.')
+        )
       }
       return response.data
     },
     meta: { errorToast: false },
   })
+
+  const decide = (next: Decision) => {
+    setDecision(next)
+    if (search.return === 'app') returnToApp(next)
+  }
 
   const denyMutation = useMutation({
     mutationFn: async () => {
@@ -85,7 +95,7 @@ export function DeviceAuthorization() {
         throw createServerError(response, t('Failed to deny the request'))
       }
     },
-    onSuccess: () => setDecision('denied'),
+    onSuccess: () => decide('denied'),
     onError: (error: Error) => handleServerError(error),
   })
 
@@ -98,7 +108,7 @@ export function DeviceAuthorization() {
       return approveClientDeviceAuthorization(code, proof, signal)
     })
     if (!result) return
-    setDecision('approved')
+    decide('approved')
     await queryClient.invalidateQueries({ queryKey: clientDevicesQueryKey })
   }
 
@@ -107,7 +117,10 @@ export function DeviceAuthorization() {
     setDecision(null)
     void navigate({
       to: '/device',
-      search: { code: formatUserCode(normalizeUserCode(draft)) },
+      search: {
+        code: formatUserCode(normalizeUserCode(draft)),
+        return: search.return,
+      },
       replace: true,
     })
   }
@@ -166,12 +179,17 @@ export function DeviceAuthorization() {
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Authorize a device')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>
+        {t('Authorize a device')}
+      </SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='mx-auto flex w-full max-w-xl flex-col gap-4'>
           <Card data-card-hover='false'>
             <CardContent>
-              <form className='flex flex-col gap-3 sm:flex-row sm:items-end' onSubmit={submitCode}>
+              <form
+                className='flex flex-col gap-3 sm:flex-row sm:items-end'
+                onSubmit={submitCode}
+              >
                 <div className='flex flex-1 flex-col gap-2'>
                   <Label htmlFor='device-user-code'>
                     {t('Code shown in the app')}

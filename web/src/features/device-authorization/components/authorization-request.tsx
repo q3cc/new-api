@@ -29,10 +29,10 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { toIntlLocale } from '@/i18n/languages'
-import { formatTimestampRelative } from '@/lib/format'
 import type { ClientDeviceAuthorization } from '@/features/security/api'
 import { clientPlatformName } from '@/features/security/lib/client-device'
+import { toIntlLocale } from '@/i18n/languages'
+import { formatTimestampRelative } from '@/lib/format'
 
 interface AuthorizationRequestProps {
   request: ClientDeviceAuthorization
@@ -73,7 +73,11 @@ export function AuthorizationRequest(props: AuthorizationRequestProps) {
           <dd>{props.request.request_ip || t('Unknown')}</dd>
           <dt className='text-muted-foreground'>{t('Requested')}</dt>
           <dd>
-            {formatTimestampRelative(props.request.created_at, 'seconds', locale)}
+            {formatTimestampRelative(
+              props.request.created_at,
+              'seconds',
+              locale
+            )}
           </dd>
         </dl>
         <Alert>

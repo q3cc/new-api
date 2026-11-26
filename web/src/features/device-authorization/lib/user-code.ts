@@ -20,11 +20,17 @@ import { z } from 'zod'
 
 export const deviceAuthorizationSearchSchema = z.object({
   code: z.string().max(32).optional().catch(undefined),
+  // `app`: opened in the app's sign-in sheet (iOS), which closes on the
+  // app's own link once the user decides.
+  return: z.literal('app').optional().catch(undefined),
 })
 
 /** Keeps the letters of a user code, upper-cased, as the server compares it. */
 export function normalizeUserCode(value: string): string {
-  return value.toUpperCase().replaceAll(/[^A-Z]/g, '').slice(0, 8)
+  return value
+    .toUpperCase()
+    .replaceAll(/[^A-Z]/g, '')
+    .slice(0, 8)
 }
 
 /** Shows an eight-letter code as XXXX-XXXX, the way the app displays it. */

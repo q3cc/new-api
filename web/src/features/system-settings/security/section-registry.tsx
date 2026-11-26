@@ -57,7 +57,8 @@ const SECURITY_SECTIONS = [
           verifiedRpmMultiplier:
             settings['client_device_setting.verified_rpm_multiplier'],
           chatSyncEnabled: settings['chat_sync_setting.enabled'],
-          chatSyncMaxSessions: settings['chat_sync_setting.max_sessions_per_user'],
+          chatSyncMaxSessions:
+            settings['chat_sync_setting.max_sessions_per_user'],
           chatSyncMaxMegabytes:
             settings['chat_sync_setting.max_megabytes_per_user'],
         }}

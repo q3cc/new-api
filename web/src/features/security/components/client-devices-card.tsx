@@ -56,7 +56,6 @@ import {
 } from '../api'
 import { clientDevicesQueryKey, clientPlatformName } from '../lib/client-device'
 
-
 /**
  * Native clients (Lyra Box) the user signed in by browser authorization.
  * Revoking one signs that device out and stops its signed requests.
@@ -73,7 +72,10 @@ export function ClientDevicesCard() {
     queryFn: async () => {
       const response = await listClientDevices()
       if (!response.success) {
-        throw createServerError(response, t('Failed to load authorized clients'))
+        throw createServerError(
+          response,
+          t('Failed to load authorized clients')
+        )
       }
       return response.data ?? []
     },

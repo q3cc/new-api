@@ -47,6 +47,11 @@ vi.mock('@/features/security/hooks/use-account-security', () => ({
 vi.mock('@/features/auth/secure-verification', () => ({
   SecureVerificationDialog: () => null,
 }))
+const returnToApp = vi.fn()
+vi.mock('../lib/return-to-app', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/return-to-app')>()),
+  returnToApp: (decision: string) => returnToApp(decision),
+}))
 
 const pending = {
   user_code: 'WDJB-MJHT',
@@ -61,12 +66,17 @@ const pending = {
 
 beforeEach(() => {
   verify.mockClear()
+  returnToApp.mockClear()
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/user/device-auth/requests/WDJBMJHT') {
       return { data: { success: true, data: pending } }
     }
     return {
-      data: { success: false, code: 'CLIENT_DEVICE_CODE_NOT_FOUND', message: 'This code is invalid or has expired.' },
+      data: {
+        success: false,
+        code: 'CLIENT_DEVICE_CODE_NOT_FOUND',
+        message: 'This code is invalid or has expired.',
+      },
     }
   })
   vi.spyOn(api, 'post').mockImplementation(async () => ({
@@ -80,9 +90,14 @@ afterEach(() => {
 })
 
 async function renderPage(path: string) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   const root = createRootRoute()
-  const authenticated = createRoute({ getParentRoute: () => root, id: '_authenticated' })
+  const authenticated = createRoute({
+    getParentRoute: () => root,
+    id: '_authenticated',
+  })
   const device = createRoute({
     getParentRoute: () => authenticated,
     path: '/device/',
@@ -124,7 +139,9 @@ describe('device authorization page', () => {
     expect(api.post).toHaveBeenCalledWith(
       '/api/user/device-auth/requests/WDJBMJHT/approve',
       undefined,
-      expect.objectContaining({ headers: { 'X-Security-Proof': 'proof-token' } })
+      expect.objectContaining({
+        headers: { 'X-Security-Proof': 'proof-token' },
+      })
     )
     expect(await screen.findByText('Device authorized')).toBeTruthy()
   })
@@ -135,9 +152,36 @@ describe('device authorization page', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Deny' }))
 
-    expect(api.post).toHaveBeenCalledWith('/api/user/device-auth/requests/WDJBMJHT/deny')
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/user/device-auth/requests/WDJBMJHT/deny'
+    )
     expect(verify).not.toHaveBeenCalled()
     expect(await screen.findByText('Request denied')).toBeTruthy()
+  })
+
+  it('stays on the page after a decision when it was not opened from the app sheet', async () => {
+    const user = userEvent.setup()
+    await renderPage('/device?code=WDJB-MJHT')
+
+    await user.click(await screen.findByRole('button', { name: 'Authorize' }))
+
+    expect(await screen.findByText('Device authorized')).toBeTruthy()
+    expect(returnToApp).not.toHaveBeenCalled()
+  })
+
+  it('goes back to the app sheet with the decision, and ignores other return values', async () => {
+    const user = userEvent.setup()
+    await renderPage('/device?code=WDJB-MJHT&return=app')
+    await user.click(await screen.findByRole('button', { name: 'Authorize' }))
+    expect(await screen.findByText('Device authorized')).toBeTruthy()
+    expect(returnToApp).toHaveBeenCalledWith('approved')
+
+    cleanup()
+    returnToApp.mockClear()
+    await renderPage('/device?code=WDJB-MJHT&return=https://evil.example')
+    await user.click(await screen.findByRole('button', { name: 'Deny' }))
+    expect(await screen.findByText('Request denied')).toBeTruthy()
+    expect(returnToApp).not.toHaveBeenCalled()
   })
 
   it('says so when a typed code is unknown or expired', async () => {
@@ -148,7 +192,12 @@ describe('device authorization page', () => {
     await user.type(input, 'bbbb cccc')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
-    expect(await screen.findByText('This code is invalid or has expired.')).toBeTruthy()
-    expect(api.get).toHaveBeenCalledWith('/api/user/device-auth/requests/BBBBCCCC', expect.anything())
+    expect(
+      await screen.findByText('This code is invalid or has expired.')
+    ).toBeTruthy()
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/user/device-auth/requests/BBBBCCCC',
+      expect.anything()
+    )
   })
 })
